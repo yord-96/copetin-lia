@@ -2867,6 +2867,40 @@ const callDirectDamageRepairReinsert = async (payload = {}) => {
   }
 };
 
+const callDirectDamageDiscardToMissing = async (payload = {}) => {
+  if (!shouldUseServerState()) throw new Error('El descarte de daños requiere conexión con el servidor.');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(getServerStateUrl('/inventory/damage-loss/discard-to-missing'), {
+      method: 'POST',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw await createServerStateError(response, 'No se pudo mover el daño a Faltantes.');
+    }
+    const result = await response.json();
+    if (result?.revision) rememberServerRevision(result.revision);
+    markServerStateStale('inventory.damageDiscardToMissing');
+    announceDataChange({
+      domain: 'inventory',
+      method: 'damageDiscardToMissing',
+      collections: ['rentals'],
+    });
+    return result;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('El servidor tardó demasiado en confirmar el descarte. Actualiza el kardex antes de repetir la operación.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const callDirectInventoryRecoveryOperation = async (payload = {}) => {
   if (!shouldUseServerState()) return callBridge('inventory', 'processRecovery', true, payload);
   const recoveryId = String(payload?.recoveryId ?? '').trim();
@@ -3714,6 +3748,7 @@ export const api = {
     getProductsKardex: fetchProductsKardex,
     getProductKardexHistory: fetchProductKardexHistory,
     reinsertRepairedDamage: (payload) => callDirectDamageRepairReinsert(payload),
+    discardDamageToMissing: (payload) => callDirectDamageDiscardToMissing(payload),
     listRecoveries: async () => {
       if (shouldUseServerState()) {
         // stockRecoveries es una coleccion diferida. Debemos leerla directamente

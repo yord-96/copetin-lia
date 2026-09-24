@@ -8303,7 +8303,19 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
         reportIndex,
         reportKind,
         lineKey: String(line?.lineKey ?? '').trim(),
+        isDiscardedDamage: Boolean(line?.isDiscardedDamage),
+        originalLossType: String(line?.originalLossType ?? lossType),
       });
+    };
+
+    const proportionalIssueValue = (unitValueBs, totalValueBs, quantity, originalQuantity) => {
+      const qty = Math.max(0, Math.trunc(Number(quantity ?? 0)));
+      const originalQty = Math.max(0, Math.trunc(Number(originalQuantity ?? 0)));
+      const unitValue = Math.max(0, directMoney(unitValueBs));
+      if (qty <= 0) return 0;
+      if (unitValue > 0) return directMoney(unitValue * qty);
+      if (originalQty > 0) return directMoney((Math.max(0, Number(totalValueBs ?? 0)) * qty) / originalQty);
+      return 0;
     };
 
     (Array.isArray(state.rentals) ? state.rentals : []).forEach((rental) => {
@@ -8311,15 +8323,81 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
       const finalReport = Array.isArray(rental.returnReport) ? rental.returnReport : [];
       finalReport.forEach((line, reportIndex) => {
         const occurredAt = line?.partialRegisteredAt ?? rental?.returnedAt ?? rental?.updatedAt ?? null;
-        appendIssue(rental, line, 'danado', line?.damagedQty, line?.damagedUnitChargeBs, line?.damagedFeeBs, occurredAt, false, reportIndex, 'final');
+        const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+        const discardedQty = Math.min(damagedQty, Math.max(0, Math.trunc(Number(line?.damageDiscardedToMissingQty ?? 0))));
+        const visibleDamagedQty = Math.max(0, damagedQty - discardedQty);
+        appendIssue(
+          rental,
+          line,
+          'danado',
+          visibleDamagedQty,
+          line?.damagedUnitChargeBs,
+          proportionalIssueValue(line?.damagedUnitChargeBs, line?.damagedFeeBs, visibleDamagedQty, damagedQty),
+          occurredAt,
+          false,
+          reportIndex,
+          'final',
+        );
+        if (discardedQty > 0) {
+          appendIssue(
+            rental,
+            {
+              ...line,
+              isDiscardedDamage: true,
+              originalLossType: 'danado',
+              damageNote: [String(line?.damageNote ?? '').trim(), 'Descartado desde Daños por no ser reinsertable'].filter(Boolean).join(' · '),
+            },
+            'faltante',
+            discardedQty,
+            line?.damagedUnitChargeBs,
+            proportionalIssueValue(line?.damagedUnitChargeBs, line?.damagedFeeBs, discardedQty, damagedQty),
+            line?.damageDiscardedToMissingAt ?? occurredAt,
+            false,
+            reportIndex,
+            'final-discarded',
+          );
+        }
         appendIssue(rental, line, 'faltante', line?.missingQty, line?.missingUnitChargeBs, line?.missingFeeBs, occurredAt, false, reportIndex, 'final');
       });
 
-      // Mientras una devolución siga parcial, solo el daño ya recibido es una pérdida.
+      // Mientras una devolución siga parcial, el daño recibido puede reclasificarse visualmente como faltante si ya es irreparable.
       if (!finalReport.length && Array.isArray(rental?.partialReturnReport?.items)) {
         rental.partialReturnReport.items.forEach((line, reportIndex) => {
           const occurredAt = line?.partialRegisteredAt ?? rental?.partialReturnReport?.updatedAt ?? rental?.updatedAt ?? null;
-          appendIssue(rental, line, 'danado', line?.damagedQty, line?.damagedUnitChargeBs, line?.damagedFeeBs, occurredAt, true, reportIndex, 'partial');
+          const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+          const discardedQty = Math.min(damagedQty, Math.max(0, Math.trunc(Number(line?.damageDiscardedToMissingQty ?? 0))));
+          const visibleDamagedQty = Math.max(0, damagedQty - discardedQty);
+          appendIssue(
+            rental,
+            line,
+            'danado',
+            visibleDamagedQty,
+            line?.damagedUnitChargeBs,
+            proportionalIssueValue(line?.damagedUnitChargeBs, line?.damagedFeeBs, visibleDamagedQty, damagedQty),
+            occurredAt,
+            true,
+            reportIndex,
+            'partial',
+          );
+          if (discardedQty > 0) {
+            appendIssue(
+              rental,
+              {
+                ...line,
+                isDiscardedDamage: true,
+                originalLossType: 'danado',
+                damageNote: [String(line?.damageNote ?? '').trim(), 'Descartado desde Daños por no ser reinsertable'].filter(Boolean).join(' · '),
+              },
+              'faltante',
+              discardedQty,
+              line?.damagedUnitChargeBs,
+              proportionalIssueValue(line?.damagedUnitChargeBs, line?.damagedFeeBs, discardedQty, damagedQty),
+              line?.damageDiscardedToMissingAt ?? occurredAt,
+              true,
+              reportIndex,
+              'partial-discarded',
+            );
+          }
         });
       }
     });
@@ -8493,6 +8571,86 @@ router.get('/__copetin_db/inventory/damage-loss-overview', async (req, res, next
       summary,
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/__copetin_db/inventory/damage-loss/discard-to-missing', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const rentalId = String(payload.rentalId ?? '').trim();
+    const itemId = String(payload.itemId ?? '').trim();
+    const reportKind = String(payload.reportKind ?? 'final').trim() === 'partial' ? 'partial' : 'final';
+    const reportIndex = Math.trunc(Number(payload.reportIndex ?? -1));
+    const quantity = Math.trunc(Number(payload.quantity ?? 0));
+    const userName = String(payload.userName ?? payload.createdByName ?? payload.createdBy ?? 'Inventario').trim() || 'Inventario';
+    const userRole = String(payload.userRole ?? payload.createdByRole ?? 'Inventario').trim() || 'Inventario';
+
+    if (!rentalId || !itemId || reportIndex < 0) return res.status(400).json({ error: 'La incidencia dañada seleccionada no es válida.' });
+    if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'La cantidad a descartar debe ser mayor a 0.' });
+
+    let responseData = null;
+    const result = await updateStateSnapshot((state) => {
+      state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
+      const rental = state.rentals.find((entry) => String(entry?.id ?? '') === rentalId && !entry?.deletedAt);
+      if (!rental) { const error = new Error('No se encontró la devolución asociada al daño.'); error.statusCode = 404; throw error; }
+
+      const report = reportKind === 'partial'
+        ? (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
+        : (Array.isArray(rental?.returnReport) ? rental.returnReport : []);
+      const line = report[reportIndex];
+      if (!line || String(line?.itemId ?? '') !== itemId) {
+        const error = new Error('La incidencia cambió desde que se cargó la pantalla. Actualiza la vista e inténtalo nuevamente.');
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
+      const repairedQty = Math.min(damagedQty, Math.max(0, Math.trunc(Number(line?.damageRepairedQty ?? 0))));
+      const discardedBefore = Math.min(
+        Math.max(0, damagedQty - repairedQty),
+        Math.max(0, Math.trunc(Number(line?.damageDiscardedToMissingQty ?? 0))),
+      );
+      const pendingQty = Math.max(0, damagedQty - repairedQty - discardedBefore);
+      if (damagedQty <= 0 || pendingQty <= 0) {
+        const error = new Error('Este daño ya fue reinsertado o enviado completamente a Faltantes.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (quantity > pendingQty) {
+        const error = new Error(`Solo quedan ${pendingQty} unidad(es) dañada(s) disponibles para enviar a Faltantes.`);
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const now = new Date().toISOString();
+      line.damageDiscardedToMissingQty = discardedBefore + quantity;
+      line.damageDiscardedToMissingAt = now;
+      line.damageDiscardedToMissingByName = userName;
+      line.damageDiscardedToMissingByRole = userRole;
+      line.damageDiscardedToMissingHistory = Array.isArray(line.damageDiscardedToMissingHistory)
+        ? line.damageDiscardedToMissingHistory
+        : [];
+      line.damageDiscardedToMissingHistory.unshift({ quantity, discardedAt: now, discardedByName: userName, discardedByRole: userRole });
+
+      responseData = {
+        rentalId: rental.id,
+        reportKind,
+        reportIndex,
+        movedQuantity: quantity,
+        remainingDamageQty: pendingQty - quantity,
+      };
+      return state;
+    });
+
+    await sendJsonPayload(req, res, {
+      ...(responseData ?? {}),
+      revision: result?.revision ?? null,
+      version: result?.version ?? null,
+      updatedAt: result?.updatedAt ?? null,
+    });
+  } catch (error) {
+    if (error?.statusCode) { res.status(error.statusCode).json({ error: error.message }); return; }
     next(error);
   }
 });

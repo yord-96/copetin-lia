@@ -70,6 +70,8 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
   const [repairQuantity, setRepairQuantity] = useState('1');
   const [repairNote, setRepairNote] = useState('');
   const [processingRepair, setProcessingRepair] = useState(false);
+  const [discardDialog, setDiscardDialog] = useState(null);
+  const [processingDiscard, setProcessingDiscard] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [feedbackType, setFeedbackType] = useState('ok');
 
@@ -153,6 +155,13 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
     setFeedback('');
   };
 
+  const openDiscardDialog = (row) => {
+    setOpenMenuId(null);
+    setMenuPosition(null);
+    setDiscardDialog(row);
+    setFeedback('');
+  };
+
   const toggleRowMenu = (event, row) => {
     const button = event.currentTarget;
     if (openMenuId === row.id) {
@@ -224,6 +233,40 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
       setFeedbackType('error');
     } finally {
       setProcessingRepair(false);
+    }
+  };
+
+  const handleDiscardToMissing = async () => {
+    if (!discardDialog || processingDiscard) return;
+    const quantity = Math.max(0, Math.trunc(Number(discardDialog?.repairableQuantity ?? 0)));
+    if (quantity <= 0) {
+      setFeedback('Este daño ya no tiene unidades pendientes para descartar.');
+      setFeedbackType('error');
+      setDiscardDialog(null);
+      return;
+    }
+
+    setProcessingDiscard(true);
+    setFeedback('');
+    try {
+      await api.inventory.discardDamageToMissing({
+        rentalId: discardDialog.rentalId,
+        itemId: discardDialog.itemId,
+        reportIndex: discardDialog.reportIndex,
+        reportKind: discardDialog.reportKind,
+        quantity,
+        userName: 'Inventario',
+        userRole: 'Inventario',
+      });
+      setDiscardDialog(null);
+      setActiveView('faltante');
+      setFeedback(`${quantity} unidad(es) fueron movidas de Daños a Faltantes. El stock y los movimientos no fueron modificados.`);
+      setFeedbackType('ok');
+    } catch (error) {
+      setFeedback(error?.message || 'No se pudo mover el daño a Faltantes.');
+      setFeedbackType('error');
+    } finally {
+      setProcessingDiscard(false);
     }
   };
 
@@ -456,7 +499,12 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
                 return (
                   <tr key={row.id}>
                     <td>{formatDateTime(row.occurredAt)}</td>
-                    <td><strong>{row.itemName}</strong><small>{row.category || ''}</small>{row.lossType === 'danado' && Number(row.repairedQty ?? 0) > 0 ? <small className="inventory-loss-reinserted-note">{row.repairedQty} reinsertada(s)</small> : null}</td>
+                    <td>
+                      <strong>{row.itemName}</strong>
+                      <small>{row.category || ''}</small>
+                      {row.lossType === 'danado' && Number(row.repairedQty ?? 0) > 0 ? <small className="inventory-loss-reinserted-note">{row.repairedQty} reinsertada(s)</small> : null}
+                      {row.isDiscardedDamage ? <small className="inventory-loss-discarded-note">Descartado desde Daños</small> : null}
+                    </td>
                     <td>{row.quantity}</td>
                     <td>{formatBs(row.unitValueBs)}</td>
                     <td><strong>{formatBs(row.totalValueBs)}</strong></td>
@@ -507,22 +555,35 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
                   <small>{row.contractCode ? `Contrato ${row.contractCode}` : row.orderCode || 'Sin referencia'}</small>
                 </div>
                 <div className="inventory-loss-row-menu-body">
-                  {canReinsert ? (
-                    <button type="button" className="inventory-loss-row-action" onClick={() => openRepairDialog(row)}>
-                      <span className="inventory-loss-row-action-icon" aria-hidden="true">↺</span>
-                      <span>
-                        <strong>Reinsertar reparado</strong>
-                        <small>Devuelve al stock una unidad que ya fue reparada.</small>
-                      </span>
-                    </button>
-                  ) : row.lossType === 'danado' ? (
-                    <div className="inventory-loss-row-action is-disabled">
-                      <span className="inventory-loss-row-action-icon" aria-hidden="true">✓</span>
-                      <span>
-                        <strong>Daño ya reinsertado</strong>
-                        <small>No quedan unidades dañadas pendientes de recuperar.</small>
-                      </span>
-                    </div>
+                  {row.lossType === 'danado' ? (
+                    <>
+                      {canReinsert ? (
+                        <button type="button" className="inventory-loss-row-action" onClick={() => openRepairDialog(row)}>
+                          <span className="inventory-loss-row-action-icon" aria-hidden="true">↺</span>
+                          <span>
+                            <strong>Reinsertar reparado</strong>
+                            <small>Devuelve al stock una unidad que ya fue reparada.</small>
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="inventory-loss-row-action is-disabled">
+                          <span className="inventory-loss-row-action-icon" aria-hidden="true">✓</span>
+                          <span>
+                            <strong>Daño ya resuelto</strong>
+                            <small>No quedan unidades dañadas pendientes de recuperar.</small>
+                          </span>
+                        </div>
+                      )}
+                      {canReinsert ? (
+                        <button type="button" className="inventory-loss-row-action is-discard" onClick={() => openDiscardDialog(row)}>
+                          <span className="inventory-loss-row-action-icon" aria-hidden="true">→</span>
+                          <span>
+                            <strong>Enviar a Faltantes</strong>
+                            <small>Marca el daño como irreparable y lo mueve solo a la vista de Faltantes.</small>
+                          </span>
+                        </button>
+                      ) : null}
+                    </>
                   ) : (
                     <div className="inventory-loss-row-action is-disabled is-missing">
                       <span className="inventory-loss-row-action-icon" aria-hidden="true">!</span>
@@ -627,6 +688,51 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
               <button type="submit" className="primary-button" disabled={processingRepair}>{processingRepair ? 'Reinsertando...' : 'Confirmar reinserción'}</button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {discardDialog ? (
+        <div className="reset-modal-backdrop inventory-repair-backdrop" onClick={() => !processingDiscard && setDiscardDialog(null)}>
+          <div className="reset-modal inventory-repair-modal inventory-discard-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="inventory-repair-head inventory-discard-head">
+              <div className="inventory-repair-icon inventory-discard-icon" aria-hidden="true">→</div>
+              <div>
+                <span>DESCARTE DE INVENTARIO</span>
+                <h3>Enviar daño a Faltantes</h3>
+                <p>Úsalo cuando el ítem dañado ya no puede repararse ni reinsertarse.</p>
+              </div>
+              <button type="button" className="inventory-repair-close" aria-label="Cerrar" disabled={processingDiscard} onClick={() => setDiscardDialog(null)}>×</button>
+            </div>
+
+            <div className="inventory-repair-item">
+              <div>
+                <span>Ítem</span>
+                <strong>{discardDialog.itemName}</strong>
+                <small>{discardDialog.category || ''}</small>
+              </div>
+              <div>
+                <span>Contrato</span>
+                <strong>{discardDialog.contractCode || '-'}</strong>
+                <small>{discardDialog.orderCode || ''}</small>
+              </div>
+            </div>
+
+            <div className="inventory-repair-summary">
+              <div><span>Daño registrado</span><strong>{discardDialog.quantity}</strong></div>
+              <div><span>Ya reinsertado</span><strong>{discardDialog.repairedQty ?? 0}</strong></div>
+              <div className="is-discard"><span>Pasará a faltante</span><strong>{discardDialog.repairableQuantity}</strong></div>
+            </div>
+
+            <div className="inventory-repair-notice inventory-discard-notice">
+              <strong>Este cambio solo reclasifica este kardex</strong>
+              <span>No se incrementará ni descontará stock, no se crearán movimientos y no cambiará ningún otro estado. El descuento de inventario que ya existe se conserva exactamente como está.</span>
+            </div>
+
+            <div className="reset-modal-actions inventory-repair-actions">
+              <button type="button" className="ghost-button" disabled={processingDiscard} onClick={() => setDiscardDialog(null)}>Cancelar</button>
+              <button type="button" className="primary-button inventory-discard-confirm" disabled={processingDiscard} onClick={handleDiscardToMissing}>{processingDiscard ? 'Moviendo...' : 'Confirmar y enviar a Faltantes'}</button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

@@ -72992,3 +72992,56 @@ button.inventory-loss-row-action:hover {
     grid-column: auto;
   }
 }
+
+
+/* Reclasificación visual de daño irreparable a faltante */
+.inventory-loss-row-action.is-discard {
+  margin-top: .28rem;
+}
+button.inventory-loss-row-action.is-discard:hover {
+  background: #fff5f3;
+}
+.inventory-loss-row-action.is-discard .inventory-loss-row-action-icon {
+  background: #fff0ed;
+  color: #c64d2f;
+}
+.inventory-loss-discarded-note {
+  color: #b44b32 !important;
+  font-weight: 800;
+}
+.inventory-discard-head {
+  background: linear-gradient(180deg, #fffaf8, #fff5f2);
+}
+.inventory-discard-head span {
+  color: #c64d2f;
+}
+.inventory-discard-icon {
+  background: #ffe9e3;
+  color: #c64d2f;
+}
+.inventory-repair-summary .is-discard {
+  border-color: #f0c7bb;
+  background: #fff6f3;
+}
+.inventory-repair-summary .is-discard strong {
+  color: #b74328;
+}
+.inventory-discard-notice {
+  border-color: #f0d2ca;
+  border-left-color: #c64d2f;
+  background: #fff8f6;
+}
+.inventory-discard-notice strong {
+  color: #9e3e28;
+}
+.inventory-discard-notice span {
+  color: #765d57;
+}
+.inventory-discard-confirm {
+  background: #c64d2f;
+  border-color: #c64d2f;
+}
+.inventory-discard-confirm:hover:not(:disabled) {
+  background: #ad3f25;
+  border-color: #ad3f25;
+}
