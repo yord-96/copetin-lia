@@ -154,17 +154,11 @@ const StableServiceOrdersSection = memo(ServiceOrdersSection, areServiceOrdersPr
 
 const DuckLoadingView = () => (
   <div className="duck-loading-view" role="status" aria-label="Cargando">
-    <video
+    <img
       className="duck-loading-video"
-      src="/video%20carga/duck%203.mp4"
-      autoPlay
-      loop
-      muted
-      playsInline
-      preload="metadata"
-      controls={false}
-      disablePictureInPicture
-      tabIndex={-1}
+      src="/imagenes/pato-baile.gif"
+      alt=""
+      draggable="false"
       aria-hidden="true"
     />
   </div>
