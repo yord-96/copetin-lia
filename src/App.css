@@ -73352,6 +73352,13 @@ button.inventory-loss-row-action.is-discard:hover {
   gap: 12px;
 }
 
+.accounting-bigcash-view .daily-report-sectors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
 .accounting-bigcash-view .daily-overview-card {
   position: relative;
   overflow: hidden;
@@ -73393,6 +73400,10 @@ button.inventory-loss-row-action.is-discard:hover {
 .accounting-bigcash-view .daily-overview-card.net.negative strong { color: #c44b2d; }
 
 .accounting-bigcash-view .daily-sector {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  height: 100%;
   padding: 0;
   overflow: hidden;
 }
@@ -73522,6 +73533,14 @@ button.inventory-loss-row-action.is-discard:hover {
   border-radius: 0;
 }
 
+.accounting-bigcash-view .daily-report-sectors .daily-sector-breakdowns {
+  grid-template-columns: 1fr;
+}
+
+.accounting-bigcash-view .daily-report-sectors .daily-report-table-wrap {
+  overflow: auto;
+}
+
 .accounting-bigcash-view .daily-report-table {
   table-layout: fixed;
   min-width: 1180px;
@@ -73595,6 +73614,12 @@ button.inventory-loss-row-action.is-discard:hover {
   white-space: nowrap;
 }
 
+@media (max-width: 1380px) {
+  .accounting-bigcash-view .daily-report-sectors {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1100px) {
   .accounting-bigcash-view .daily-report-head,
   .accounting-bigcash-view .daily-sector-header {
@@ -73612,7 +73637,8 @@ button.inventory-loss-row-action.is-discard:hover {
 
 @media (max-width: 760px) {
   .accounting-bigcash-view .daily-report-overview,
-  .accounting-bigcash-view .daily-sector-breakdowns {
+  .accounting-bigcash-view .daily-sector-breakdowns,
+  .accounting-bigcash-view .daily-report-sectors {
     grid-template-columns: 1fr;
   }
   .accounting-bigcash-view .daily-report-date-control {

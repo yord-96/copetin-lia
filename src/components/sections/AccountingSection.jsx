@@ -7519,6 +7519,7 @@ function AccountingSection({
               <article className={`daily-overview-card net ${dailyNetBs < 0 ? 'negative' : ''}`}><small>Resultado neto</small><strong>{formatBs(dailyNetBs)}</strong><span>Ingresos − egresos</span></article>
             </section>
 
+            <section className="daily-report-sectors">
             <article className="bigcash-card daily-sector income-sector">
               <header className="daily-sector-header">
                 <div>
@@ -7618,6 +7619,7 @@ function AccountingSection({
                 </table>
               </div>
             </article>
+            </section>
           </section>
         ) : null}
         {vipTopUpModalOpen ? (
