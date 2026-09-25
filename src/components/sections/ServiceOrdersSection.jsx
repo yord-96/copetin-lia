@@ -7314,25 +7314,29 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       return;
     }
     const parsed = Math.max(1, parseIntegerInput(cleanedValue, 1));
+    // Una vez agregado el combo, cada componente debe seguir siendo editable en
+    // el contrato. Antes se redistribuian obligatoriamente las unidades del slot
+    // para que coincidieran con la configuracion original del combo; con un solo
+    // producto en el slot eso hacia que + / - parecieran bloqueados (por ejemplo,
+    // 1 siempre volvia a 1). Conservamos el precio y la cantidad de paquetes del
+    // combo, pero permitimos ajustar la cantidad operativa real del componente.
+    // La validacion de disponibilidad/proveedor que ya usa el editor se encarga
+    // de advertir cualquier faltante tanto al crear como al editar.
     if (draftLine?.comboId && draftLine.comboLineKey) {
       setDraft((current) => ({
         ...current,
-        items: (() => {
-          const siblings = current.items.filter((line) => (
-            line.comboLineKey === draftLine.comboLineKey
-            && Number(line.comboRuleIndex) === Number(draftLine.comboRuleIndex)
-          ));
-          const comboQty = Math.max(1, Math.trunc(Number(draftLine.comboQuantity ?? 1)));
-          const requiredPerCombo = Math.max(1, Math.trunc(Number(draftLine.comboComponentQuantity ?? 1)));
-          const requiredUnits = comboQty * requiredPerCombo;
-          const editedLineKey = draftLine.lineKey ?? draftLine.itemId;
-          const siblingIds = siblings.map((line) => line.lineKey ?? line.itemId);
-          const distribution = distributeComboUnits({ requiredUnits, selectedIds: siblingIds, lockedId: editedLineKey, lockedQuantity: parsed });
-          return current.items.map((line) => {
-            if (line.comboLineKey !== draftLine.comboLineKey || Number(line.comboRuleIndex) !== Number(draftLine.comboRuleIndex)) return line;
-            return { ...line, quantity: distribution[line.lineKey ?? line.itemId] ?? line.quantity };
-          });
-        })(),
+        items: current.items.map((line) => (
+          (line.lineKey ?? line.itemId) === lineKeyOrItemId
+            ? {
+              ...line,
+              quantity: parsed,
+              grossLineTotalBs: undefined,
+              // El componente que porta el precio sigue cobrando el valor del
+              // combo; cambiar sus unidades fisicas no multiplica el combo.
+              lineTotalBs: Number(line.lineTotalBs ?? 0),
+            }
+            : line
+        )),
       }));
       return;
     }
