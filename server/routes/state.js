@@ -6475,12 +6475,23 @@ const getAccountingAccountDescriptor = (paymentMethod, paymentAccount) => {
   };
 };
 
+const ACCOUNTING_TIME_ZONE = 'America/La_Paz';
+const accountingDateFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ACCOUNTING_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
 const accountingDateKey = (value) => {
   const text = String(value ?? '').trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  if (!text) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const parsed = new Date(value ?? '');
   if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toISOString().slice(0, 10);
+  const parts = accountingDateFormatter.formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return map.year && map.month && map.day ? `${map.year}-${map.month}-${map.day}` : '';
 };
 
 router.get('/__copetin_db/accounting/accounts-ledger', async (req, res, next) => {
@@ -6557,6 +6568,7 @@ router.get('/__copetin_db/accounting/accounts-ledger', async (req, res, next) =>
     });
 
     const filtered = allRows
+      .filter((movement) => !movement?.deletedAt && !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
       .filter((movement) => accountKey === 'all' || movement.accountKey === accountKey)
       .filter((movement) => {
         const dateKey = accountingDateKey(movement?.createdAt);
@@ -6659,6 +6671,7 @@ router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
             const movement = entry?.cashMovementId
               ? movementById.get(String(entry.cashMovementId))
               : null;
+            if (movement?.voidedAt || String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado') return;
             const descriptor = getAccountingAccountDescriptor(
               entry?.paymentMethod ?? movement?.paymentMethod,
               entry?.paymentAccount ?? movement?.paymentAccount,
@@ -6690,6 +6703,7 @@ router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
       });
 
     movements
+      .filter((movement) => !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
       .filter((movement) => String(movement?.receiptCode ?? movement?.receipt ?? '').trim())
       .forEach((movement) => {
         const descriptor = getAccountingAccountDescriptor(movement?.paymentMethod, movement?.paymentAccount);

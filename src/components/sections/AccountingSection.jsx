@@ -269,15 +269,24 @@ const groupReturnIssuesByContract = (rows) => {
     .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
 };
 
+const ACCOUNTING_TIME_ZONE = 'America/La_Paz';
+
 const getDateKey = (value) => {
   const rawValue = String(value ?? '').trim();
   if (!rawValue) return '';
-  // Las fechas comerciales YYYY-MM-DD no tienen zona horaria. Convertirlas con
-  // new Date() puede moverlas al dia anterior segun el huso horario del navegador.
+  // Una fecha comercial pura no tiene zona horaria y debe conservarse tal cual.
   if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return rawValue;
   const parsed = new Date(rawValue);
   if (Number.isNaN(parsed.getTime())) return '';
-  return getInputDate(parsed);
+  // Caja Grande usa el día comercial de Bolivia: 00:00:00 a 23:59:59.
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ACCOUNTING_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return map.year && map.month && map.day ? `${map.year}-${map.month}-${map.day}` : '';
 };
 
 const getHourLabel = (value) => {
@@ -669,6 +678,7 @@ function AccountingSection({
       issues: { dateFrom: '', dateTo: '' },
       prepaid: { dateFrom: '', dateTo: '' },
       movements: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
+      voided: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
     };
   });
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
@@ -1454,6 +1464,7 @@ function AccountingSection({
   const filteredBigCashRows = useMemo(() => {
     const text = bigCashQuery.trim().toLowerCase();
     return bigCashMovementRows.filter((movement) => {
+      if (isVoidedCashMovement(movement)) return false;
       const dateKey = getDateKey(movement.createdAt);
       if (bigCashMovementRange.dateFrom && dateKey < bigCashMovementRange.dateFrom) return false;
       if (bigCashMovementRange.dateTo && dateKey > bigCashMovementRange.dateTo) return false;
@@ -1474,6 +1485,28 @@ function AccountingSection({
       ].some((value) => String(value ?? '').toLowerCase().includes(text));
     });
   }, [bigCashMovementRange, bigCashMovementRows, bigCashQuery, bigCashTypeFilter, getMovementReference]);
+
+  const voidedBigCashRows = useMemo(() => {
+    const range = bigCashWorkspaceRanges.voided ?? {};
+    const text = normalizeText(bigCashWorkspaceQuery);
+    return bigCashMovementRows.filter((movement) => {
+      if (!isVoidedCashMovement(movement)) return false;
+      const dateKey = getDateKey(movement.createdAt);
+      if (range.dateFrom && (!dateKey || dateKey < range.dateFrom)) return false;
+      if (range.dateTo && (!dateKey || dateKey > range.dateTo)) return false;
+      if (!text) return true;
+      return normalizeText([
+        movement.description,
+        movement.receipt,
+        movement.receiptCode,
+        movement.responsible,
+        movement.createdBy,
+        movement.voidedBy,
+        movement.voidReason,
+        getMovementReference(movement),
+      ].filter(Boolean).join(' ')).includes(text);
+    });
+  }, [bigCashMovementRows, bigCashWorkspaceQuery, bigCashWorkspaceRanges.voided, getMovementReference]);
 
   const periodBigCashRows = useMemo(
     () => bigCashMovementRows.filter((movement) => {
@@ -5486,6 +5519,8 @@ function AccountingSection({
       columns: [['Contrato', (r) => r.contractCode || '-'], ['OS', (r) => r.orderCode || '-'], ['Cliente', (r) => r.customerName || '-'], ['Responsable', (r) => r.responsibleName || '-'], ['Fecha', (r) => formatDate(r.returnedAt || r.createdAt)], ['Ítems', (r) => toNumber(r.itemCount || r.items?.length)], ['Daños/faltantes', (r) => toNumber(r.totalAffectedQty || r.affectedQty)], ['Monto', (r) => toNumber(r.pendingBs || r.settledBs || r.totalBs)], ['Estado', () => returnIssuesView === 'pending' ? 'Pendiente' : 'Liquidado']], range: bigCashWorkspaceRanges.issues };
     if (section === 'prepaid') return { title: 'Prepago VIP', subtitle: 'Movimientos de crédito prepago del período.', rows: visiblePrepaidRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cliente', (r) => r.customerName || '-'], ['Movimiento', (r) => r.description || '-'], ['Contrato / Orden', (r) => r.reference || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Saldo', (r) => toNumber(r.balanceAfterBs)]], range: bigCashWorkspaceRanges.prepaid };
+    if (section === 'voided') return { title: 'Movimientos anulados de Caja Grande', subtitle: 'Historial separado de movimientos anulados.', rows: voidedBigCashRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Monto original', (r) => Math.abs(toNumber(r.amountBs))], ['Motivo anulación', (r) => r.voidReason || '-']], range: bigCashWorkspaceRanges.voided };
     return { title: 'Movimientos de Caja Grande', subtitle: 'Libro de movimientos según filtros actuales.', rows: filteredBigCashRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Tipo', (r) => r.category || r.type || '-'], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receipt || '-'], ['Monto', (r) => toNumber(r.amountBs)]], range: bigCashWorkspaceRanges.movements };
   };
@@ -6276,6 +6311,7 @@ function AccountingSection({
             ['issues', 'Daños y faltantes', returnIssueRows.length],
             ['prepaid', 'Prepago VIP', prepaidLedgerRows.length],
             ['movements', 'Movimientos', filteredBigCashRows.length],
+            ['voided', 'Anulados', voidedBigCashRows.length],
           ].map(([id, label, count]) => (
             <button
               key={id}
@@ -7272,6 +7308,54 @@ function AccountingSection({
           </article>
 
         </section>
+        ) : null}
+
+        {bigCashWorkspaceTab === 'voided' ? (
+          <section className="bigcash-operations-grid">
+            <article className="bigcash-card bigcash-movements">
+              <header>
+                <div>
+                  <h3><span className="bigcash-title-icon orange"><MiniIcon kind="info" /></span>Movimientos anulados</h3>
+                  <p>Los anulados quedan fuera de las búsquedas y totales operativos normales. Aquí se conserva su trazabilidad.</p>
+                </div>
+              </header>
+              {renderBigCashWorkspaceSearch('Buscar concepto, contrato, recibo, usuario o motivo...', 'voided', 'Fecha original del movimiento', voidedBigCashRows.length, 'resultados')}
+              <div className="bigcash-table-wrap">
+                <table className="accounting-table bigcash-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha</th>
+                      <th>Concepto</th>
+                      <th>Referencia</th>
+                      <th>Método</th>
+                      <th>Monto original</th>
+                      <th>Recibo</th>
+                      <th>Anulado por</th>
+                      <th>Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {voidedBigCashRows.map((movement) => {
+                      const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
+                      return (
+                        <tr key={movement.id} className="cash-row-voided">
+                          <td><strong style={{ display: 'block' }}>{formatDate(movement.createdAt)}</strong><small style={{ display: 'block' }}>{getHourLabel(movement.createdAt)}</small></td>
+                          <td><strong>{movement.description || movement.category || movement.type || 'Movimiento'}</strong></td>
+                          <td>{getMovementReference(movement)}</td>
+                          <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
+                          <td className="amount">{formatBs(Math.abs(toNumber(movement.amountBs)))}</td>
+                          <td>{movement.receiptCode || movement.receipt || '-'}</td>
+                          <td><span className="bigcash-user-label">{movement.voidedBy || getMovementUserLabel(movement)}</span></td>
+                          <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{movement.voidReason || 'Sin motivo registrado'}</td>
+                        </tr>
+                      );
+                    })}
+                    {voidedBigCashRows.length === 0 ? <tr><td colSpan={8}><p className="status">No hay movimientos anulados en este período.</p></td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </section>
         ) : null}
         {vipTopUpModalOpen ? (
           <div className="bigcash-report-backdrop" onClick={() => !vipTopUpSubmitting && setVipTopUpModalOpen(false)}>
