@@ -73528,22 +73528,23 @@ button.inventory-loss-row-action.is-discard:hover {
 
 .accounting-bigcash-view .daily-report-table {
   table-layout: fixed;
-  min-width: 1820px;
+  min-width: 1960px;
   width: 100%;
 }
 
 .accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 110px; }
 .accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 70px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 24%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 23%; }
 .accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 160px; }
 .accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 100px; }
 .accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 145px; }
 .accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 120px; }
 .accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 120px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 130px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 135px; }
 .accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 130px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 135px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 110px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 130px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 135px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 110px; }
 
 .accounting-bigcash-view .daily-report-table thead th {
   position: sticky;
