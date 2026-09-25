@@ -7320,8 +7320,18 @@ function AccountingSection({
                 </div>
               </header>
               {renderBigCashWorkspaceSearch('Buscar concepto, contrato, recibo, usuario o motivo...', 'voided', 'Fecha original del movimiento', voidedBigCashRows.length, 'resultados')}
-              <div className="bigcash-table-wrap">
-                <table className="accounting-table bigcash-table">
+              <div className="bigcash-table-wrap bigcash-voided-table-wrap">
+                <table className="accounting-table bigcash-table bigcash-voided-table">
+                  <colgroup>
+                    <col className="voided-col-date" />
+                    <col className="voided-col-concept" />
+                    <col className="voided-col-reference" />
+                    <col className="voided-col-method" />
+                    <col className="voided-col-amount" />
+                    <col className="voided-col-receipt" />
+                    <col className="voided-col-user" />
+                    <col className="voided-col-reason" />
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Fecha</th>
@@ -7331,22 +7341,29 @@ function AccountingSection({
                       <th>Monto original</th>
                       <th>Recibo</th>
                       <th>Anulado por</th>
-                      <th>Motivo</th>
+                      <th>Motivo de anulación</th>
                     </tr>
                   </thead>
                   <tbody>
                     {voidedBigCashRows.map((movement) => {
                       const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
+                      const movementLabel = movement.description || movement.category || movement.type || 'Movimiento';
                       return (
-                        <tr key={movement.id} className="cash-row-voided">
-                          <td><strong style={{ display: 'block' }}>{formatDate(movement.createdAt)}</strong><small style={{ display: 'block' }}>{getHourLabel(movement.createdAt)}</small></td>
-                          <td><strong>{movement.description || movement.category || movement.type || 'Movimiento'}</strong></td>
-                          <td>{getMovementReference(movement)}</td>
+                        <tr key={movement.id} className="bigcash-voided-row">
+                          <td className="voided-date-cell">
+                            <strong>{formatDate(movement.createdAt)}</strong>
+                            <small>{getHourLabel(movement.createdAt)}</small>
+                          </td>
+                          <td className="voided-concept-cell">
+                            <span className="voided-status-badge">Anulado</span>
+                            <strong title={movementLabel}>{movementLabel}</strong>
+                          </td>
+                          <td><span className="voided-reference">{getMovementReference(movement)}</span></td>
                           <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
-                          <td className="amount">{formatBs(Math.abs(toNumber(movement.amountBs)))}</td>
-                          <td>{movement.receiptCode || movement.receipt || '-'}</td>
-                          <td><span className="bigcash-user-label">{movement.voidedBy || getMovementUserLabel(movement)}</span></td>
-                          <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{movement.voidReason || 'Sin motivo registrado'}</td>
+                          <td className="amount voided-amount">{formatBs(Math.abs(toNumber(movement.amountBs)))}</td>
+                          <td><span className="voided-receipt">{movement.receiptCode || movement.receipt || '-'}</span></td>
+                          <td><span className="bigcash-user-label voided-user">{movement.voidedBy || getMovementUserLabel(movement)}</span></td>
+                          <td><div className="voided-reason-box">{movement.voidReason || 'Sin motivo registrado'}</div></td>
                         </tr>
                       );
                     })}

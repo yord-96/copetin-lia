@@ -73087,3 +73087,165 @@ button.inventory-loss-row-action.is-discard:hover {
   background: #ad3f25;
   border-color: #ad3f25;
 }
+
+/* Caja Grande · historial de movimientos anulados */
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table-wrap {
+  width: 100% !important;
+  max-height: clamp(30rem, calc(100dvh - 25rem), 48rem) !important;
+  margin-top: 0.9rem;
+  overflow: auto;
+  border: 1px solid #e3e8f1;
+  border-radius: 0.85rem;
+  background: #fff;
+  scrollbar-gutter: stable;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table {
+  width: 100% !important;
+  min-width: 1180px !important;
+  table-layout: fixed !important;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-date { width: 10%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-concept { width: 25%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-reference { width: 9%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-method { width: 10%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-amount { width: 11%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-receipt { width: 9%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-user { width: 11%; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table col.voided-col-reason { width: 15%; }
+
+/* Anula las reglas nth-child de la tabla normal de Movimientos (10 columnas). */
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table th,
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table td {
+  width: auto !important;
+  display: table-cell !important;
+  padding: 0.9rem 0.72rem !important;
+  vertical-align: middle !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  text-decoration: none !important;
+  opacity: 1 !important;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #123a75 !important;
+  color: #fff !important;
+  border-bottom: 0 !important;
+  font-size: 0.75rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table tbody td {
+  background: #fff !important;
+  border-bottom: 1px solid #e8edf5 !important;
+  color: #1d3154 !important;
+  font-size: 0.84rem !important;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table tbody tr:nth-child(even) td {
+  background: #fbfcff !important;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table tbody tr:hover td {
+  background: #f5f8fd !important;
+}
+
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table tbody tr.bigcash-voided-row td:first-child {
+  box-shadow: inset 3px 0 0 #e45a63;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-date-cell strong {
+  display: block;
+  color: #0b2f68 !important;
+  font-size: 0.88rem !important;
+  white-space: nowrap;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-date-cell small {
+  display: block !important;
+  margin: 0.18rem 0 0 !important;
+  color: #7a879c !important;
+  font-size: 0.75rem !important;
+  white-space: nowrap;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-concept-cell {
+  min-width: 0;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-concept-cell strong {
+  display: block;
+  margin-top: 0.36rem;
+  color: #142f5f !important;
+  font-size: 0.86rem !important;
+  font-weight: 850 !important;
+  line-height: 1.3 !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.accounting-bigcash-view .voided-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.12rem 0.48rem;
+  border: 1px solid #fecdd3;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-reference,
+.accounting-bigcash-view .bigcash-voided-table .voided-receipt {
+  display: inline-block;
+  color: #425776;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-amount {
+  color: #122f62 !important;
+  font-size: 0.9rem !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-user {
+  color: #314b72 !important;
+  font-size: 0.8rem !important;
+  font-weight: 850 !important;
+  line-height: 1.25 !important;
+}
+
+.accounting-bigcash-view .bigcash-voided-table .voided-reason-box {
+  padding: 0.55rem 0.62rem;
+  border: 1px solid #f3d5d8;
+  border-radius: 0.6rem;
+  background: #fff8f8;
+  color: #7d2d39;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.32;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+@media (max-width: 900px) {
+  .accounting-bigcash-view.bigcash-balanced-layout .bigcash-movements .bigcash-voided-table {
+    min-width: 1040px !important;
+  }
+}
