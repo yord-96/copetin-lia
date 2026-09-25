@@ -679,6 +679,7 @@ function AccountingSection({
       prepaid: { dateFrom: '', dateTo: '' },
       movements: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
       voided: { dateFrom: recent.dateFrom, dateTo: recent.dateTo },
+      daily: { dateFrom: today, dateTo: today },
     };
   });
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
@@ -1507,6 +1508,116 @@ function AccountingSection({
       ].filter(Boolean).join(' ')).includes(text);
     });
   }, [bigCashMovementRows, bigCashWorkspaceQuery, bigCashWorkspaceRanges.voided, getMovementReference]);
+
+  const dailyReportDate = bigCashWorkspaceRanges.daily?.dateFrom || getInputDate();
+  const dailyReportRows = useMemo(() => (
+    bigCashMovementRows
+      .filter((movement) => (
+        !isVoidedCashMovement(movement)
+        && !isOpeningCashMovement(movement)
+        && getDateKey(movement.createdAt) === dailyReportDate
+        && Math.abs(toNumber(movement.amountBs)) > 0.0001
+      ))
+      .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0))
+  ), [bigCashMovementRows, dailyReportDate]);
+
+  const getDailyMovementNature = useCallback((movement) => {
+    const amount = toNumber(movement?.amountBs);
+    const tag = normalizeText(movement?.accountingTag);
+    const category = normalizeText(movement?.category);
+    const type = normalizeText(movement?.type);
+    const target = normalizeText(movement?.collectionTarget);
+
+    if (amount > 0) {
+      if (isGuaranteeMovement(movement) || tag === 'validated_guarantee' || tag === 'contract_guarantee' || target === 'guarantee') {
+        return { key: 'guarantee', label: 'Garantías recibidas' };
+      }
+      if (tag === 'contract_damage_collection' || category.includes('danos_faltantes') || target === 'damage') {
+        return { key: 'damage', label: 'Daños y faltantes cobrados' };
+      }
+      if (tag === 'transport_revenue' || category === 'transporte_cobrado' || type === 'ingreso_transporte_cliente' || target === 'transport') {
+        return { key: 'transport', label: 'Transporte cobrado' };
+      }
+      if (tag === 'contract_deposit_receipt' || category === 'abono_contrato' || target === 'balance') {
+        return { key: 'deposit', label: 'Abonos / anticipos' };
+      }
+      if ([
+        'initial_rental_payment',
+        'contract_items_collection',
+        'contract_economic_collection',
+        'contract_extra_collection',
+        'contract_mixed_collection',
+      ].includes(tag) || category.includes('cobro_contrato') || category.includes('cobro_items_contrato') || target === 'rental' || target === 'mixed') {
+        return { key: 'rental', label: 'Alquileres / contratos' };
+      }
+      if (type === 'ingreso_manual' || category === 'ingreso_manual') {
+        return { key: 'manual_income', label: 'Ingresos manuales' };
+      }
+      return { key: 'other_income', label: 'Otros ingresos' };
+    }
+
+    if (isConfirmedGuaranteeReturnMovement(movement)) {
+      return { key: 'guarantee_refund', label: 'Devoluciones de garantía' };
+    }
+    if (movement?.isInternalTransfer || type === 'transferencia_salida_caja_chica' || category === 'reposicion_caja_chica') {
+      return { key: 'petty_transfer', label: 'Reposición Caja Chica' };
+    }
+    if (tag === 'transport_expense' || category.includes('transporte')) {
+      return { key: 'transport_expense', label: 'Gastos de transporte' };
+    }
+    if (type === 'egreso_manual') {
+      return { key: 'manual_out', label: 'Egresos manuales' };
+    }
+    return { key: 'other_out', label: 'Otros egresos' };
+  }, []);
+
+  const dailyIncomeRows = useMemo(
+    () => dailyReportRows.filter((movement) => toNumber(movement.amountBs) > 0),
+    [dailyReportRows],
+  );
+  const dailyExpenseRows = useMemo(
+    () => dailyReportRows.filter((movement) => toNumber(movement.amountBs) < 0),
+    [dailyReportRows],
+  );
+  const dailyIncomeBs = useMemo(() => sumBy(dailyIncomeRows, (movement) => movement.amountBs), [dailyIncomeRows]);
+  const dailyExpenseBs = useMemo(() => Math.abs(sumBy(dailyExpenseRows, (movement) => movement.amountBs)), [dailyExpenseRows]);
+  const dailyNetBs = Number((dailyIncomeBs - dailyExpenseBs).toFixed(2));
+
+  const summarizeDailyRows = useCallback((rows) => {
+    const nature = new Map();
+    const methods = new Map();
+    rows.forEach((movement) => {
+      const amount = Math.abs(toNumber(movement.amountBs));
+      const natureMeta = getDailyMovementNature(movement);
+      const natureRow = nature.get(natureMeta.key) ?? { ...natureMeta, amountBs: 0, count: 0 };
+      natureRow.amountBs += amount;
+      natureRow.count += 1;
+      nature.set(natureMeta.key, natureRow);
+
+      const methodMeta = getPaymentMethodMeta(movement.paymentMethod);
+      const methodKey = normalizePaymentMethod(movement.paymentMethod);
+      const account = methodKey === 'qr' ? String(movement?.paymentAccount ?? '').trim() : '';
+      const key = `${methodKey}::${normalizeText(account)}`;
+      const methodRow = methods.get(key) ?? {
+        key,
+        label: methodMeta.label,
+        className: methodMeta.className,
+        account,
+        amountBs: 0,
+        count: 0,
+      };
+      methodRow.amountBs += amount;
+      methodRow.count += 1;
+      methods.set(key, methodRow);
+    });
+    return {
+      nature: [...nature.values()].map((row) => ({ ...row, amountBs: Number(row.amountBs.toFixed(2)) })).sort((a, b) => b.amountBs - a.amountBs),
+      methods: [...methods.values()].map((row) => ({ ...row, amountBs: Number(row.amountBs.toFixed(2)) })).sort((a, b) => b.amountBs - a.amountBs),
+    };
+  }, [getDailyMovementNature]);
+
+  const dailyIncomeSummary = useMemo(() => summarizeDailyRows(dailyIncomeRows), [dailyIncomeRows, summarizeDailyRows]);
+  const dailyExpenseSummary = useMemo(() => summarizeDailyRows(dailyExpenseRows), [dailyExpenseRows, summarizeDailyRows]);
 
   const periodBigCashRows = useMemo(
     () => bigCashMovementRows.filter((movement) => {
@@ -5519,6 +5630,8 @@ function AccountingSection({
       columns: [['Contrato', (r) => r.contractCode || '-'], ['OS', (r) => r.orderCode || '-'], ['Cliente', (r) => r.customerName || '-'], ['Responsable', (r) => r.responsibleName || '-'], ['Fecha', (r) => formatDate(r.returnedAt || r.createdAt)], ['Ítems', (r) => toNumber(r.itemCount || r.items?.length)], ['Daños/faltantes', (r) => toNumber(r.totalAffectedQty || r.affectedQty)], ['Monto', (r) => toNumber(r.pendingBs || r.settledBs || r.totalBs)], ['Estado', () => returnIssuesView === 'pending' ? 'Pendiente' : 'Liquidado']], range: bigCashWorkspaceRanges.issues };
     if (section === 'prepaid') return { title: 'Prepago VIP', subtitle: 'Movimientos de crédito prepago del período.', rows: visiblePrepaidRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cliente', (r) => r.customerName || '-'], ['Movimiento', (r) => r.description || '-'], ['Contrato / Orden', (r) => r.reference || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Saldo', (r) => toNumber(r.balanceAfterBs)]], range: bigCashWorkspaceRanges.prepaid };
+    if (section === 'daily') return { title: 'Reporte diario de Caja Grande', subtitle: `Movimientos confirmados del ${formatDate(dailyReportDate)} entre 00:00 y 23:59 (hora Bolivia).`, rows: dailyReportRows,
+      columns: [['Hora', (r) => getHourLabel(r.createdAt)], ['Sector', (r) => toNumber(r.amountBs) > 0 ? 'Ingreso diario' : 'Egreso diario'], ['Concepto', (r) => r.description || '-'], ['Clasificación', (r) => getDailyMovementNature(r).label], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodLabel(r)], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Registrado por', (r) => getMovementUserLabel(r)], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
     if (section === 'voided') return { title: 'Movimientos anulados de Caja Grande', subtitle: 'Historial separado de movimientos anulados.', rows: voidedBigCashRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Monto original', (r) => Math.abs(toNumber(r.amountBs))], ['Motivo anulación', (r) => r.voidReason || '-']], range: bigCashWorkspaceRanges.voided };
     return { title: 'Movimientos de Caja Grande', subtitle: 'Libro de movimientos según filtros actuales.', rows: filteredBigCashRows,
@@ -6312,6 +6425,7 @@ function AccountingSection({
             ['prepaid', 'Prepago VIP', prepaidLedgerRows.length],
             ['movements', 'Movimientos', filteredBigCashRows.length],
             ['voided', 'Anulados', voidedBigCashRows.length],
+            ['daily', 'Reporte diario', dailyReportRows.length],
           ].map(([id, label, count]) => (
             <button
               key={id}
@@ -7368,6 +7482,138 @@ function AccountingSection({
                       );
                     })}
                     {voidedBigCashRows.length === 0 ? <tr><td colSpan={8}><p className="status">No hay movimientos anulados en este período.</p></td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </section>
+        ) : null}
+        {bigCashWorkspaceTab === 'daily' ? (
+          <section className="bigcash-daily-report">
+            <article className="bigcash-card daily-report-head">
+              <div className="daily-report-head-copy">
+                <span>CIERRE Y CONTROL POR DÍA</span>
+                <h3><span className="bigcash-title-icon blue"><MiniIcon kind="chart" /></span>Reporte diario de Caja Grande</h3>
+                <p>Consolida únicamente movimientos confirmados del día seleccionado. Los anulados y saldos de apertura quedan fuera del reporte.</p>
+              </div>
+              <div className="daily-report-date-control">
+                <label>
+                  <small>Día del reporte</small>
+                  <input
+                    type="date"
+                    value={dailyReportDate}
+                    onChange={(event) => {
+                      const date = event.target.value || getInputDate();
+                      setBigCashWorkspaceRanges((current) => ({ ...current, daily: { dateFrom: date, dateTo: date } }));
+                    }}
+                  />
+                </label>
+                <div className="daily-report-window"><strong>00:00</strong><span>hasta</span><strong>23:59</strong><small>America/La_Paz</small></div>
+                {renderAccountingReportActions('big', 'daily', { compact: true })}
+              </div>
+            </article>
+
+            <section className="daily-report-overview" aria-label="Resumen del día">
+              <article className="daily-overview-card income"><small>Ingresos del día</small><strong>{formatBs(dailyIncomeBs)}</strong><span>{dailyIncomeRows.length} movimiento{dailyIncomeRows.length === 1 ? '' : 's'}</span></article>
+              <article className="daily-overview-card out"><small>Egresos del día</small><strong>{formatBs(dailyExpenseBs)}</strong><span>{dailyExpenseRows.length} movimiento{dailyExpenseRows.length === 1 ? '' : 's'}</span></article>
+              <article className={`daily-overview-card net ${dailyNetBs < 0 ? 'negative' : ''}`}><small>Resultado neto</small><strong>{formatBs(dailyNetBs)}</strong><span>Ingresos − egresos</span></article>
+            </section>
+
+            <article className="bigcash-card daily-sector income-sector">
+              <header className="daily-sector-header">
+                <div>
+                  <span className="daily-sector-kicker">INGRESO DIARIO</span>
+                  <h3>Dinero que ingresó a Caja Grande</h3>
+                  <p>Cobros de contratos, abonos, garantías, daños, transporte e ingresos manuales registrados entre 00:00 y 23:59.</p>
+                </div>
+                <div className="daily-sector-total"><small>Total ingresado</small><strong>{formatBs(dailyIncomeBs)}</strong></div>
+              </header>
+
+              <div className="daily-sector-breakdowns">
+                <div className="daily-breakdown-block">
+                  <h4>Por origen</h4>
+                  <div className="daily-breakdown-list">
+                    {dailyIncomeSummary.nature.map((row) => <div key={row.key}><span><strong>{row.label}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
+                    {!dailyIncomeSummary.nature.length ? <p className="status">Sin ingresos registrados este día.</p> : null}
+                  </div>
+                </div>
+                <div className="daily-breakdown-block">
+                  <h4>Por medio / cuenta receptora</h4>
+                  <div className="daily-breakdown-list">
+                    {dailyIncomeSummary.methods.map((row) => <div key={row.key}><span><strong>{row.label}{row.account ? ` · ${row.account}` : ''}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
+                    {!dailyIncomeSummary.methods.length ? <p className="status">Sin medios de ingreso para mostrar.</p> : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bigcash-table-wrap daily-report-table-wrap">
+                <table className="accounting-table bigcash-table daily-report-table">
+                  <thead><tr><th>Hora</th><th>Concepto</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Recibo</th><th>Registrado por</th><th>Ingreso</th></tr></thead>
+                  <tbody>
+                    {dailyIncomeRows.map((movement) => {
+                      const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
+                      return <tr key={movement.id}>
+                        <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
+                        <td className="daily-concept-cell"><strong>{movement.description || movement.category || movement.type || 'Ingreso'}</strong></td>
+                        <td><span className="daily-nature-pill income">{getDailyMovementNature(movement).label}</span></td>
+                        <td>{getMovementReference(movement)}</td>
+                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
+                        <td>{movement.receiptCode || movement.receipt || '-'}</td>
+                        <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
+                        <td className="amount daily-income-amount">{formatBs(toNumber(movement.amountBs))}</td>
+                      </tr>;
+                    })}
+                    {!dailyIncomeRows.length ? <tr><td colSpan={8}><p className="status">No hay ingresos confirmados para este día.</p></td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article className="bigcash-card daily-sector out-sector">
+              <header className="daily-sector-header">
+                <div>
+                  <span className="daily-sector-kicker">EGRESO DIARIO</span>
+                  <h3>Dinero que salió de Caja Grande</h3>
+                  <p>Devoluciones de garantía, reposiciones a Caja Chica y demás egresos confirmados registrados durante el día.</p>
+                </div>
+                <div className="daily-sector-total"><small>Total egresado</small><strong>{formatBs(dailyExpenseBs)}</strong></div>
+              </header>
+
+              <div className="daily-sector-breakdowns">
+                <div className="daily-breakdown-block">
+                  <h4>Por destino</h4>
+                  <div className="daily-breakdown-list">
+                    {dailyExpenseSummary.nature.map((row) => <div key={row.key}><span><strong>{row.label}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
+                    {!dailyExpenseSummary.nature.length ? <p className="status">Sin egresos registrados este día.</p> : null}
+                  </div>
+                </div>
+                <div className="daily-breakdown-block">
+                  <h4>Por medio / cuenta</h4>
+                  <div className="daily-breakdown-list">
+                    {dailyExpenseSummary.methods.map((row) => <div key={row.key}><span><strong>{row.label}{row.account ? ` · ${row.account}` : ''}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
+                    {!dailyExpenseSummary.methods.length ? <p className="status">Sin medios de egreso para mostrar.</p> : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bigcash-table-wrap daily-report-table-wrap">
+                <table className="accounting-table bigcash-table daily-report-table">
+                  <thead><tr><th>Hora</th><th>Concepto</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Recibo</th><th>Registrado por</th><th>Egreso</th></tr></thead>
+                  <tbody>
+                    {dailyExpenseRows.map((movement) => {
+                      const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
+                      return <tr key={movement.id}>
+                        <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
+                        <td className="daily-concept-cell"><strong>{movement.description || movement.category || movement.type || 'Egreso'}</strong></td>
+                        <td><span className="daily-nature-pill out">{getDailyMovementNature(movement).label}</span></td>
+                        <td>{getMovementReference(movement)}</td>
+                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
+                        <td>{movement.receiptCode || movement.receipt || '-'}</td>
+                        <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
+                        <td className="negative amount daily-out-amount">{formatBs(Math.abs(toNumber(movement.amountBs)))}</td>
+                      </tr>;
+                    })}
+                    {!dailyExpenseRows.length ? <tr><td colSpan={8}><p className="status">No hay egresos confirmados para este día.</p></td></tr> : null}
                   </tbody>
                 </table>
               </div>
