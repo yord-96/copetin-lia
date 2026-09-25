@@ -73528,23 +73528,37 @@ button.inventory-loss-row-action.is-discard:hover {
 
 .accounting-bigcash-view .daily-report-table {
   table-layout: fixed;
-  min-width: 1180px;
+  min-width: 1540px;
   width: 100%;
 }
 
-.accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 70px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 27%; }
-.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 160px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 100px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 145px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 105px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 135px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 110px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 110px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 70px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 26%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 160px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 100px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 145px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 130px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 130px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 135px; }
+.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 110px; }
 
 .accounting-bigcash-view .daily-report-table thead th {
   position: sticky;
   top: 0;
   z-index: 3;
+}
+
+.accounting-bigcash-view .daily-receipt-cell {
+  color: #17335f;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.accounting-bigcash-view .daily-extra-info-cell {
+  color: #4a5f82;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .accounting-bigcash-view .daily-time-cell strong {
