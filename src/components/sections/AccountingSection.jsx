@@ -629,6 +629,7 @@ function AccountingSection({
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
+  const [dailyReportView, setDailyReportView] = useState('income');
   const [guaranteesView, setGuaranteesView] = useState('pending');
   const [returnIssuesView, setReturnIssuesView] = useState('pending');
   const [isExportingGuarantees, setIsExportingGuarantees] = useState(false);
@@ -7519,7 +7520,26 @@ function AccountingSection({
               <article className={`daily-overview-card net ${dailyNetBs < 0 ? 'negative' : ''}`}><small>Resultado neto</small><strong>{formatBs(dailyNetBs)}</strong><span>Ingresos − egresos</span></article>
             </section>
 
-            <section className="daily-report-sectors">
+            <div className="bigcash-receivables-switch daily-report-switch" role="tablist" aria-label="Vista del reporte diario">
+              <button
+                type="button"
+                aria-selected={dailyReportView === 'income'}
+                className={dailyReportView === 'income' ? 'is-active' : ''}
+                onClick={() => setDailyReportView('income')}
+              >
+                Ingreso diario <b>{dailyIncomeRows.length}</b>
+              </button>
+              <button
+                type="button"
+                aria-selected={dailyReportView === 'out'}
+                className={dailyReportView === 'out' ? 'is-active' : ''}
+                onClick={() => setDailyReportView('out')}
+              >
+                Egreso diario <b>{dailyExpenseRows.length}</b>
+              </button>
+            </div>
+
+            {dailyReportView === 'income' ? (
             <article className="bigcash-card daily-sector income-sector">
               <header className="daily-sector-header">
                 <div>
@@ -7569,7 +7589,9 @@ function AccountingSection({
                 </table>
               </div>
             </article>
+            ) : null}
 
+            {dailyReportView === 'out' ? (
             <article className="bigcash-card daily-sector out-sector">
               <header className="daily-sector-header">
                 <div>
@@ -7619,7 +7641,7 @@ function AccountingSection({
                 </table>
               </div>
             </article>
-            </section>
+            ) : null}
           </section>
         ) : null}
         {vipTopUpModalOpen ? (
