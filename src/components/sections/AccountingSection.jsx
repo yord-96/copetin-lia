@@ -629,7 +629,6 @@ function AccountingSection({
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
-  const [dailyReportView, setDailyReportView] = useState('income');
   const [guaranteesView, setGuaranteesView] = useState('pending');
   const [returnIssuesView, setReturnIssuesView] = useState('pending');
   const [isExportingGuarantees, setIsExportingGuarantees] = useState(false);
@@ -1680,7 +1679,6 @@ function AccountingSection({
   }, [getDailyMovementNature]);
 
   const dailyIncomeSummary = useMemo(() => summarizeDailyRows(dailyIncomeRows), [dailyIncomeRows, summarizeDailyRows]);
-  const dailyExpenseSummary = useMemo(() => summarizeDailyRows(dailyExpenseRows), [dailyExpenseRows, summarizeDailyRows]);
 
   const periodBigCashRows = useMemo(
     () => bigCashMovementRows.filter((movement) => {
@@ -7582,32 +7580,12 @@ function AccountingSection({
               <article className={`daily-overview-card net ${dailyNetBs < 0 ? 'negative' : ''}`}><small>Resultado neto</small><strong>{formatBs(dailyNetBs)}</strong><span>Ingresos − egresos</span></article>
             </section>
 
-            <div className="bigcash-receivables-switch daily-report-switch" role="tablist" aria-label="Vista del reporte diario">
-              <button
-                type="button"
-                aria-selected={dailyReportView === 'income'}
-                className={dailyReportView === 'income' ? 'is-active' : ''}
-                onClick={() => setDailyReportView('income')}
-              >
-                Ingreso diario <b>{dailyIncomeRows.length}</b>
-              </button>
-              <button
-                type="button"
-                aria-selected={dailyReportView === 'out'}
-                className={dailyReportView === 'out' ? 'is-active' : ''}
-                onClick={() => setDailyReportView('out')}
-              >
-                Egreso diario <b>{dailyExpenseRows.length}</b>
-              </button>
-            </div>
-
-            {dailyReportView === 'income' ? (
             <article className="bigcash-card daily-sector income-sector">
               <header className="daily-sector-header">
                 <div>
                   <span className="daily-sector-kicker">INGRESO DIARIO</span>
                   <h3>Dinero que ingresó a Caja Grande</h3>
-                  <p>Cobros de contratos, abonos, garantías, daños, transporte e ingresos manuales registrados entre 00:00 y 23:59.</p>
+                  <p>Cobros de contratos, abonos, garantías, daños, transporte e ingresos manuales registrados entre 00:00 y 23:59. La tabla también consolida los egresos confirmados del día.</p>
                 </div>
                 <div className="daily-sector-total"><small>Total ingresado</small><strong>{formatBs(dailyIncomeBs)}</strong></div>
               </header>
@@ -7631,15 +7609,17 @@ function AccountingSection({
 
               <div className="bigcash-table-wrap daily-report-table-wrap">
                 <table className="accounting-table bigcash-table daily-report-table">
-                  <thead><tr><th>Recibo</th><th>Hora</th><th>Cliente</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Ingreso</th></tr></thead>
+                  <thead><tr><th>Recibo</th><th>Hora</th><th>Cliente</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Ingreso / egreso</th></tr></thead>
                   <tbody>
-                    {dailyIncomeRows.map((movement) => {
+                    {dailyReportRows.map((movement) => {
                       const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
+                      const movementAmount = toNumber(movement.amountBs);
+                      const isExpenseMovement = movementAmount < 0;
                       return <tr key={movement.id}>
                         <td><span className="daily-receipt-cell">{movement.receiptCode || movement.receipt || '-'}</span></td>
                         <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
                         <td className="daily-concept-cell"><strong>{getDailyCustomerName(movement)}</strong></td>
-                        <td><span className="daily-nature-pill income">{getDailyMovementNature(movement).label}</span></td>
+                        <td><span className={`daily-nature-pill ${isExpenseMovement ? 'out' : 'income'}`}>{getDailyMovementNature(movement).label}</span></td>
                         <td>{getMovementReference(movement)}</td>
                         <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
                         <td className="daily-extra-info-cell">{getDailyContractInfo(movement)}</td>
@@ -7648,72 +7628,16 @@ function AccountingSection({
                         <td className="daily-extra-info-cell">{getDailyGuaranteeRefundInfo(movement)}</td>
                         <td className="daily-extra-info-cell">{getDailyDamageInfo(movement)}</td>
                         <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
-                        <td className="amount daily-income-amount">{formatBs(toNumber(movement.amountBs))}</td>
+                        <td className={`${isExpenseMovement ? 'negative daily-out-amount' : 'daily-income-amount'} amount`}>
+                          {isExpenseMovement ? `− ${formatBs(Math.abs(movementAmount))}` : formatBs(movementAmount)}
+                        </td>
                       </tr>;
                     })}
-                    {!dailyIncomeRows.length ? <tr><td colSpan={13}><p className="status">No hay ingresos confirmados para este día.</p></td></tr> : null}
+                    {!dailyReportRows.length ? <tr><td colSpan={13}><p className="status">No hay movimientos confirmados para este día.</p></td></tr> : null}
                   </tbody>
                 </table>
               </div>
             </article>
-            ) : null}
-
-            {dailyReportView === 'out' ? (
-            <article className="bigcash-card daily-sector out-sector">
-              <header className="daily-sector-header">
-                <div>
-                  <span className="daily-sector-kicker">EGRESO DIARIO</span>
-                  <h3>Dinero que salió de Caja Grande</h3>
-                  <p>Devoluciones de garantía, reposiciones a Caja Chica y demás egresos confirmados registrados durante el día.</p>
-                </div>
-                <div className="daily-sector-total"><small>Total egresado</small><strong>{formatBs(dailyExpenseBs)}</strong></div>
-              </header>
-
-              <div className="daily-sector-breakdowns">
-                <div className="daily-breakdown-block">
-                  <h4>Por destino</h4>
-                  <div className="daily-breakdown-list">
-                    {dailyExpenseSummary.nature.map((row) => <div key={row.key}><span><strong>{row.label}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
-                    {!dailyExpenseSummary.nature.length ? <p className="status">Sin egresos registrados este día.</p> : null}
-                  </div>
-                </div>
-                <div className="daily-breakdown-block">
-                  <h4>Por medio / cuenta</h4>
-                  <div className="daily-breakdown-list">
-                    {dailyExpenseSummary.methods.map((row) => <div key={row.key}><span><strong>{row.label}{row.account ? ` · ${row.account}` : ''}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
-                    {!dailyExpenseSummary.methods.length ? <p className="status">Sin medios de egreso para mostrar.</p> : null}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bigcash-table-wrap daily-report-table-wrap">
-                <table className="accounting-table bigcash-table daily-report-table">
-                  <thead><tr><th>Recibo</th><th>Hora</th><th>Cliente</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Egreso</th></tr></thead>
-                  <tbody>
-                    {dailyExpenseRows.map((movement) => {
-                      const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
-                      return <tr key={movement.id}>
-                        <td><span className="daily-receipt-cell">{movement.receiptCode || movement.receipt || '-'}</span></td>
-                        <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
-                        <td className="daily-concept-cell"><strong>{getDailyCustomerName(movement)}</strong></td>
-                        <td><span className="daily-nature-pill out">{getDailyMovementNature(movement).label}</span></td>
-                        <td>{getMovementReference(movement)}</td>
-                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
-                        <td className="daily-extra-info-cell">{getDailyContractInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyTransportInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyGuaranteeReceivedInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyGuaranteeRefundInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyDamageInfo(movement)}</td>
-                        <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
-                        <td className="negative amount daily-out-amount">{formatBs(Math.abs(toNumber(movement.amountBs)))}</td>
-                      </tr>;
-                    })}
-                    {!dailyExpenseRows.length ? <tr><td colSpan={13}><p className="status">No hay egresos confirmados para este día.</p></td></tr> : null}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-            ) : null}
           </section>
         ) : null}
         {vipTopUpModalOpen ? (
