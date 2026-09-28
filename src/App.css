@@ -73524,44 +73524,59 @@ button.inventory-loss-row-action.is-discard:hover {
   margin: 0;
   border: 0;
   border-radius: 0;
+  overflow-x: hidden;
 }
 
 .accounting-bigcash-view .daily-report-table {
-  table-layout: fixed;
-  min-width: 1960px;
-  width: 100%;
+  table-layout: fixed !important;
+  min-width: 0 !important;
+  width: 100% !important;
 }
 
-.accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 110px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 70px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 23%; }
-.accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 160px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 100px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 145px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 120px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 120px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 135px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 130px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 130px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 135px; }
-.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 110px; }
+.accounting-bigcash-view .daily-report-table th,
+.accounting-bigcash-view .daily-report-table td {
+  padding: 10px 6px !important;
+  font-size: 11px !important;
+  line-height: 1.22 !important;
+  vertical-align: top !important;
+}
+
+.accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 7%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 5%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 15%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 9%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 6%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 9%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 7%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 6%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 8%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 8%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 8%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 8%; }
+.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 4%; }
 
 .accounting-bigcash-view .daily-report-table thead th {
   position: sticky;
   top: 0;
   z-index: 3;
+  white-space: normal !important;
+  word-break: break-word !important;
+  line-height: 1.12 !important;
+  text-align: center;
 }
 
 .accounting-bigcash-view .daily-receipt-cell {
   color: #17335f;
   font-weight: 800;
-  white-space: nowrap;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
 }
 
 .accounting-bigcash-view .daily-extra-info-cell {
   color: #4a5f82;
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
 }
 
 .accounting-bigcash-view .daily-time-cell strong {
@@ -73571,25 +73586,33 @@ button.inventory-loss-row-action.is-discard:hover {
 
 .accounting-bigcash-view .daily-concept-cell strong {
   display: block;
-  overflow: hidden;
+  overflow: visible;
   color: #17335f;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.22;
+  text-overflow: clip;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+.accounting-bigcash-view .daily-report-table .bigcash-user-label {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
 }
 
 .accounting-bigcash-view .daily-nature-pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 25px;
-  padding: 3px 8px;
+  padding: 3px 6px !important;
   border: 1px solid #dce5ef;
   border-radius: 999px;
   background: #f7f9fc;
   color: #425a7d;
-  font-size: 9px;
+  font-size: 8.5px !important;
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.05;
+  text-align: center;
 }
 
 .accounting-bigcash-view .daily-nature-pill.income {
