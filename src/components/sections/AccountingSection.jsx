@@ -1440,6 +1440,38 @@ function AccountingSection({
     return movement?.receipt || sourceId;
   }, [contractById, contractByOrderCode, contractByRentalId, rentalById]);
 
+  const getDailyCustomerName = useCallback((movement) => {
+    const directName = String(movement?.customerName ?? movement?.clientName ?? '').trim();
+    if (directName) return directName;
+
+    const linkedRental = movement?.linkedRentalId
+      ? rentalById.get(String(movement.linkedRentalId))
+      : null;
+    const sourceId = String(movement?.sourceId ?? '').trim();
+    const sourceRental = sourceId ? rentalById.get(sourceId) : null;
+    const rental = linkedRental ?? sourceRental;
+
+    const linkedContract = movement?.linkedContractId
+      ? contractById.get(String(movement.linkedContractId))
+      : null;
+    const contractFromRental = rental?.id ? contractByRentalId.get(rental.id) : null;
+    const contractFromOrder = movement?.linkedOrderCode
+      ? contractByOrderCode.get(String(movement.linkedOrderCode))
+      : null;
+    const contractFromCode = movement?.contractCode
+      ? contractByContractCode.get(getCommercialContractCode(movement.contractCode))
+      : null;
+    const contract = linkedContract ?? contractFromRental ?? contractFromOrder ?? contractFromCode;
+
+    const resolved = String(
+      contract?.customerName
+      ?? rental?.customerName
+      ?? movement?.client
+      ?? '',
+    ).trim();
+    return resolved || '—';
+  }, [contractByContractCode, contractById, contractByOrderCode, contractByRentalId, rentalById]);
+
   const getMovementUserLabel = useCallback((movement) => {
     const directUser = String(movement?.responsible || movement?.createdBy || '').trim();
     if (directUser && normalizeText(directUser) !== 'sistema') return directUser;
@@ -5662,7 +5694,7 @@ function AccountingSection({
     if (section === 'prepaid') return { title: 'Prepago VIP', subtitle: 'Movimientos de crédito prepago del período.', rows: visiblePrepaidRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cliente', (r) => r.customerName || '-'], ['Movimiento', (r) => r.description || '-'], ['Contrato / Orden', (r) => r.reference || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Saldo', (r) => toNumber(r.balanceAfterBs)]], range: bigCashWorkspaceRanges.prepaid };
     if (section === 'daily') return { title: 'Reporte diario de Caja Grande', subtitle: `Movimientos confirmados del ${formatDate(dailyReportDate)} entre 00:00 y 23:59 (hora Bolivia).`, rows: dailyReportRows,
-      columns: [['Hora', (r) => getHourLabel(r.createdAt)], ['Sector', (r) => toNumber(r.amountBs) > 0 ? 'Ingreso diario' : 'Egreso diario'], ['Concepto', (r) => r.description || '-'], ['Clasificación', (r) => getDailyMovementNature(r).label], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodLabel(r)], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Registrado por', (r) => getMovementUserLabel(r)], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
+      columns: [['Hora', (r) => getHourLabel(r.createdAt)], ['Sector', (r) => toNumber(r.amountBs) > 0 ? 'Ingreso diario' : 'Egreso diario'], ['Cliente', (r) => getDailyCustomerName(r)], ['Clasificación', (r) => getDailyMovementNature(r).label], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodLabel(r)], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Registrado por', (r) => getMovementUserLabel(r)], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
     if (section === 'voided') return { title: 'Movimientos anulados de Caja Grande', subtitle: 'Historial separado de movimientos anulados.', rows: voidedBigCashRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Monto original', (r) => Math.abs(toNumber(r.amountBs))], ['Motivo anulación', (r) => r.voidReason || '-']], range: bigCashWorkspaceRanges.voided };
     return { title: 'Movimientos de Caja Grande', subtitle: 'Libro de movimientos según filtros actuales.', rows: filteredBigCashRows,
@@ -7599,14 +7631,14 @@ function AccountingSection({
 
               <div className="bigcash-table-wrap daily-report-table-wrap">
                 <table className="accounting-table bigcash-table daily-report-table">
-                  <thead><tr><th>Recibo</th><th>Hora</th><th>Concepto</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Ingreso</th></tr></thead>
+                  <thead><tr><th>Recibo</th><th>Hora</th><th>Cliente</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Ingreso</th></tr></thead>
                   <tbody>
                     {dailyIncomeRows.map((movement) => {
                       const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
                       return <tr key={movement.id}>
                         <td><span className="daily-receipt-cell">{movement.receiptCode || movement.receipt || '-'}</span></td>
                         <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
-                        <td className="daily-concept-cell"><strong>{movement.description || movement.category || movement.type || 'Ingreso'}</strong></td>
+                        <td className="daily-concept-cell"><strong>{getDailyCustomerName(movement)}</strong></td>
                         <td><span className="daily-nature-pill income">{getDailyMovementNature(movement).label}</span></td>
                         <td>{getMovementReference(movement)}</td>
                         <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
@@ -7656,14 +7688,14 @@ function AccountingSection({
 
               <div className="bigcash-table-wrap daily-report-table-wrap">
                 <table className="accounting-table bigcash-table daily-report-table">
-                  <thead><tr><th>Recibo</th><th>Hora</th><th>Concepto</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Egreso</th></tr></thead>
+                  <thead><tr><th>Recibo</th><th>Hora</th><th>Cliente</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Egreso</th></tr></thead>
                   <tbody>
                     {dailyExpenseRows.map((movement) => {
                       const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
                       return <tr key={movement.id}>
                         <td><span className="daily-receipt-cell">{movement.receiptCode || movement.receipt || '-'}</span></td>
                         <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
-                        <td className="daily-concept-cell"><strong>{movement.description || movement.category || movement.type || 'Egreso'}</strong></td>
+                        <td className="daily-concept-cell"><strong>{getDailyCustomerName(movement)}</strong></td>
                         <td><span className="daily-nature-pill out">{getDailyMovementNature(movement).label}</span></td>
                         <td>{getMovementReference(movement)}</td>
                         <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
