@@ -1058,7 +1058,8 @@ const fetchFullServerRental = async (identifier, reason = 'rental-full-load') =>
 
 const fetchAttendanceRecordsDirect = async (filters = {}) => {
   if (!shouldUseServerState()) {
-    return callBridge('attendance', 'listRecords', false);
+    const records = await callBridge('attendance', 'listRecords', false);
+    return filters.userId ? records.filter((record) => String(record.userId) === String(filters.userId)) : records;
   }
   const params = new URLSearchParams();
   const dateFrom = String(filters?.dateFrom ?? '').trim();
@@ -1069,6 +1070,7 @@ const fetchAttendanceRecordsDirect = async (filters = {}) => {
   if (dateTo) params.set('dateTo', dateTo);
   if (type) params.set('type', type);
   if (query) params.set('query', query);
+  if (filters.userId) params.set('userId', String(filters.userId));
   params.set('timezoneOffsetMinutes', String(new Date().getTimezoneOffset()));
   params.set('limit', String(Math.min(1000, Math.max(20, Number(filters?.limit ?? 300) || 300))));
 

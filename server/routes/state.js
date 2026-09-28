@@ -4134,6 +4134,7 @@ router.get('/__copetin_db/attendance', async (req, res, next) => {
 
     const rows = (Array.isArray(snapshot?.state?.attendanceRecords) ? snapshot.state.attendanceRecords : [])
       .filter((record) => {
+        if (req.query?.userId && String(record.userId) !== String(req.query.userId)) return false;
         const dateKey = getAttendanceClientDateKey(record?.capturedAt ?? record?.createdAt, timezoneOffsetMinutes);
         if (dateFrom && dateKey < dateFrom) return false;
         if (dateTo && dateKey > dateTo) return false;
@@ -10080,8 +10081,8 @@ router.put('/__copetin_db/users/:id', async (req, res, next) => {
       const fullName = String(submittedUser.fullName ?? '').trim();
       const roleIds = getDirectUserRoleIds(submittedUser);
       const companyAccess = normalizeDirectCompanyAccess(submittedUser);
-      if (!username || !fullName || roleIds.length === 0) {
-        const error = new Error('Nombre, usuario y rol son obligatorios.');
+      if (!username || !fullName || (roleIds.length === 0 && submittedUser.permissions?.attendanceEnabled !== true)) {
+        const error = new Error('Nombre y usuario son obligatorios. Selecciona un rol o habilita Puede marcar asistencia.');
         error.statusCode = 400;
         throw error;
       }

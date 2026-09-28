@@ -236,6 +236,10 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
       return;
     }
 
+    if (form.roleIds.length === 0 && !normalizeUserPermissions(form.permissions).attendanceEnabled) {
+      setFormError('Habilita Puede marcar asistencia o selecciona un acceso operativo.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       const payload = {
@@ -290,7 +294,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
           : [...currentRoleIds, roleId];
         return {
           ...current,
-          roleIds: nextRoleIds.length > 0 ? nextRoleIds : [roleId],
+          roleIds: nextRoleIds,
         };
       });
     };
@@ -352,6 +356,12 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
             </label>
             <fieldset className="user-access-picker">
               <legend>Accesos operativos</legend>
+              <p>Para dar acceso solo a Asistencia, desmarca todos los roles y activa «Puede marcar asistencia».</p>
+              <button type="button" onClick={() => setForm((current) => ({
+                ...current,
+                roleIds: [],
+                permissions: { ...normalizeUserPermissions(current.permissions), attendanceEnabled: true },
+              }))}>Solo asistencia</button>
               <div className="user-access-options">
                 {ROLE_OPTIONS.map((option) => (
                   <label key={option.id} className="user-access-option">
@@ -434,7 +444,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
               </select>
             </label>
             <article className="user-role-preview">
-              <strong>{selectedRoles.map((role) => role.label).join(' + ')}</strong>
+              <strong>{selectedRoles.map((role) => role.label).join(' + ') || 'Solo asistencia'}</strong>
               <span>Este usuario podra entrar a las vistas combinadas de las areas seleccionadas.</span>
             </article>
             {formError ? <p className="status error user-editor-error">{formError}</p> : null}
@@ -550,6 +560,7 @@ function UsersSection({ users = [], currentUser = null, formatDateTime, onCreate
                   <td>{row.username}</td>
                   <td>
                     <div className="users-role-list">
+                      {getUserRoleIds(row).length === 0 ? <span className="user-role viewer">Solo asistencia</span> : null}
                       {getUserRoleDefinitions(row).map((role) => (
                         <span key={role.label} className={`users-role-chip ${roleTone(role.label)}`}>{role.label}</span>
                       ))}

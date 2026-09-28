@@ -251,7 +251,7 @@ export function MobileNavigation({
 
   const canShowTab = (tab) => {
     const targetId = tab.targetId ?? tab.id;
-    if (allowedSet.size === 0) return true;
+    if (allowedSet.size === 0) return false;
     if (allowedSet.has(targetId) || allowedSet.has(tab.id)) return true;
     if (tab.id === 'inventario' && allowedSet.has('inventario')) return true;
     if (tab.id === 'devolucion' && allowedSet.has('devolucion')) return true;
@@ -285,10 +285,11 @@ export function MobileNavigation({
   };
 
   const allowedOperationTabs = operationTabs.filter(canShowTab);
-  const primaryTabs = MOBILE_PRIMARY_TABS
+  const primaryIds = allowedSet.size === 1 && allowedSet.has('asistencia') ? ['asistencia'] : MOBILE_PRIMARY_TABS;
+  const primaryTabs = primaryIds
     .map((tabId) => allowedOperationTabs.find((tab) => tab.id === tabId))
     .filter(Boolean);
-  const moreOperationTabs = allowedOperationTabs.filter((tab) => !MOBILE_PRIMARY_TABS.includes(tab.id));
+  const moreOperationTabs = allowedOperationTabs.filter((tab) => !primaryIds.includes(tab.id));
   const moreConfigTabs = configTabs.filter(canShowTab);
 
   return (
@@ -310,14 +311,14 @@ export function MobileNavigation({
             </button>
           );
         })}
-        <button type="button" className={isOpen ? 'active' : ''} onClick={onToggleMore}>
+        {moreOperationTabs.length > 0 || moreConfigTabs.length > 0 ? <button type="button" className={isOpen ? 'active' : ''} onClick={onToggleMore}>
           <span className="mobile-nav-icon">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M5 7h14M5 12h14M5 17h14" />
             </svg>
           </span>
           <span>Mas</span>
-        </button>
+        </button> : null}
       </nav>
 
       {isOpen ? (
@@ -400,7 +401,7 @@ function TabsNav({ activeTab, isCatalogView, onChange, notificationCounts = {}, 
 
   const canShowTab = (tab) => {
     const targetId = tab.targetId ?? tab.id;
-    if (allowedSet.size === 0) return true;
+    if (allowedSet.size === 0) return false;
     if (allowedSet.has(targetId) || allowedSet.has(tab.id)) return true;
     if (tab.id === 'inventario' && allowedSet.has('inventario')) return true;
     if (tab.id === 'devolucion' && allowedSet.has('devolucion')) return true;

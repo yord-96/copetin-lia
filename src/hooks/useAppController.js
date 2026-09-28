@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
-import { canAccessTab, getDefaultTabForUser, getUserCompanyAccess, getUserDisplayRole } from '../utils/permissions';
+import { canAccessTab, getDefaultTabForUser, getUserCompanyAccess, getUserDisplayRole, isAttendanceOnlyUser } from '../utils/permissions';
 import { mergeProgressiveRows } from '../utils/progressiveRows';
 
 const isPrintCanceledError = (error) => {
@@ -558,6 +558,10 @@ export const useAppController = () => {
     } else if (activeTab === 'asistencia') {
       group = 'attendance-users';
       loader = async () => {
+        if (isAttendanceOnlyUser(currentUser)) {
+          setUsers([currentUser]);
+          return;
+        }
         setAttendanceUsersLoading(true);
         try {
           // Muestra cualquier copia local inmediatamente y consulta despues el
@@ -2860,19 +2864,26 @@ export const useAppController = () => {
 
   const handleLoadAttendanceRecords = useCallback(async (filters = {}) => {
     try {
-      const records = await api.attendance.listRecords(filters);
+      const records = await api.attendance.listRecords({
+        ...filters,
+        ...(isAttendanceOnlyUser(currentUser) ? { userId: currentUser.id } : {}),
+      });
       setAttendanceRecords(Array.isArray(records) ? records : []);
       return records;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo cargar la asistencia.');
       throw requestError;
     }
-  }, []);
+  }, [currentUser]);
 
   const handleCreateAttendanceRecord = async (payload) => {
     setError('');
     try {
       const trace = getCurrentUserTrace();
+      if (!canAccessTab(currentUser, 'asistencia')) throw new Error('No tienes acceso a marcar asistencia.');
+      if (isAttendanceOnlyUser(currentUser) && payload?.markingMode === 'responsable') {
+        throw new Error('Solo puedes marcar tu propia asistencia.');
+      }
       const isResponsibleMark = String(payload?.markingMode ?? '') === 'responsable';
       const created = await api.attendance.createRecord({
         ...payload,

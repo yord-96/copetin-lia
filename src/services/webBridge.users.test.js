@@ -49,4 +49,24 @@ test('conserva el acceso exclusivo a Lincoln al normalizar usuarios descargados'
   const users = await bridge.users.list();
   const lincolnUser = users.find((user) => user.id === 'usr-lincoln');
   assert.deepEqual(lincolnUser?.companyAccess, ['lincoln']);
+
+  await bridge.__storage.mergeState({ users: [{
+    ...lincolnUser,
+    id: 'usr-attendance',
+    username: 'attendance.user',
+    passwordHash: '',
+    password: 'attendance-test-password',
+    roleIds: [],
+    roleId: 'ventas',
+    role: 'Ventas',
+  }] });
+  const session = await bridge.auth.login({ username: 'attendance.user', password: 'attendance-test-password' });
+  assert.deepEqual(session.roleIds, []);
+  assert.equal(session.roleId, '');
+  assert.equal(session.role, 'Solo asistencia');
+  assert.deepEqual(session.allowedTabs, ['asistencia']);
+  assert.equal(session.defaultTab, 'asistencia');
+  const restoredSession = await bridge.auth.getSession();
+  assert.deepEqual(restoredSession.roleIds, []);
+  assert.deepEqual(restoredSession.allowedTabs, ['asistencia']);
 });

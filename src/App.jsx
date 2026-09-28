@@ -15,6 +15,7 @@ import PublicCatalogPage from './components/public/PublicCatalogPage';
 import PublicQuoteBuilder from './components/public/PublicQuoteBuilder';
 import {
   canAccessCompany,
+  isAttendanceOnlyUser,
   canAccessTab,
   canWriteTab,
   getAllowedTabRoots,
@@ -924,7 +925,7 @@ function AdminApp() {
     availableCompanies.length > 1
     && !selectedCompany;
 
-  if (selectedCompany === 'lincoln') {
+  if (selectedCompany === 'lincoln' && !isAttendanceOnlyUser(controller.currentUser)) {
     const canMarkAttendance = canAccessTab(controller.currentUser, 'asistencia');
     return (
       <Suspense fallback={<p className="status">Preparando Lincoln...</p>}>

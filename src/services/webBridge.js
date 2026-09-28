@@ -335,6 +335,7 @@ const normalizeRoleId = (role) => {
 };
 
 const normalizeRoleIds = (roles) => {
+  if (Array.isArray(roles) && roles.length === 0) return [];
   const source = Array.isArray(roles) ? roles : [roles];
   const normalized = source
     .map((role) => normalizeRoleId(role))
@@ -345,7 +346,7 @@ const normalizeRoleIds = (roles) => {
 
 const getUserRoleIds = (user) => normalizeRoleIds(user?.roleIds ?? user?.roleId ?? user?.role);
 
-const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? 'ventas';
+const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? '';
 
 const isDeveloperUser = (user) => getUserRoleIds(user).includes('developer');
 
@@ -354,7 +355,7 @@ const getAllowedTabsForRoles = (roleIds) => [...new Set(
 )];
 
 const getDisplayRoleForIds = (roleIds) =>
-  normalizeRoleIds(roleIds).map((roleId) => ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas').join(', ');
+  normalizeRoleIds(roleIds).map((roleId) => ROLE_DEFINITIONS[roleId]?.label ?? 'Ventas').join(', ') || 'Solo asistencia';
 
 const DEFAULT_USER_PERMISSIONS = {
   attendanceEnabled: true,
@@ -419,7 +420,10 @@ const sanitizeUserForSession = (user) => {
       : getPrimaryRoleId(user);
   const role = ROLE_DEFINITIONS[roleId] ?? ROLE_DEFINITIONS.ventas;
   const permissions = normalizeUserPermissions(user.permissions);
-  const allowedTabs = getAllowedTabsForRoles(roleIds).filter((tabId) => tabId !== 'asistencia' || permissions.attendanceEnabled);
+  const allowedTabs = [...new Set([
+    ...getAllowedTabsForRoles(roleIds),
+    ...(permissions.attendanceEnabled ? ['asistencia'] : []),
+  ])].filter((tabId) => tabId !== 'asistencia' || permissions.attendanceEnabled);
   return {
     id: user.id,
     fullName: user.fullName,
@@ -430,7 +434,7 @@ const sanitizeUserForSession = (user) => {
     permissions,
     companyAccess: normalizeCompanyAccess(user.companyAccess, { developer: roleIds.includes('developer') }),
     allowedTabs,
-    defaultTab: role.defaultTab,
+    defaultTab: roleIds.length === 0 ? 'asistencia' : role.defaultTab,
     status: user.status,
     lastAccessAt: user.lastAccessAt ?? null,
   };
@@ -13380,6 +13384,9 @@ const createWebBridge = () => ({
           : roleIds[0];
       if (!fullName) throw new Error('El nombre del usuario es obligatorio.');
       if (!username) throw new Error('El usuario de acceso es obligatorio.');
+      if (roleIds.length === 0 && !normalizeUserPermissions(payload?.permissions).attendanceEnabled) {
+        throw new Error('Habilita Puede marcar asistencia o selecciona un acceso operativo.');
+      }
       if (!password || password.length < 4) throw new Error('La contrasena debe tener al menos 4 caracteres.');
 
       let created = null;
@@ -13480,6 +13487,9 @@ const createWebBridge = () => ({
         if (payload.status !== undefined) user.status = String(payload.status ?? '').trim() || user.status;
         if (payload.phone !== undefined) user.phone = String(payload.phone ?? '').trim();
         if (payload.permissions !== undefined) user.permissions = normalizeUserPermissions(payload.permissions);
+        if (getUserRoleIds(user).length === 0 && !normalizeUserPermissions(user.permissions).attendanceEnabled) {
+          throw new Error('Habilita Puede marcar asistencia o selecciona un acceso operativo.');
+        }
         if (payload.companyAccess !== undefined) {
           user.companyAccess = normalizeCompanyAccess(payload.companyAccess, { developer: isDeveloperUser(user) });
         }

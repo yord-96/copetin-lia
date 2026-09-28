@@ -118,6 +118,7 @@ export const normalizeRoleId = (role) => {
 };
 
 export const normalizeRoleIds = (roles) => {
+  if (Array.isArray(roles) && roles.length === 0) return [];
   const source = Array.isArray(roles) ? roles : [roles];
   const normalized = source
     .map((role) => normalizeRoleId(role))
@@ -127,13 +128,15 @@ export const normalizeRoleIds = (roles) => {
 
 export const getUserRoleIds = (user) => normalizeRoleIds(user?.roleIds ?? user?.roleId ?? user?.role);
 
-export const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? 'ventas';
+export const getPrimaryRoleId = (user) => getUserRoleIds(user)[0] ?? '';
 
 export const getRoleDefinition = (role) => ROLE_DEFINITIONS[normalizeRoleId(role)] ?? ROLE_DEFINITIONS.ventas;
 
 export const getUserRoleDefinitions = (user) => getUserRoleIds(user).map((roleId) => ROLE_DEFINITIONS[roleId]);
 
-export const getUserDisplayRole = (user) => getUserRoleDefinitions(user).map((role) => role.label).join(', ');
+export const getUserDisplayRole = (user) => getUserRoleDefinitions(user).map((role) => role.label).join(', ') || 'Solo asistencia';
+
+export const isAttendanceOnlyUser = (user) => Boolean(user) && getUserRoleIds(user).length === 0;
 
 export const DEFAULT_USER_PERMISSIONS = {
   attendanceEnabled: true,
@@ -178,13 +181,17 @@ export const isSuperAdmin = (user) => getUserRoleIds(user).includes('super_admin
 
 export const getDefaultTabForUser = (user) => {
   const roleIds = getUserRoleIds(user);
+  if (roleIds.length === 0) return 'asistencia';
   if (roleIds.includes('developer')) return ROLE_DEFINITIONS.developer.defaultTab;
   if (roleIds.includes('super_admin')) return ROLE_DEFINITIONS.super_admin.defaultTab;
   return ROLE_DEFINITIONS[getPrimaryRoleId(user)]?.defaultTab ?? ROLE_DEFINITIONS.ventas.defaultTab;
 };
 
 export const getAllowedTabRoots = (user) => new Set(
-  getUserRoleIds(user).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
+  [
+    ...getUserRoleIds(user).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
+    ...(user && getUserPermissions(user).attendanceEnabled ? ['asistencia'] : []),
+  ].filter((tab) => tab !== 'asistencia' || getUserPermissions(user).attendanceEnabled),
 );
 
 export const canAccessTab = (user, tabId) => {
