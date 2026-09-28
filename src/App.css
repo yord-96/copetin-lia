@@ -73539,7 +73539,7 @@ button.inventory-loss-row-action.is-discard:hover {
   box-sizing: border-box !important;
 }
 
-/* REPORTE DIARIO V4: mantiene las 13 columnas completas y centra cada dato en su propia columna. */
+/* REPORTE DIARIO V5: mantiene las 13 columnas completas, centra cada dato y mejora legibilidad de clasificación/método y montos. */
 .accounting-bigcash-view .daily-report-table th,
 .accounting-bigcash-view .daily-report-table td {
   box-sizing: border-box !important;
@@ -73630,36 +73630,61 @@ button.inventory-loss-row-action.is-discard:hover {
   word-break: break-word !important;
 }
 
-/* Clasificación y método/cuenta: texto administrativo limpio, sin badges ni pastillas. */
-.accounting-bigcash-view .daily-report-table .payment-method-pill,
-.accounting-bigcash-view .daily-report-table .daily-nature-pill {
+/* Clasificación y método/cuenta: mismo tamaño visual que el resto, sin badges ni pastillas. */
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .payment-method-pill,
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .daily-nature-pill {
   display: inline !important;
   max-width: 100% !important;
   min-width: 0 !important;
   min-height: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
-  font-size: 9.25px !important;
-  line-height: 1.15 !important;
+  font-size: 0.8rem !important;
+  line-height: 1.2 !important;
   font-weight: 700 !important;
   text-align: center !important;
   white-space: normal !important;
   overflow: visible !important;
-  overflow-wrap: anywhere !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
-.accounting-bigcash-view .daily-report-table .payment-method-pill {
-  color: #27415f !important;
+/* Solo el texto diferencia visualmente los medios de pago. */
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .payment-method-pill.cash {
+  color: #b45309 !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .payment-method-pill.qr {
+  color: #087a55 !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .payment-method-pill.transfer {
+  color: #2563a6 !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .payment-method-pill.missing {
+  color: #64748b !important;
 }
 
-.accounting-bigcash-view .daily-nature-pill,
-.accounting-bigcash-view .daily-nature-pill.income,
-.accounting-bigcash-view .daily-nature-pill.out {
-  color: #36506f !important;
+/* Clasificación: color discreto, sin fondo ni contenedor. */
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .daily-nature-pill.income {
+  color: #176b52 !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table .daily-nature-pill.out {
+  color: #a84a34 !important;
+}
+
+/* Los importes de las columnas económicas no se parten en dos líneas. */
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table td:nth-child(7),
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table td:nth-child(8),
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table td:nth-child(9),
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table td:nth-child(10),
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table td:nth-child(11),
+.accounting-bigcash-view.bigcash-balanced-layout .daily-report-table td:nth-child(13) {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
 }
 
 .accounting-bigcash-view .daily-income-amount {
