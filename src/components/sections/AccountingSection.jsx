@@ -7574,20 +7574,30 @@ function AccountingSection({
               </div>
             </article>
 
-            <section className="daily-report-overview" aria-label="Resumen del día">
-              <article className="daily-overview-card income"><small>Ingresos del día</small><strong>{formatBs(dailyIncomeBs)}</strong><span>{dailyIncomeRows.length} movimiento{dailyIncomeRows.length === 1 ? '' : 's'}</span></article>
-              <article className="daily-overview-card out"><small>Egresos del día</small><strong>{formatBs(dailyExpenseBs)}</strong><span>{dailyExpenseRows.length} movimiento{dailyExpenseRows.length === 1 ? '' : 's'}</span></article>
-              <article className={`daily-overview-card net ${dailyNetBs < 0 ? 'negative' : ''}`}><small>Resultado neto</small><strong>{formatBs(dailyNetBs)}</strong><span>Ingresos − egresos</span></article>
-            </section>
-
             <article className="bigcash-card daily-sector income-sector">
-              <header className="daily-sector-header">
-                <div>
-                  <span className="daily-sector-kicker">INGRESO DIARIO</span>
-                  <h3>Dinero que ingresó a Caja Grande</h3>
-                  <p>Cobros de contratos, abonos, garantías, daños, transporte e ingresos manuales registrados entre 00:00 y 23:59. La tabla también consolida los egresos confirmados del día.</p>
+              <header className="daily-sector-header compact">
+                <div className="daily-sector-heading">
+                  <span className="daily-sector-kicker">RESUMEN OPERATIVO</span>
+                  <h3>Movimientos confirmados del día</h3>
+                  <p>La tabla consolida ingresos y egresos confirmados del día seleccionado. Los desgloses inferiores se mantienen enfocados en los ingresos para conservar la trazabilidad del cobro.</p>
                 </div>
-                <div className="daily-sector-total"><small>Total ingresado</small><strong>{formatBs(dailyIncomeBs)}</strong></div>
+                <div className="daily-sector-inline-stats" aria-label="Resumen del día">
+                  <article className="daily-inline-stat income">
+                    <small>Ingresos</small>
+                    <strong>{formatBs(dailyIncomeBs)}</strong>
+                    <span>{dailyIncomeRows.length} movimiento{dailyIncomeRows.length === 1 ? '' : 's'}</span>
+                  </article>
+                  <article className="daily-inline-stat out">
+                    <small>Egresos</small>
+                    <strong>{formatBs(dailyExpenseBs)}</strong>
+                    <span>{dailyExpenseRows.length} movimiento{dailyExpenseRows.length === 1 ? '' : 's'}</span>
+                  </article>
+                  <article className={`daily-inline-stat net ${dailyNetBs < 0 ? 'negative' : ''}`}>
+                    <small>Resultado neto</small>
+                    <strong>{formatBs(dailyNetBs)}</strong>
+                    <span>Ingresos − egresos</span>
+                  </article>
+                </div>
               </header>
 
               <div className="daily-sector-breakdowns">
