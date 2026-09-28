@@ -73525,21 +73525,29 @@ button.inventory-loss-row-action.is-discard:hover {
   border: 0;
   border-radius: 0;
   overflow-x: hidden !important;
+  padding-right: 6px !important;
+  box-sizing: border-box !important;
 }
 
 .accounting-bigcash-view .daily-report-table {
   table-layout: fixed !important;
   min-width: 0 !important;
-  width: 100% !important;
+  width: calc(100% - 2px) !important;
+  max-width: calc(100% - 2px) !important;
+  margin: 0 !important;
+  border-collapse: collapse !important;
+  box-sizing: border-box !important;
 }
 
-/* REPORTE DIARIO: 13 columnas dentro del ancho visible, sin recortar la derecha. */
+/* REPORTE DIARIO V3: prioriza que las 13 columnas entren completas sin recortar INGRESO/EGRESO. */
 .accounting-bigcash-view .daily-report-table th,
 .accounting-bigcash-view .daily-report-table td {
   box-sizing: border-box !important;
-  padding: 9px 4px !important;
-  font-size: 10.25px !important;
-  line-height: 1.18 !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  padding: 7px 3px !important;
+  font-size: 9.25px !important;
+  line-height: 1.15 !important;
   vertical-align: middle !important;
   white-space: normal !important;
   overflow-wrap: anywhere !important;
@@ -73548,26 +73556,26 @@ button.inventory-loss-row-action.is-discard:hover {
 
 .accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 7% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 14% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 13% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 9% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 6% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 5% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 6% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 8% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 7% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 12% !important; }
 
 .accounting-bigcash-view .daily-report-table thead th {
   position: sticky;
   top: 0;
   z-index: 3;
-  padding-block: 10px !important;
-  font-size: 9.5px !important;
-  line-height: 1.08 !important;
-  letter-spacing: 0 !important;
+  padding: 8px 2px !important;
+  font-size: 8.5px !important;
+  line-height: 1.02 !important;
+  letter-spacing: -0.01em !important;
   text-align: center !important;
   white-space: normal !important;
   overflow-wrap: anywhere !important;
@@ -73575,9 +73583,13 @@ button.inventory-loss-row-action.is-discard:hover {
 
 .accounting-bigcash-view .daily-report-table td:nth-child(1),
 .accounting-bigcash-view .daily-report-table td:nth-child(2),
-.accounting-bigcash-view .daily-report-table td:nth-child(5),
-.accounting-bigcash-view .daily-report-table td:nth-child(13) {
+.accounting-bigcash-view .daily-report-table td:nth-child(5) {
   text-align: center;
+}
+
+.accounting-bigcash-view .daily-report-table td:nth-child(13) {
+  text-align: right !important;
+  padding-right: 5px !important;
 }
 
 .accounting-bigcash-view .daily-receipt-cell,
@@ -73603,42 +73615,45 @@ button.inventory-loss-row-action.is-discard:hover {
 .accounting-bigcash-view .daily-time-cell strong {
   color: #17335f;
   white-space: nowrap !important;
+  font-size: 9.25px !important;
 }
 
 .accounting-bigcash-view .daily-concept-cell strong {
   display: block;
   color: #17335f;
-  line-height: 1.18;
+  line-height: 1.12;
+  font-size: 9.25px !important;
 }
 
-/* Evita que montos y etiquetas fuercen un ancho mayor que la tabla. */
 .accounting-bigcash-view .daily-report-table .amount,
 .accounting-bigcash-view .daily-report-table .daily-income-amount,
 .accounting-bigcash-view .daily-report-table .daily-out-amount {
-  font-size: 10.25px !important;
+  font-size: 9.25px !important;
+  line-height: 1.08 !important;
   white-space: normal !important;
   overflow-wrap: anywhere !important;
+  word-break: break-word !important;
 }
 
 .accounting-bigcash-view .daily-report-table .payment-method-pill,
 .accounting-bigcash-view .daily-report-table .daily-nature-pill {
-  max-width: 100%;
-  min-width: 0;
-  padding: 3px 5px !important;
-  font-size: 8px !important;
-  line-height: 1.05 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  padding: 3px 4px !important;
+  font-size: 7.25px !important;
+  line-height: 1 !important;
   text-align: center !important;
   white-space: normal !important;
   overflow-wrap: anywhere !important;
+  border-radius: 999px;
 }
 
 .accounting-bigcash-view .daily-nature-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 23px;
+  min-height: 22px;
   border: 1px solid #dce5ef;
-  border-radius: 999px;
   background: #f7f9fc;
   color: #425a7d;
   font-weight: 800;
