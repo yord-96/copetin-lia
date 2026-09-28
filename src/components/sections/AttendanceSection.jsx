@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
-import { getUserDisplayRole, isAttendanceOnlyUser } from '../../utils/permissions';
+import { getUserDisplayRole } from '../../utils/permissions';
 
 const getInputDate = (date = new Date()) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -61,7 +61,7 @@ const resolveStreetAddress = async (latitude, longitude) => {
 };
 
 function AttendanceSection({
-  records: allRecords = [],
+  records = [],
   users = [],
   usersLoading = false,
   currentUser = null,
@@ -70,10 +70,6 @@ function AttendanceSection({
   onLoadRecords,
   onCreateRecord,
 }) {
-  const personalOnly = isAttendanceOnlyUser(currentUser);
-  const records = useMemo(() => personalOnly
-    ? allRecords.filter((record) => String(record.userId) === String(currentUser?.id))
-    : allRecords, [allRecords, personalOnly, currentUser?.id]);
   const [form, setForm] = useState({
     type: 'entrada',
     location: '',
@@ -435,7 +431,7 @@ function AttendanceSection({
             <p className="status error">Tu usuario puede ver esta sección, pero no tiene habilitada la marcación.</p>
           ) : null}
 
-          {!personalOnly ? <div className="attendance-mode-panel">
+          <div className="attendance-mode-panel">
             <span className="attendance-mode-label">Quién realiza la marcación</span>
             <div className="attendance-mode-toggle">
               <button
@@ -460,9 +456,9 @@ function AttendanceSection({
                 ? 'Selecciona a todas las personas cuya entrada o salida registrarás en conjunto.'
                 : 'La marca se registrará solamente a nombre de tu usuario.'}
             </small>
-          </div> : null}
+          </div>
 
-          {markingMode === 'responsable' && !personalOnly ? (
+          {markingMode === 'responsable' ? (
             <section className="attendance-responsible-panel">
               <header>
                 <span>
