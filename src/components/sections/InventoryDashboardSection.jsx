@@ -3234,7 +3234,7 @@ function InventoryDashboardSection({
           ?? movement.createdAt,
         registeredAt: movement.createdAt,
         typeKey: isEntry ? 'entrada' : isExit ? 'salida' : 'ajuste',
-        typeLabel: movement.type === 'reserva' ? 'Reserva' : isEntry ? 'Entrada' : movement.type === 'salida' ? 'Salida' : 'Ajuste',
+        typeLabel: movement.displayTypeLabel ?? (movement.type === 'reserva' ? 'Reserva' : isEntry ? 'Entrada' : movement.type === 'salida' ? 'Salida' : 'Ajuste'),
         itemName: movement.itemName ?? 'Item',
         itemId: movement.itemId ?? '',
         imageUrl: movement.imageUrl ?? itemRow?.imageUrl ?? null,
@@ -3245,13 +3245,16 @@ function InventoryDashboardSection({
         customerName: movement.customerName ?? linkedRental?.customerName ?? linkedContract?.customerName ?? '',
         reference: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.reference ?? movement.id,
         deltaUnits: Number(movement.deltaUnits ?? 0),
-        beforeStock: Number(movement.beforeAvailableStock ?? movement.beforeTotalStock ?? 0),
-        afterStock: Number(movement.afterAvailableStock ?? movement.afterTotalStock ?? 0),
+        operationalQuantity: Number(movement.operationalQuantity ?? Math.abs(Number(movement.deltaUnits ?? 0))),
+        beforeStock: movement.beforeAvailableStock ?? movement.beforeTotalStock ?? null,
+        afterStock: movement.afterAvailableStock ?? movement.afterTotalStock ?? null,
         userName: responsibleName,
         userRole: responsibleRole,
         registeredByName: movementUserName,
         registeredByRole: movement.userRole && movement.userRole !== 'Operacion' ? movement.userRole : linkedRental?.createdByRole ?? movement.userRole ?? 'Operacion',
-        observation: movement.reason ?? movement.detail ?? '-',
+        observation: ['rental_dispatch', 'rental_return'].includes(String(movement.sourceType ?? ''))
+          ? movement.detail ?? movement.reason ?? '-'
+          : movement.displayReason ?? movement.reason ?? movement.detail ?? '-',
         valueAmount: Number(movement.valueAmount ?? 0),
         status: isReservation ? inventoryStatus : movement.status ?? 'aprobado',
         isPendingReservation: isReservation && !['confirmado', 'salio', 'devuelto', 'anulado'].includes(inventoryStatus),
@@ -6285,10 +6288,13 @@ function InventoryDashboardSection({
                           </div>
                         </td>
                         <td className={row.deltaUnits > 0 ? 'movement-delta-positive' : row.deltaUnits < 0 ? 'movement-delta-negative' : 'movement-delta-neutral'}>
-                          {row.deltaUnits > 0 ? `+${row.deltaUnits}` : row.deltaUnits}
+                          <strong>{row.deltaUnits > 0 ? `+${row.deltaUnits}` : row.deltaUnits}</strong>
+                          {Number(row.operationalQuantity ?? 0) > Math.abs(Number(row.deltaUnits ?? 0)) ? (
+                            <small>{row.operationalQuantity} movidas en total</small>
+                          ) : null}
                         </td>
-                        <td>{row.beforeStock}</td>
-                        <td>{row.afterStock}</td>
+                        <td>{row.beforeStock ?? '—'}</td>
+                        <td>{row.afterStock ?? '—'}</td>
                         <td>
                           <div className={`movement-user-cell ${row.isPendingReservation ? 'pending' : ''}`}>
                             <span className="movement-user-avatar">{row.userName.slice(0, 2).toUpperCase()}</span>

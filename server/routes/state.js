@@ -8024,7 +8024,8 @@ const summarizeInventoryMovement = (movement = {}) => {
     'contractCode', 'orderCode', 'customerName', 'deltaUnits', 'beforeTotalStock', 'afterTotalStock',
     'beforeAvailableStock', 'afterAvailableStock', 'reservedStockAfter', 'userName',
     'userRole', 'createdAt', 'operationDate', 'deliveryDate', 'status', 'valueAmount',
-    'imageUrl', 'imageDataUrl',
+    'imageUrl', 'imageDataUrl', 'displayTypeLabel', 'operationalQuantity', 'sourceType',
+    'sourceRentalId', 'sourceId', 'lineKey', 'stockEffect',
   ];
   return Object.fromEntries(fields
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
@@ -8164,6 +8165,191 @@ const buildCurrentInventoryCommitments = (state = {}) => {
   });
 
   return { todayKey, totalsByItem, detailsByItem, outsideByItem, outsideDetailsByItem, contractById, rentals };
+};
+
+const buildSyntheticRentalLifecycleMovements = ({ rentals = [], contractById, itemById, movements = [] } = {}) => {
+  const movementKeys = new Set((Array.isArray(movements) ? movements : []).map((movement) => [
+    String(movement?.sourceType ?? '').trim(),
+    String(movement?.sourceRentalId ?? movement?.sourceId ?? '').trim(),
+    String(movement?.itemId ?? '').trim(),
+    String(movement?.lineKey ?? '').trim(),
+  ].join('::')));
+  const rows = [];
+  const toQty = (value) => Math.max(0, Math.trunc(Number(value ?? 0)));
+  const lineKeyOf = (line, index) => String(line?.lineKey ?? `item-${line?.itemId ?? 'unknown'}-${index}`).trim();
+
+  (Array.isArray(rentals) ? rentals : []).forEach((rental) => {
+    if (!rental || rental.deletedAt || String(rental.status ?? '').trim().toLowerCase() === 'cancelled') return;
+    const operational = rental.operational ?? {};
+    const contract = contractById?.get(String(rental.contractId ?? '')) ?? null;
+    const contractCode = String(contract?.contractCode ?? rental.contractCode ?? '').trim();
+    const orderCode = String(rental.orderCode ?? '').trim();
+    const reference = orderCode || contractCode || String(rental.id ?? '').trim();
+    const customerName = String(rental.customerName ?? contract?.customerName ?? '').trim();
+    const dispatchReview = operational?.dispatchReview ?? null;
+    const dispatchLines = Array.isArray(dispatchReview?.items) ? dispatchReview.items : [];
+    const returnLines = Array.isArray(rental.returnReport) ? rental.returnReport : [];
+    const pendingLines = Array.isArray(operational?.clientPendingPickup?.items)
+      ? operational.clientPendingPickup.items
+      : [];
+
+    const returnSummaryByLine = new Map();
+    returnLines.forEach((entry) => {
+      const key = String(entry?.lineKey ?? entry?.itemId ?? '').trim();
+      if (!key) return;
+      const current = returnSummaryByLine.get(key) ?? { returnedOwn: 0, returnedTotal: 0, damaged: 0, missing: 0 };
+      current.returnedOwn += toQty(entry?.returnedToAvailableQty);
+      current.returnedTotal += toQty(entry?.returnedQty);
+      current.damaged += toQty(entry?.damagedQty);
+      current.missing += toQty(entry?.missingQty);
+      returnSummaryByLine.set(key, current);
+    });
+
+    const pendingByLine = new Map(pendingLines.map((entry) => [
+      String(entry?.lineKey ?? entry?.itemId ?? '').trim(),
+      toQty(entry?.pendingQty ?? entry?.pendingClientQty),
+    ]));
+
+    (Array.isArray(rental.items) ? rental.items : []).forEach((line, index) => {
+      const lineKey = lineKeyOf(line, index);
+      const itemId = String(line?.itemId ?? '').trim();
+      if (!itemId) return;
+      const item = itemById?.get(itemId) ?? null;
+      const totalQty = toQty(line?.quantity);
+      const supplierQty = toQty(line?.supplierBackedQty);
+      const internalQty = Math.min(totalQty, toQty(line?.internalReservedQty ?? Math.max(0, totalQty - supplierQty)));
+      const dispatchLine = dispatchLines.find((entry) => (
+        String(entry?.lineKey ?? '').trim() === lineKey
+        || (!entry?.lineKey && String(entry?.itemId ?? '').trim() === itemId)
+      ));
+      const dispatchedTotal = dispatchLine
+        ? Math.min(totalQty, toQty(dispatchLine?.dispatchedQty))
+        : (operational?.inventoryDispatchedAt ? totalQty : 0);
+      const dispatchedOwn = Math.min(internalQty, dispatchedTotal);
+      const dispatchAt = operational?.inventoryDispatchedAt
+        ?? dispatchReview?.reviewedAt
+        ?? null;
+      const returnSummary = returnSummaryByLine.get(lineKey)
+        ?? returnSummaryByLine.get(itemId)
+        ?? { returnedOwn: 0, returnedTotal: 0, damaged: 0, missing: 0 };
+      const pendingQty = pendingByLine.get(lineKey) ?? pendingByLine.get(itemId) ?? 0;
+
+      if (dispatchAt && dispatchedTotal > 0) {
+        const explicitKey = ['rental_dispatch', String(rental.id ?? ''), itemId, lineKey].join('::');
+        if (!movementKeys.has(explicitKey)) {
+          const statusParts = [];
+          if (returnSummary.returnedOwn > 0 || returnSummary.returnedTotal > 0) {
+            statusParts.push(`VOLVIÓ ${returnSummary.returnedTotal || returnSummary.returnedOwn}`);
+          }
+          if (returnSummary.damaged > 0) statusParts.push(`DAÑADO ${returnSummary.damaged}`);
+          if (returnSummary.missing > 0) statusParts.push(`FALTANTE ${returnSummary.missing}`);
+          if (pendingQty > 0) statusParts.push(`PENDIENTE ${pendingQty} CON CLIENTE`);
+          if (!statusParts.length && ['salio', 'retorno_parcial'].includes(String(operational?.inventoryStatus ?? '').trim().toLowerCase())) {
+            statusParts.push('AÚN FUERA DE ALMACÉN');
+          }
+          if (!statusParts.length && ['devuelto', 'returned'].includes(String(operational?.inventoryStatus ?? rental.status ?? '').trim().toLowerCase())) {
+            statusParts.push('DEVOLUCIÓN COMPLETADA');
+          }
+          const ownText = dispatchedOwn === dispatchedTotal
+            ? `${dispatchedOwn} PROPIAS`
+            : `${dispatchedTotal} TOTALES · ${dispatchedOwn} PROPIAS${Math.max(0, dispatchedTotal - dispatchedOwn) ? ` + ${Math.max(0, dispatchedTotal - dispatchedOwn)} PROVEEDOR` : ''}`;
+          rows.push({
+            id: `lifecycle-dispatch-${rental.id}-${lineKey}`,
+            itemId,
+            itemName: line?.itemName ?? item?.name ?? 'Item',
+            category: item?.category ?? '',
+            imageUrl: item?.imageUrl ?? null,
+            type: 'salida',
+            displayTypeLabel: 'Salió',
+            reason: `SALIDA DE ALMACÉN · CONTRATO ${contractCode || reference}`,
+            detail: [`SALIERON ${ownText}`, ...statusParts].join(' · '),
+            reference,
+            contractCode,
+            orderCode,
+            customerName,
+            deltaUnits: -dispatchedOwn,
+            operationalQuantity: dispatchedTotal,
+            beforeTotalStock: null,
+            afterTotalStock: null,
+            beforeAvailableStock: null,
+            afterAvailableStock: null,
+            stockEffect: 'operational_dispatch',
+            sourceType: 'rental_dispatch',
+            sourceRentalId: rental.id,
+            sourceId: rental.id,
+            lineKey,
+            userName: operational?.inventoryDispatchedByName ?? dispatchReview?.reviewedByName ?? rental.createdByName ?? rental.createdBy ?? 'Inventario',
+            userRole: operational?.inventoryDispatchedByRole ?? dispatchReview?.reviewedByRole ?? rental.createdByRole ?? 'Inventario',
+            operationDate: dispatchAt,
+            createdAt: dispatchAt,
+          });
+        }
+      }
+
+      returnLines.forEach((entry, returnIndex) => {
+        const sameLine = String(entry?.lineKey ?? '').trim()
+          ? String(entry?.lineKey ?? '').trim() === lineKey
+          : String(entry?.itemId ?? '').trim() === itemId;
+        if (!sameLine) return;
+        const returnedOwn = toQty(entry?.returnedToAvailableQty);
+        const returnedTotal = toQty(entry?.returnedQty);
+        if (returnedOwn <= 0 && returnedTotal <= 0) return;
+        const returnAt = entry?.partialRegisteredAt
+          ?? rental?.returnedAt
+          ?? operational?.inventoryReturnedAt
+          ?? operational?.returnReview?.reviewedAt
+          ?? rental?.updatedAt
+          ?? null;
+        if (!returnAt) return;
+        const explicitKey = ['rental_return', String(rental.id ?? ''), itemId, lineKey].join('::');
+        if (movementKeys.has(explicitKey)) return;
+        const supplierReturned = Math.max(0, returnedTotal - returnedOwn);
+        const pendingAfter = toQty(entry?.pendingClientQty);
+        const returnStatus = pendingAfter > 0 || entry?.partialRegisteredAt ? 'Volvió parcial' : 'Volvió';
+        const detailParts = [
+          `VOLVIERON ${returnedTotal || returnedOwn}`,
+          `${returnedOwn} PROPIAS`,
+        ];
+        if (supplierReturned > 0) detailParts.push(`${supplierReturned} DE PROVEEDOR`);
+        if (toQty(entry?.damagedQty) > 0) detailParts.push(`DAÑADO ${toQty(entry?.damagedQty)}`);
+        if (toQty(entry?.missingQty) > 0) detailParts.push(`FALTANTE ${toQty(entry?.missingQty)}`);
+        if (pendingAfter > 0) detailParts.push(`QUEDAN ${pendingAfter} CON CLIENTE`);
+        if (entry?.damageNote) detailParts.push(String(entry.damageNote).trim());
+        rows.push({
+          id: `lifecycle-return-${rental.id}-${lineKey}-${returnIndex}`,
+          itemId,
+          itemName: entry?.itemName ?? line?.itemName ?? item?.name ?? 'Item',
+          category: item?.category ?? '',
+          imageUrl: item?.imageUrl ?? null,
+          type: 'entrada',
+          displayTypeLabel: returnStatus,
+          reason: `${returnStatus.toUpperCase()} · CONTRATO ${contractCode || reference}`,
+          detail: detailParts.join(' · '),
+          reference,
+          contractCode,
+          orderCode,
+          customerName,
+          deltaUnits: returnedOwn,
+          operationalQuantity: returnedTotal,
+          beforeTotalStock: null,
+          afterTotalStock: null,
+          beforeAvailableStock: null,
+          afterAvailableStock: null,
+          stockEffect: 'operational_return',
+          sourceType: 'rental_return',
+          sourceRentalId: rental.id,
+          sourceId: rental.id,
+          lineKey,
+          userName: operational?.inventoryReturnedByName ?? operational?.returnReview?.reviewedByName ?? rental.createdByName ?? rental.createdBy ?? 'Inventario',
+          userRole: operational?.inventoryReturnedByRole ?? operational?.returnReview?.reviewedByRole ?? rental.createdByRole ?? 'Inventario',
+          operationDate: returnAt,
+          createdAt: returnAt,
+        });
+      });
+    });
+  });
+
+  return rows;
 };
 
 const enrichInventoryMovementReference = (movement = {}, commitmentContext = {}) => {
@@ -9532,7 +9718,13 @@ router.get('/__copetin_db/inventory/movements-history', async (req, res, next) =
     const limit = Math.min(1000, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 650));
     const offset = Math.max(0, Number.isFinite(requestedOffset) ? requestedOffset : 0);
 
-    const enriched = allMovements
+    const lifecycleMovements = buildSyntheticRentalLifecycleMovements({
+      rentals: allRentals,
+      contractById,
+      itemById,
+      movements: allMovements,
+    });
+    const enriched = [...allMovements, ...lifecycleMovements]
       .map((movement) => enrichInventoryMovementReference(movement, traceContext));
     const matching = filterInventoryMovementHistory(enriched, { query, from, to, type, user })
       .sort((a, b) => new Date(b?.createdAt ?? b?.operationDate ?? 0) - new Date(a?.createdAt ?? a?.operationDate ?? 0));
