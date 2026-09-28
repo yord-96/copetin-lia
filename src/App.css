@@ -73539,7 +73539,7 @@ button.inventory-loss-row-action.is-discard:hover {
   box-sizing: border-box !important;
 }
 
-/* REPORTE DIARIO V3: prioriza que las 13 columnas entren completas sin recortar INGRESO/EGRESO. */
+/* REPORTE DIARIO V4: mantiene las 13 columnas completas y centra cada dato en su propia columna. */
 .accounting-bigcash-view .daily-report-table th,
 .accounting-bigcash-view .daily-report-table td {
   box-sizing: border-box !important;
@@ -73548,6 +73548,7 @@ button.inventory-loss-row-action.is-discard:hover {
   padding: 7px 3px !important;
   font-size: 9.25px !important;
   line-height: 1.15 !important;
+  text-align: center !important;
   vertical-align: middle !important;
   white-space: normal !important;
   overflow-wrap: anywhere !important;
@@ -73581,15 +73582,9 @@ button.inventory-loss-row-action.is-discard:hover {
   overflow-wrap: anywhere !important;
 }
 
-.accounting-bigcash-view .daily-report-table td:nth-child(1),
-.accounting-bigcash-view .daily-report-table td:nth-child(2),
-.accounting-bigcash-view .daily-report-table td:nth-child(5) {
-  text-align: center;
-}
-
 .accounting-bigcash-view .daily-report-table td:nth-child(13) {
-  text-align: right !important;
-  padding-right: 5px !important;
+  text-align: center !important;
+  padding-right: 3px !important;
 }
 
 .accounting-bigcash-view .daily-receipt-cell,
@@ -73635,40 +73630,36 @@ button.inventory-loss-row-action.is-discard:hover {
   word-break: break-word !important;
 }
 
+/* Clasificación y método/cuenta: texto administrativo limpio, sin badges ni pastillas. */
 .accounting-bigcash-view .daily-report-table .payment-method-pill,
 .accounting-bigcash-view .daily-report-table .daily-nature-pill {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
+  display: inline !important;
   max-width: 100% !important;
   min-width: 0 !important;
-  padding: 3px 4px !important;
-  font-size: 7.25px !important;
-  line-height: 1 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-size: 9.25px !important;
+  line-height: 1.15 !important;
+  font-weight: 700 !important;
   text-align: center !important;
   white-space: normal !important;
+  overflow: visible !important;
   overflow-wrap: anywhere !important;
-  border-radius: 999px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
-.accounting-bigcash-view .daily-nature-pill {
-  min-height: 22px;
-  border: 1px solid #dce5ef;
-  background: #f7f9fc;
-  color: #425a7d;
-  font-weight: 800;
+.accounting-bigcash-view .daily-report-table .payment-method-pill {
+  color: #27415f !important;
 }
 
-.accounting-bigcash-view .daily-nature-pill.income {
-  border-color: #c9ead7;
-  background: #eefaf3;
-  color: #16804a;
-}
-
+.accounting-bigcash-view .daily-nature-pill,
+.accounting-bigcash-view .daily-nature-pill.income,
 .accounting-bigcash-view .daily-nature-pill.out {
-  border-color: #f1d2c8;
-  background: #fff4f1;
-  color: #b7472c;
+  color: #36506f !important;
 }
 
 .accounting-bigcash-view .daily-income-amount {
