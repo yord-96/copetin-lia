@@ -8758,9 +8758,15 @@ export const buildContractDocumentHtml = ({
           ?? supplierSupportByItem.get(String(line.itemId ?? '').trim());
         const fulfillmentBreakdown = buildFulfillmentBreakdown(line, supplierSupportLines);
         const supplierSupportLabel = fulfillmentBreakdown.label || formatSupplierSupportLabel(supplierSupportLines);
-        const unitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
+        const baseUnitPriceBs = getDocumentLineUnitPriceBs(line) * multiplier;
         const displayQuantity = fulfillmentBreakdown.totalQty;
         const lineTotalBs = getDocumentLineTotalBs(line, multiplier);
+        // El subtotal es la fuente económica ya calculada (incluye descuentos por día/línea).
+        // Para que el PDF sea visualmente coherente, mostramos el precio unitario efectivo
+        // que realmente produce ese subtotal en lugar del precio base sin descuento.
+        const unitPriceBs = displayQuantity > 0
+          ? Number((lineTotalBs / displayQuantity).toFixed(2))
+          : Number(baseUnitPriceBs.toFixed(2));
         const returnIssueSummary = getReturnIssueSummaryForLine(line);
         contractRowNumber += 1;
         return `
