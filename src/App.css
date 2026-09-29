@@ -73639,7 +73639,8 @@ button.inventory-loss-row-action.is-discard:hover {
 .accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 7% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 7% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 12% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(13),
+.accounting-bigcash-view .daily-report-table th:nth-child(14) { width: 8% !important; }
 
 .accounting-bigcash-view .daily-report-table thead th {
   position: sticky;
@@ -73803,3 +73804,38 @@ button.inventory-loss-row-action.is-discard:hover {
     justify-content: center;
   }
 }
+
+/* Reporte diario: filtros por columna y totales de ingresos / egresos. */
+.accounting-bigcash-view .daily-report-table-wrap { overflow-x: auto !important; padding-right: 0 !important; }
+.accounting-bigcash-view .daily-report-table { min-width: 1480px !important; width: 100% !important; max-width: none !important; }
+.accounting-bigcash-view .daily-report-table td { font-size: 12px !important; padding: 12px 7px !important; line-height: 1.35 !important; }
+.accounting-bigcash-view .daily-report-table .daily-money-cell { white-space: nowrap !important; overflow-wrap: normal !important; font-variant-numeric: tabular-nums; font-weight: 700; }
+.accounting-bigcash-view .daily-report-table .daily-expense-cell { color: #dc2626 !important; }
+.accounting-bigcash-view .daily-report-table .daily-revenue-cell { color: #15803d !important; }
+.accounting-bigcash-view .daily-report-table tfoot th,
+.accounting-bigcash-view .daily-report-table tfoot td { position: sticky; bottom: 0; z-index: 2; background: #e8eff8 !important; border-top: 2px solid #15345f; color: #15345f; font-weight: 800; padding: 15px 7px !important; }
+.accounting-bigcash-view .daily-report-table tfoot th { width: auto !important; text-align: left !important; padding-left: 15px !important; }
+.accounting-bigcash-view .daily-column-filter-trigger { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; min-height: 42px; padding: 4px; border: 0; border-radius: 5px; background: transparent; color: #fff; font: inherit; font-size: 10px; font-weight: 700; text-transform: uppercase; cursor: pointer; }
+.accounting-bigcash-view .daily-column-filter-trigger svg { flex: 0 0 12px; }
+.accounting-bigcash-view .daily-column-filter-trigger:hover,
+.accounting-bigcash-view .daily-column-filter-trigger.is-active { background: #315e96; }
+.accounting-bigcash-view .daily-column-filter-trigger.is-active svg { color: #ffd699; fill: #ffd699; }
+.daily-column-filter-trigger:focus-visible { outline: 2px solid #fdb768; outline-offset: -2px; }
+.daily-table-filter-summary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 15px; color: #526174; font-size: 12px; }
+.daily-table-filter-summary button { border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; padding: 6px 10px; color: #15345f; cursor: pointer; }
+.daily-column-filter-panel { position: fixed; z-index: 20000; display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid #d9e1eb; border-radius: 12px; background: #fff; color: #17233a; box-shadow: 0 14px 45px #10254440; font: 13px/1.4 Arial, sans-serif; box-sizing: border-box; }
+.daily-column-filter-panel header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.daily-column-filter-panel header button { display: flex; padding: 4px; border: 0; background: #f1f5f9; color: #526174; cursor: pointer; border-radius: 4px; }
+.daily-column-filter-panel > input { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px; font: inherit; color: #17233a; background: white; }
+.daily-column-filter-panel label { display: flex; align-items: center; gap: 8px; padding: 7px 4px; cursor: pointer; overflow-wrap: anywhere; }
+.daily-column-filter-panel input[type=checkbox] { width: 15px; height: 15px; min-height: 0; flex: 0 0 15px; margin: 0; accent-color: #15345f; }
+.daily-filter-select-all { border-bottom: 1px solid #e2e8f0; font-weight: 700; }
+.daily-filter-options { min-height: 40px; max-height: 200px; overflow-y: auto; }
+.daily-filter-options label:hover { background: #f1f5f9; }
+.daily-column-filter-panel > small { color: #64748b; }
+.daily-column-filter-panel footer { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+.daily-column-filter-panel footer button { border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #15345f; padding: 8px 12px; font: inherit; font-weight: 700; cursor: pointer; }
+.daily-column-filter-panel footer button.apply { background: #15345f; border-color: #15345f; color: white; }
+.accounting-bigcash-view .daily-column-filter-trigger { flex-direction: column; gap: 6px; }
+.accounting-bigcash-view .daily-column-filter-trigger span { overflow-wrap: normal !important; word-break: normal !important; white-space: normal !important; }
+.accounting-bigcash-view .daily-report-table tfoot th { color: #15345f !important; }

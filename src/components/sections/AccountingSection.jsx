@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import DailyCashTable from '../DailyCashTable';
+import { DAILY_CASH_COLUMNS, buildDailyCashRow, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
   getCommercialContractCode,
@@ -627,6 +629,7 @@ function AccountingSection({
   const [bigCashPeriod, setBigCashPeriod] = useState('recent');
   const [bigCashQuery, setBigCashQuery] = useState('');
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
+  const [dailyColumnFilters, setDailyColumnFilters] = useState({});
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
   const [guaranteesView, setGuaranteesView] = useState('pending');
@@ -1603,46 +1606,30 @@ function AccountingSection({
     return { key: 'other_out', label: 'Otros egresos' };
   }, []);
 
-  const getDailyGuaranteeRefundInfo = useCallback((movement) => {
-    const natureKey = getDailyMovementNature(movement).key;
-    if (natureKey !== 'guarantee_refund') return '—';
-    return formatBs(Math.abs(toNumber(movement?.amountBs)));
-  }, [getDailyMovementNature, formatBs]);
-
-  const getDailyDamageInfo = useCallback((movement) => {
-    const natureKey = getDailyMovementNature(movement).key;
-    if (natureKey !== 'damage') return '—';
-    return formatBs(Math.abs(toNumber(movement?.amountBs)));
-  }, [getDailyMovementNature, formatBs]);
-
-  const getDailyContractInfo = useCallback((movement) => {
-    const natureKey = getDailyMovementNature(movement).key;
-    if (!['rental', 'deposit'].includes(natureKey)) return '—';
-    return formatBs(Math.abs(toNumber(movement?.amountBs)));
-  }, [getDailyMovementNature, formatBs]);
-
-  const getDailyTransportInfo = useCallback((movement) => {
-    const natureKey = getDailyMovementNature(movement).key;
-    if (!['transport', 'transport_expense'].includes(natureKey)) return '—';
-    return formatBs(Math.abs(toNumber(movement?.amountBs)));
-  }, [getDailyMovementNature, formatBs]);
-
-  const getDailyGuaranteeReceivedInfo = useCallback((movement) => {
-    const natureKey = getDailyMovementNature(movement).key;
-    if (natureKey !== 'guarantee') return '—';
-    return formatBs(Math.abs(toNumber(movement?.amountBs)));
-  }, [getDailyMovementNature, formatBs]);
+  const dailyTableRows = useMemo(() => dailyReportRows.map((movement) => ({
+    ...buildDailyCashRow(movement, {
+      hour: getHourLabel(movement.createdAt),
+      customer: getDailyCustomerName(movement),
+      nature: getDailyMovementNature(movement),
+      reference: getMovementReference(movement),
+      method: getPaymentMethodLabel(movement),
+      user: getMovementUserLabel(movement),
+    }),
+    movement,
+  })), [dailyReportRows, getDailyCustomerName, getDailyMovementNature, getMovementReference, getMovementUserLabel]);
+  const visibleDailyTableRows = useMemo(() => filterDailyCashRows(dailyTableRows, dailyColumnFilters), [dailyTableRows, dailyColumnFilters]);
 
   const dailyIncomeRows = useMemo(
-    () => dailyReportRows.filter((movement) => toNumber(movement.amountBs) > 0),
-    [dailyReportRows],
+    () => visibleDailyTableRows.filter((row) => row.income != null).map((row) => row.movement),
+    [visibleDailyTableRows],
   );
   const dailyExpenseRows = useMemo(
-    () => dailyReportRows.filter((movement) => toNumber(movement.amountBs) < 0),
-    [dailyReportRows],
+    () => visibleDailyTableRows.filter((row) => row.expense != null).map((row) => row.movement),
+    [visibleDailyTableRows],
   );
-  const dailyIncomeBs = useMemo(() => sumBy(dailyIncomeRows, (movement) => movement.amountBs), [dailyIncomeRows]);
-  const dailyExpenseBs = useMemo(() => Math.abs(sumBy(dailyExpenseRows, (movement) => movement.amountBs)), [dailyExpenseRows]);
+  const dailyTotals = useMemo(() => totalDailyCashRows(visibleDailyTableRows), [visibleDailyTableRows]);
+  const dailyIncomeBs = dailyTotals.income;
+  const dailyExpenseBs = dailyTotals.expense;
   const dailyNetBs = Number((dailyIncomeBs - dailyExpenseBs).toFixed(2));
 
   const summarizeDailyRows = useCallback((rows) => {
@@ -5691,8 +5678,8 @@ function AccountingSection({
       columns: [['Contrato', (r) => r.contractCode || '-'], ['OS', (r) => r.orderCode || '-'], ['Cliente', (r) => r.customerName || '-'], ['Responsable', (r) => r.responsibleName || '-'], ['Fecha', (r) => formatDate(r.returnedAt || r.createdAt)], ['Ítems', (r) => toNumber(r.itemCount || r.items?.length)], ['Daños/faltantes', (r) => toNumber(r.totalAffectedQty || r.affectedQty)], ['Monto', (r) => toNumber(r.pendingBs || r.settledBs || r.totalBs)], ['Estado', () => returnIssuesView === 'pending' ? 'Pendiente' : 'Liquidado']], range: bigCashWorkspaceRanges.issues };
     if (section === 'prepaid') return { title: 'Prepago VIP', subtitle: 'Movimientos de crédito prepago del período.', rows: visiblePrepaidRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cliente', (r) => r.customerName || '-'], ['Movimiento', (r) => r.description || '-'], ['Contrato / Orden', (r) => r.reference || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Saldo', (r) => toNumber(r.balanceAfterBs)]], range: bigCashWorkspaceRanges.prepaid };
-    if (section === 'daily') return { title: 'Reporte diario de Caja Grande', subtitle: `Movimientos confirmados del ${formatDate(dailyReportDate)} entre 00:00 y 23:59 (hora Bolivia).`, rows: dailyReportRows,
-      columns: [['Hora', (r) => getHourLabel(r.createdAt)], ['Sector', (r) => toNumber(r.amountBs) > 0 ? 'Ingreso diario' : 'Egreso diario'], ['Cliente', (r) => getDailyCustomerName(r)], ['Clasificación', (r) => getDailyMovementNature(r).label], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodLabel(r)], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Registrado por', (r) => getMovementUserLabel(r)], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
+    if (section === 'daily') return { title: 'Reporte diario de Caja Grande', subtitle: `Movimientos confirmados del ${formatDate(dailyReportDate)} entre 00:00 y 23:59 (hora Bolivia).`, rows: visibleDailyTableRows,
+      columns: DAILY_CASH_COLUMNS.map((column) => [column.label, (row) => row[column.key]]), date: dailyReportDate, filters: dailyColumnFilters, range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
     if (section === 'voided') return { title: 'Movimientos anulados de Caja Grande', subtitle: 'Historial separado de movimientos anulados.', rows: voidedBigCashRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Monto original', (r) => Math.abs(toNumber(r.amountBs))], ['Motivo anulación', (r) => r.voidReason || '-']], range: bigCashWorkspaceRanges.voided };
     return { title: 'Movimientos de Caja Grande', subtitle: 'Libro de movimientos según filtros actuales.', rows: filteredBigCashRows,
@@ -5727,44 +5714,50 @@ function AccountingSection({
     try {
       const definition = scope === 'petty' ? await getPettyReportDefinition(section) : getBigCashReportDefinition(section);
       const { headers, rows } = buildReportMatrix(definition);
-      const { Workbook } = await import('exceljs');
-      const workbook = new Workbook();
-      workbook.creator = 'EL COPETÍN';
-      workbook.created = new Date();
-      const sheet = workbook.addWorksheet('Reporte', { views: [{ state: 'frozen', ySplit: 5 }] });
-      sheet.mergeCells(1, 1, 1, headers.length);
-      sheet.getCell(1, 1).value = 'EL COPETÍN';
-      sheet.getCell(1, 1).font = { bold: true, size: 18, color: { argb: 'FF173A70' } };
-      sheet.mergeCells(2, 1, 2, headers.length);
-      sheet.getCell(2, 1).value = definition.title;
-      sheet.getCell(2, 1).font = { bold: true, size: 14 };
-      sheet.mergeCells(3, 1, 3, headers.length);
-      sheet.getCell(3, 1).value = `${definition.subtitle} · ${getReportRangeLabel(definition.range)}`;
-      sheet.getCell(3, 1).font = { italic: true, color: { argb: 'FF667085' } };
-      const headerRow = sheet.getRow(5);
-      headerRow.values = headers;
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
-        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-      });
-      rows.forEach((values, index) => {
-        const row = sheet.addRow(values);
-        row.alignment = { vertical: 'top', wrapText: true };
-        if (index % 2 === 1) row.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F9FC' } }; });
-      });
-      sheet.columns.forEach((column, index) => {
-        const maxLength = Math.min(42, Math.max(12, headers[index]?.length || 12, ...rows.slice(0, 200).map((row) => String(row[index] ?? '').length)));
-        column.width = maxLength + 2;
-      });
-      sheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: headers.length } };
-      sheet.pageSetup = { orientation: headers.length > 7 ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
-      sheet.headerFooter.oddFooter = '&LEl Copetín&C&P de &N&RDocumento interno';
+      let workbook;
+      if (scope === 'big' && section === 'daily') {
+        workbook = await createDailyCashWorkbook(definition);
+      } else {
+        const excelModule = await import('exceljs');
+        const ExcelJS = excelModule.default ?? excelModule;
+        workbook = new ExcelJS.Workbook();
+        workbook.creator = 'EL COPETÍN';
+        workbook.created = new Date();
+        const sheet = workbook.addWorksheet('Reporte', { views: [{ state: 'frozen', ySplit: 5 }] });
+        sheet.mergeCells(1, 1, 1, headers.length);
+        sheet.getCell(1, 1).value = 'EL COPETÍN';
+        sheet.getCell(1, 1).font = { bold: true, size: 18, color: { argb: 'FF173A70' } };
+        sheet.mergeCells(2, 1, 2, headers.length);
+        sheet.getCell(2, 1).value = definition.title;
+        sheet.getCell(2, 1).font = { bold: true, size: 14 };
+        sheet.mergeCells(3, 1, 3, headers.length);
+        sheet.getCell(3, 1).value = `${definition.subtitle} · ${getReportRangeLabel(definition.range)}`;
+        sheet.getCell(3, 1).font = { italic: true, color: { argb: 'FF667085' } };
+        const headerRow = sheet.getRow(5);
+        headerRow.values = headers;
+        headerRow.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A70' } };
+          cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        });
+        rows.forEach((values, index) => {
+          const row = sheet.addRow(values);
+          row.alignment = { vertical: 'top', wrapText: true };
+          if (index % 2 === 1) row.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F9FC' } }; });
+        });
+        sheet.columns.forEach((column, index) => {
+          const maxLength = Math.min(42, Math.max(12, headers[index]?.length || 12, ...rows.slice(0, 200).map((row) => String(row[index] ?? '').length)));
+          column.width = maxLength + 2;
+        });
+        sheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: headers.length } };
+        sheet.pageSetup = { orientation: headers.length > 7 ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
+        sheet.headerFooter.oddFooter = '&LEl Copetín&C&P de &N&RDocumento interno';
+      }
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `${definition.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}-${getInputDate()}.xlsx`;
+      link.download = `${definition.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-')}-${definition.date || getInputDate()}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -5792,6 +5785,12 @@ function AccountingSection({
         popup.opener = null;
       } catch {
         // Algunos navegadores no permiten modificar opener; no impide generar el reporte.
+      }
+      if (scope === 'big' && section === 'daily') {
+        popup.document.write(buildDailyCashReportHtml(definition, formatBs));
+        popup.document.close();
+        popup.focus();
+        return;
       }
       const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
       const moneyIndexes = headers.map((label, index) => /monto|saldo|total|pagado|ingreso|egreso|costo|garant/i.test(label) ? index : -1).filter((index) => index >= 0);
@@ -7566,6 +7565,7 @@ function AccountingSection({
                     onChange={(event) => {
                       const date = event.target.value || getInputDate();
                       setBigCashWorkspaceRanges((current) => ({ ...current, daily: { dateFrom: date, dateTo: date } }));
+                      setDailyColumnFilters({});
                     }}
                   />
                 </label>
@@ -7579,7 +7579,7 @@ function AccountingSection({
                 <div className="daily-sector-heading">
                   <span className="daily-sector-kicker">RESUMEN OPERATIVO</span>
                   <h3>Movimientos confirmados del día</h3>
-                  <p>La tabla consolida ingresos y egresos confirmados del día seleccionado. Los desgloses inferiores se mantienen enfocados en los ingresos para conservar la trazabilidad del cobro.</p>
+                  <p>Ingresos y egresos confirmados del día. Los filtros de la tabla se aplican al resumen, los totales y las exportaciones. Los desgloses por origen y medio corresponden a los ingresos visibles.</p>
                 </div>
                 <div className="daily-sector-inline-stats" aria-label="Resumen del día">
                   <article className="daily-inline-stat income">
@@ -7617,36 +7617,7 @@ function AccountingSection({
                 </div>
               </div>
 
-              <div className="bigcash-table-wrap daily-report-table-wrap">
-                <table className="accounting-table bigcash-table daily-report-table">
-                  <thead><tr><th>Recibo</th><th>Hora</th><th>Cliente</th><th>Clasificación</th><th>Referencia</th><th>Método / cuenta</th><th>Contrato</th><th>Transporte</th><th>Garantía recibida</th><th>Devol. garantía</th><th>Daños / faltantes</th><th>Registrado por</th><th>Ingreso / egreso</th></tr></thead>
-                  <tbody>
-                    {dailyReportRows.map((movement) => {
-                      const paymentMeta = getPaymentMethodMeta(movement.paymentMethod);
-                      const movementAmount = toNumber(movement.amountBs);
-                      const isExpenseMovement = movementAmount < 0;
-                      return <tr key={movement.id}>
-                        <td><span className="daily-receipt-cell">{movement.receiptCode || movement.receipt || '-'}</span></td>
-                        <td className="daily-time-cell"><strong>{getHourLabel(movement.createdAt)}</strong></td>
-                        <td className="daily-concept-cell"><strong>{getDailyCustomerName(movement)}</strong></td>
-                        <td><span className={`daily-nature-pill ${isExpenseMovement ? 'out' : 'income'}`}>{getDailyMovementNature(movement).label}</span></td>
-                        <td>{getMovementReference(movement)}</td>
-                        <td><span className={`payment-method-pill ${paymentMeta.className}`}>{getPaymentMethodLabel(movement)}</span></td>
-                        <td className="daily-extra-info-cell">{getDailyContractInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyTransportInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyGuaranteeReceivedInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyGuaranteeRefundInfo(movement)}</td>
-                        <td className="daily-extra-info-cell">{getDailyDamageInfo(movement)}</td>
-                        <td><span className="bigcash-user-label">{getMovementUserLabel(movement)}</span></td>
-                        <td className={`${isExpenseMovement ? 'negative daily-out-amount' : 'daily-income-amount'} amount`}>
-                          {isExpenseMovement ? `− ${formatBs(Math.abs(movementAmount))}` : formatBs(movementAmount)}
-                        </td>
-                      </tr>;
-                    })}
-                    {!dailyReportRows.length ? <tr><td colSpan={13}><p className="status">No hay movimientos confirmados para este día.</p></td></tr> : null}
-                  </tbody>
-                </table>
-              </div>
+              <DailyCashTable key={dailyReportDate} allRows={dailyTableRows} rows={visibleDailyTableRows} filters={dailyColumnFilters} onFiltersChange={setDailyColumnFilters} formatBs={formatBs} />
             </article>
           </section>
         ) : null}
