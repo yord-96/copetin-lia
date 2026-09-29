@@ -73,18 +73,18 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
     </div>
     <div className="bigcash-table-wrap daily-report-table-wrap">
       <table className="accounting-table bigcash-table daily-report-table">
-        <thead><tr>{DAILY_CASH_COLUMNS.map((column) => <th key={column.key} scope="col">
+        <thead><tr>{DAILY_CASH_COLUMNS.map((column) => <th key={column.key} scope="col" className={`daily-col-${column.key}`}>
           <button type="button" className={`daily-column-filter-trigger${filters[column.key] ? ' is-active' : ''}`} onClick={(event) => open(event, column)} aria-label={`Filtrar ${column.label}${filters[column.key] ? ' (activo)' : ''}`} aria-haspopup="dialog" aria-expanded={openFilter?.column.key === column.key}>
             <span>{column.label}</span><Filter size={12} aria-hidden="true" />
           </button>
         </th>)}</tr></thead>
         <tbody>
-          {rows.map((row, index) => <tr key={row.id ?? index}>{DAILY_CASH_COLUMNS.map((column) => <td key={column.key} className={`${column.money ? 'daily-money-cell' : ''} ${column.tone === 'out' && row[column.key] != null ? 'daily-expense-cell' : ''} ${column.tone === 'income' ? 'daily-revenue-cell' : ''}`}>
+          {rows.map((row, index) => <tr key={row.id ?? index}>{DAILY_CASH_COLUMNS.map((column) => <td key={column.key} className={`daily-col-${column.key} ${column.money ? 'daily-money-cell' : ''} ${column.tone === 'out' && row[column.key] != null ? 'daily-expense-cell' : ''} ${column.tone === 'income' ? 'daily-revenue-cell' : ''} ${column.key === 'nature' && row.expense != null ? 'daily-expense-text' : column.key === 'nature' && row.income != null ? 'daily-revenue-text' : ''}`}>
             {dailyCashCellText(column, row[column.key], formatBs)}
           </td>)}</tr>)}
           {!rows.length && <tr><td colSpan={14}><p className="status">{allRows.length ? 'No hay movimientos que coincidan con los filtros.' : 'No hay movimientos confirmados para este día.'}</p></td></tr>}
         </tbody>
-        <tfoot><tr><th scope="row" colSpan={6}>TOTAL {filterCount ? 'FILTRADO' : 'DEL DÍA'}</th>{DAILY_CASH_COLUMNS.slice(6).map((column) => <td key={column.key} className={`daily-money-cell ${column.tone === 'out' ? 'daily-expense-cell' : column.tone === 'income' ? 'daily-revenue-cell' : ''}`}>
+        <tfoot><tr><th scope="row" colSpan={6}>TOTAL {filterCount ? 'FILTRADO' : 'DEL DÍA'}</th>{DAILY_CASH_COLUMNS.slice(6).map((column) => <td key={column.key} className={`daily-col-${column.key} daily-money-cell ${column.tone === 'out' ? 'daily-expense-cell' : column.tone === 'income' ? 'daily-revenue-cell' : ''}`}>
           {column.money ? formatBs(totals[column.key]) : ''}
         </td>)}</tr></tfoot>
       </table>
