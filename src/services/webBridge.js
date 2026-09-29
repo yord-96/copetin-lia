@@ -9672,8 +9672,8 @@ export const buildWeeklyInventoryHtml = ({
             <td class="wi-report"></td>
           </tr>`;
   }).join('');
-  const renderGroupedItemRows = (lines, manualRowsPerGroup = 0, supplierSupportByItem = new Map()) => {
-    let offset = 0;
+  const renderGroupedItemRows = (lines, manualRowsPerGroup = 0, supplierSupportByItem = new Map(), startingOffset = 0) => {
+    let offset = Math.max(0, Math.trunc(Number(startingOffset ?? 0)));
     return groupInventoryLines(lines, supplierSupportByItem).map((group) => {
       const rows = renderItemRows(group.lines, offset, supplierSupportByItem);
       offset += group.lines.length;
@@ -9684,6 +9684,83 @@ export const buildWeeklyInventoryHtml = ({
           ${rows}
           ${manualRowsPerGroup > 0 ? renderManualItemRows(manualRowsPerGroup) : ''}`;
     }).join('');
+  };
+  const buildIndividualDailyScheduleRows = ({ rental, contract, orderItems, supplierSupportByItem }) => {
+    const pricingPlan = contract?.pricingPlan ?? rental?.pricingPlan ?? null;
+    if (pricingPlan?.mode !== 'daily_schedule') return null;
+
+    const sourceDays = Array.isArray(pricingPlan?.scheduleDays)
+      ? pricingPlan.scheduleDays.filter((day) => day?.id || day?.label || day?.date)
+      : [];
+    const daysByKey = new Map();
+    const registerDay = (day, fallbackIndex = 0) => {
+      const id = String(day?.id ?? '').trim();
+      const date = toDateKey(day?.date);
+      const label = String(day?.label ?? '').trim();
+      const key = date ? `date:${date}` : id ? `id:${id}` : label ? `label:${normalizeText(label)}` : `fallback:${fallbackIndex}`;
+      if (!daysByKey.has(key)) {
+        daysByKey.set(key, {
+          id: id || (date ? `day-${date}` : `day-${fallbackIndex + 1}`),
+          label: label || `Dia ${fallbackIndex + 1}`,
+          date,
+          index: fallbackIndex,
+        });
+      }
+      return daysByKey.get(key);
+    };
+
+    sourceDays.forEach((day, index) => registerDay(day, index));
+    (orderItems ?? []).forEach((line) => {
+      const lineDate = toDateKey(line?.serviceDate ?? line?.date);
+      const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+      const lineLabel = String(line?.serviceDayLabel ?? line?.dayLabel ?? '').trim();
+      const existing = lineDate
+        ? [...daysByKey.values()].find((day) => day.date === lineDate)
+        : lineDayId
+          ? [...daysByKey.values()].find((day) => String(day.id) === lineDayId)
+          : lineLabel
+            ? [...daysByKey.values()].find((day) => normalizeText(day.label) === normalizeText(lineLabel))
+            : null;
+      if (!existing && (lineDate || lineDayId || lineLabel)) {
+        registerDay({ id: lineDayId, date: lineDate, label: lineLabel }, daysByKey.size);
+      }
+    });
+
+    const scheduleDays = [...daysByKey.values()].sort((left, right) => {
+      const dateCompare = String(left.date ?? '').localeCompare(String(right.date ?? ''));
+      if (dateCompare !== 0) return dateCompare;
+      return Number(left.index ?? 0) - Number(right.index ?? 0);
+    });
+    if (scheduleDays.length <= 1) return null;
+
+    const normalizedPlan = { ...pricingPlan, scheduleDays };
+    const alignedItems = alignLinesToDailySchedule(normalizedPlan, orderItems ?? []);
+    const groups = scheduleDays.map((day, index) => ({ day, index, lines: [] }));
+    alignedItems.forEach((line) => {
+      const lineDate = toDateKey(line?.serviceDate ?? line?.date);
+      const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+      const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
+      let dayIndex = lineDate ? scheduleDays.findIndex((day) => day.date === lineDate) : -1;
+      if (dayIndex < 0 && lineDayId) dayIndex = scheduleDays.findIndex((day) => String(day.id) === lineDayId);
+      if (dayIndex < 0 && lineLabel) dayIndex = scheduleDays.findIndex((day) => normalizeText(day.label) === lineLabel);
+      groups[Math.max(0, dayIndex)].lines.push(line);
+    });
+
+    let itemOffset = 0;
+    return groups
+      .filter((group) => group.lines.length > 0)
+      .map((group) => {
+        const label = String(group.day?.label ?? '').trim() || `Dia ${group.index + 1}`;
+        const dateLabel = group.day?.date ? formatDocumentLongDate(group.day.date) : '';
+        const groupedRows = renderGroupedItemRows(group.lines, 2, supplierSupportByItem, itemOffset);
+        itemOffset += aggregateInventoryLines(group.lines, supplierSupportByItem).length;
+        return `
+          <tr class="wi-day-row">
+            <td colspan="8"><strong>${escapeHtml(label)}</strong>${dateLabel ? `<span>${escapeHtml(dateLabel)}</span>` : ''}</td>
+          </tr>
+          ${groupedRows}`;
+      })
+      .join('');
   };
   const renderManualItemRows = (count = 3) => Array.from({ length: count }, () => `
           <tr class="wi-manual-row">
@@ -9733,7 +9810,12 @@ export const buildWeeklyInventoryHtml = ({
     const splitItems = format !== 'individual' && orderItems.length > 7;
     const firstColumnSize = splitItems ? Math.ceil(orderItems.length / 2) : orderItems.length;
     const manualRows = format === 'individual' ? '' : renderManualItemRows(3);
-    const firstRows = `${format === 'individual' ? renderGroupedItemRows(orderItems, 2, supplierSupportByItem) : renderItemRows(orderItems.slice(0, firstColumnSize), 0, supplierSupportByItem)}${splitItems ? '' : manualRows}`;
+    const dailyScheduleRows = format === 'individual'
+      ? buildIndividualDailyScheduleRows({ rental, contract, orderItems, supplierSupportByItem })
+      : null;
+    const firstRows = `${format === 'individual'
+      ? dailyScheduleRows ?? renderGroupedItemRows(orderItems, 2, supplierSupportByItem)
+      : renderItemRows(orderItems.slice(0, firstColumnSize), 0, supplierSupportByItem)}${splitItems ? '' : manualRows}`;
     const secondRows = splitItems
       ? `${renderItemRows(orderItems.slice(firstColumnSize), firstColumnSize, supplierSupportByItem)}${manualRows}`
       : '';
@@ -9987,6 +10069,9 @@ export const buildWeeklyInventoryHtml = ({
       .wi-table .wi-report-head, .wi-table td:nth-child(8) { border-left: .35mm solid #09255a; }
       .wi-table td { height: 6.8mm; padding: .45mm .75mm; border-right: .23mm solid #bac4d6; border-bottom: .23mm solid #bac4d6; vertical-align: middle; font-size: 8.8px; }
       .wi-table tr:last-child td { border-bottom: 0; }
+      .wi-day-row td { height: auto; padding: 1.25mm 1.6mm; border-top: .38mm solid #09255a; border-bottom: .3mm solid #09255a; background: #eef3fb; color: #09255a; text-align: left !important; }
+      .wi-day-row strong { display: inline-block; margin-right: 2mm; color: #09255a; font-size: 9.4px; font-weight: 950; text-transform: uppercase; }
+      .wi-day-row span { color: #8b3b1c; font-size: 8.6px; font-weight: 800; text-transform: uppercase; }
       .wi-table th:nth-child(n+4):nth-child(-n+7), .wi-table td:nth-child(n+4):nth-child(-n+7) { text-align: center; }
       .wi-table th:last-child, .wi-table td:last-child { border-right: 0; }
       .wi-index { width: 6mm; text-align: center !important; }
@@ -10019,6 +10104,7 @@ export const buildWeeklyInventoryHtml = ({
         .wi-table,
         .wi-table td,
         .wi-category-row td,
+        .wi-day-row td,
         .wi-order,
         .wi-order-head,
         .wi-order-meta,
