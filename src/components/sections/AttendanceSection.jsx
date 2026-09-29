@@ -15,6 +15,7 @@ const normalizeText = (value) => String(value ?? '')
 
 
 const ATTENDANCE_TIME_ZONE = 'America/La_Paz';
+const ATTENDANCE_DUPLICATE_WINDOW_MINUTES = 3;
 
 const getAttendanceDateKey = (value) => {
   const date = new Date(value);
@@ -59,6 +60,181 @@ const formatAttendanceSpan = (minutes) => {
   const hours = Math.floor(totalMinutes / 60);
   const remainder = totalMinutes % 60;
   return `${String(hours).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+};
+
+const shiftAttendanceDateKey = (dateKey, days) => {
+  const match = String(dateKey ?? '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return dateKey || '';
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return date.toISOString().slice(0, 10);
+};
+
+const getAttendanceRecordMs = (record) => {
+  const value = new Date(record?.capturedAt ?? record?.createdAt ?? 0).getTime();
+  return Number.isFinite(value) ? value : NaN;
+};
+
+const getAttendancePersonKey = (record) =>
+  String(record?.userId || record?.userName || 'usuario').trim() || 'usuario';
+
+const getAttendanceRecordKey = (record, index = 0) =>
+  String(record?.id || record?.code || `${getAttendancePersonKey(record)}-${record?.type || 'marca'}-${getAttendanceRecordMs(record)}-${index}`);
+
+const buildAttendanceWorkAnalysis = (records) => {
+  const byPerson = new Map();
+  (Array.isArray(records) ? records : []).forEach((record, index) => {
+    const timestampMs = getAttendanceRecordMs(record);
+    if (!Number.isFinite(timestampMs)) return;
+    const personKey = getAttendancePersonKey(record);
+    if (!byPerson.has(personKey)) byPerson.set(personKey, []);
+    byPerson.get(personKey).push({ record, index, timestampMs, recordKey: getAttendanceRecordKey(record, index) });
+  });
+
+  const journeys = [];
+  const anomalies = [];
+
+  byPerson.forEach((personRows, personKey) => {
+    const ordered = personRows.slice().sort((left, right) => left.timestampMs - right.timestampMs || left.index - right.index);
+    const userName = ordered[0]?.record?.userName || 'Usuario';
+    const role = ordered[0]?.record?.role || '';
+    const intervals = [];
+    let pendingEntry = null;
+    let lastAcceptedExit = null;
+
+    ordered.forEach((row) => {
+      const type = String(row.record?.type ?? '').toLowerCase();
+      if (type === 'entrada') {
+        if (!pendingEntry) {
+          pendingEntry = row;
+          return;
+        }
+
+        const minutesApart = Math.max(0, (row.timestampMs - pendingEntry.timestampMs) / 60000);
+        if (minutesApart <= ATTENDANCE_DUPLICATE_WINDOW_MINUTES) {
+          anomalies.push({
+            personKey,
+            userName,
+            role,
+            timestampMs: row.timestampMs,
+            record: row.record,
+            dateKey: getAttendanceDateKey(pendingEntry.record?.capturedAt ?? pendingEntry.record?.createdAt),
+            issue: 'Posible entrada duplicada',
+            treatment: `No suma tiempo. Está a ${Math.max(0, Math.round(minutesApart))} min de la entrada anterior; se conserva la primera entrada para el emparejamiento.`,
+          });
+          return;
+        }
+
+        anomalies.push({
+          personKey,
+          userName,
+          role,
+          timestampMs: pendingEntry.timestampMs,
+          record: pendingEntry.record,
+          dateKey: getAttendanceDateKey(pendingEntry.record?.capturedAt ?? pendingEntry.record?.createdAt),
+          issue: 'Entrada sin salida antes de una nueva entrada',
+          treatment: 'El intervalo anterior es ambiguo y no se inventa una salida. Para continuar el cálculo se toma la entrada más reciente como nuevo inicio.',
+        });
+        pendingEntry = row;
+        return;
+      }
+
+      if (type === 'salida') {
+        if (!pendingEntry) {
+          const minutesFromPreviousExit = lastAcceptedExit
+            ? Math.max(0, (row.timestampMs - lastAcceptedExit.timestampMs) / 60000)
+            : Number.POSITIVE_INFINITY;
+          anomalies.push({
+            personKey,
+            userName,
+            role,
+            timestampMs: row.timestampMs,
+            record: row.record,
+            dateKey: getAttendanceDateKey(row.record?.capturedAt ?? row.record?.createdAt),
+            issue: minutesFromPreviousExit <= ATTENDANCE_DUPLICATE_WINDOW_MINUTES ? 'Posible salida duplicada' : 'Salida sin entrada pendiente',
+            treatment: minutesFromPreviousExit <= ATTENDANCE_DUPLICATE_WINDOW_MINUTES
+              ? `No suma tiempo. Está a ${Math.max(0, Math.round(minutesFromPreviousExit))} min de la salida anterior y se conserva como evidencia para revisión.`
+              : 'No suma tiempo. La marca original se conserva para revisión.',
+          });
+          return;
+        }
+
+        if (row.timestampMs >= pendingEntry.timestampMs) {
+          const startValue = pendingEntry.record?.capturedAt ?? pendingEntry.record?.createdAt;
+          const endValue = row.record?.capturedAt ?? row.record?.createdAt;
+          intervals.push({
+            personKey,
+            userName,
+            role,
+            dateKey: getAttendanceDateKey(startValue),
+            startMs: pendingEntry.timestampMs,
+            endMs: row.timestampMs,
+            minutes: (row.timestampMs - pendingEntry.timestampMs) / 60000,
+            entryRecord: pendingEntry.record,
+            exitRecord: row.record,
+            entryKey: pendingEntry.recordKey,
+            exitKey: row.recordKey,
+            crossesMidnight: getAttendanceDateKey(startValue) !== getAttendanceDateKey(endValue),
+          });
+          lastAcceptedExit = row;
+          pendingEntry = null;
+        }
+      }
+    });
+
+    if (pendingEntry) {
+      anomalies.push({
+        personKey,
+        userName,
+        role,
+        timestampMs: pendingEntry.timestampMs,
+        record: pendingEntry.record,
+        dateKey: getAttendanceDateKey(pendingEntry.record?.capturedAt ?? pendingEntry.record?.createdAt),
+        issue: 'Entrada sin salida posterior',
+        treatment: 'No se inventa una hora de salida. El intervalo queda fuera del total hasta ser revisado.',
+      });
+    }
+
+    const journeyMap = new Map();
+    const ensureJourney = (dateKey) => {
+      const key = `${personKey}|${dateKey || 'sin-fecha'}`;
+      if (!journeyMap.has(key)) {
+        journeyMap.set(key, {
+          personKey,
+          dateKey,
+          userName,
+          role,
+          intervals: [],
+          anomalies: [],
+          markKeys: new Set(),
+          entryCount: 0,
+          exitCount: 0,
+        });
+      }
+      return journeyMap.get(key);
+    };
+
+    intervals.forEach((interval) => {
+      const journey = ensureJourney(interval.dateKey);
+      journey.intervals.push(interval);
+      [interval.entryKey, interval.exitKey].forEach((key) => journey.markKeys.add(key));
+      journey.entryCount += 1;
+      journey.exitCount += 1;
+    });
+
+    anomalies.filter((item) => item.personKey === personKey).forEach((anomaly) => {
+      const journey = ensureJourney(anomaly.dateKey);
+      journey.anomalies.push(anomaly);
+      const anomalyKey = getAttendanceRecordKey(anomaly.record, anomaly.timestampMs);
+      journey.markKeys.add(anomalyKey);
+      if (anomaly.record?.type === 'entrada') journey.entryCount += 1;
+      if (anomaly.record?.type === 'salida') journey.exitCount += 1;
+    });
+
+    journeyMap.forEach((journey) => journeys.push(journey));
+  });
+
+  return { journeys, anomalies };
 };
 
 const getAttendanceEvidenceLabel = (record) => {
@@ -258,13 +434,24 @@ function AttendanceSection({
       workbook.title = 'Reporte de asistencia';
       workbook.created = new Date();
 
-      const exportSource = await api.attendance.listRecords({
-        dateFrom: filters.dateFrom,
-        dateTo: filters.dateTo,
-        type: filters.type,
-        query: filters.query,
-        limit: 1000,
-      });
+      const bufferedDateFrom = filters.dateFrom ? shiftAttendanceDateKey(filters.dateFrom, -1) : '';
+      const bufferedDateTo = filters.dateTo ? shiftAttendanceDateKey(filters.dateTo, 1) : '';
+      const [exportSource, calculationSource] = await Promise.all([
+        api.attendance.listRecords({
+          dateFrom: filters.dateFrom,
+          dateTo: filters.dateTo,
+          type: filters.type,
+          query: filters.query,
+          limit: 5000,
+        }),
+        api.attendance.listRecords({
+          dateFrom: bufferedDateFrom,
+          dateTo: bufferedDateTo,
+          type: 'all',
+          query: '',
+          limit: 5000,
+        }),
+      ]);
       const exportQuery = normalizeText(filters.query);
       const sortedRecords = (Array.isArray(exportSource) ? exportSource : [])
         .filter((record) => {
@@ -278,8 +465,30 @@ function AttendanceSection({
           }
           return true;
         })
-        .sort((left, right) => new Date(left?.capturedAt ?? left?.createdAt ?? 0) - new Date(right?.capturedAt ?? right?.createdAt ?? 0));
-      const uniqueUsers = new Set(sortedRecords.map((record) => String(record?.userId || record?.userName || '').trim()).filter(Boolean));
+        .sort((left, right) => getAttendanceRecordMs(left) - getAttendanceRecordMs(right));
+
+      const visiblePersonKeys = new Set(sortedRecords.map((record) => getAttendancePersonKey(record)));
+      const calculationRecords = (Array.isArray(calculationSource) ? calculationSource : [])
+        .filter((record) => !exportQuery || visiblePersonKeys.has(getAttendancePersonKey(record)))
+        .sort((left, right) => getAttendanceRecordMs(left) - getAttendanceRecordMs(right));
+      const attendanceAnalysis = buildAttendanceWorkAnalysis(calculationRecords);
+      const reportJourneys = attendanceAnalysis.journeys.filter((journey) => {
+        if (filters.dateFrom && journey.dateKey < filters.dateFrom) return false;
+        if (filters.dateTo && journey.dateKey > filters.dateTo) return false;
+        if (exportQuery && !visiblePersonKeys.has(journey.personKey)) return false;
+        return true;
+      });
+      const reportAnomalies = attendanceAnalysis.anomalies.filter((anomaly) => {
+        if (filters.dateFrom && anomaly.dateKey < filters.dateFrom) return false;
+        if (filters.dateTo && anomaly.dateKey > filters.dateTo) return false;
+        if (exportQuery && !visiblePersonKeys.has(anomaly.personKey)) return false;
+        return true;
+      });
+      const workedMinutesTotal = reportJourneys.reduce(
+        (sum, journey) => sum + journey.intervals.reduce((journeySum, interval) => journeySum + interval.minutes, 0),
+        0,
+      );
+      const uniqueUsers = new Set(sortedRecords.map((record) => getAttendancePersonKey(record)).filter(Boolean));
       const entryCount = sortedRecords.filter((record) => record?.type === 'entrada').length;
       const exitCount = sortedRecords.filter((record) => record?.type === 'salida').length;
       const responsibleCount = sortedRecords.filter((record) => record?.markingMode === 'responsable').length;
@@ -314,6 +523,13 @@ function AttendanceSection({
         ['Marcas por responsable', responsibleCount],
         ['Marcas con evidencia fotográfica', evidenceCount],
         ['Marcas con coordenadas GPS', gpsCount],
+        ['Horas trabajadas calculadas', formatAttendanceSpan(workedMinutesTotal)],
+        ['Jornadas analizadas', reportJourneys.length],
+        ['Jornadas con incidencia', reportJourneys.filter((journey) => journey.anomalies.length > 0).length],
+        ['Marcas con incidencia', reportAnomalies.length],
+        ['Criterio de cálculo', 'Suma de intervalos cronológicos Entrada → Salida. Una salida posterior a medianoche cierra la entrada pendiente del día anterior. Las marcas incoherentes se conservan, se señalan y no inventan tiempo.'],
+        ['Posible doble marcación', `Dos marcas iguales consecutivas separadas por hasta ${ATTENDANCE_DUPLICATE_WINDOW_MINUTES} min se señalan como posible duplicado; la marca extra no añade tiempo.`],
+        ['Sin jornada fija', 'El reporte no compara contra 8 horas, horarios esperados, horas extra ni faltantes. Solo informa tiempo calculado desde las marcas.'],
       ].forEach(([label, value]) => summarySheet.addRow({ label, value }));
       summarySheet.getColumn(1).font = { bold: true, color: { argb: 'FF173A6B' } };
       applyAttendanceDataBorders(summarySheet, 3, summarySheet.rowCount, 1, 2);
@@ -376,75 +592,181 @@ function AttendanceSection({
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
       });
 
-      const dailyGroups = new Map();
-      sortedRecords.forEach((record) => {
-        const dateKey = getAttendanceDateKey(record?.capturedAt ?? record?.createdAt);
-        const personKey = String(record?.userId || record?.userName || 'usuario').trim();
-        const key = `${dateKey}|${personKey}`;
-        if (!dailyGroups.has(key)) {
-          dailyGroups.set(key, {
-            dateKey,
-            userName: record?.userName || 'Usuario',
-            role: record?.role || '',
-            records: [],
-          });
-        }
-        dailyGroups.get(key).records.push(record);
-      });
-
       const dailySheet = workbook.addWorksheet('Jornada por persona', {
         views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
-        autoFilter: { from: 'A1', to: 'J1' },
+        autoFilter: { from: 'A1', to: 'M1' },
       });
       dailySheet.columns = [
-        { header: 'Fecha', key: 'date', width: 13 },
+        { header: 'Fecha jornada', key: 'date', width: 15 },
         { header: 'Usuario', key: 'userName', width: 28 },
         { header: 'Cargo / rol', key: 'role', width: 20 },
         { header: 'Primera entrada', key: 'firstEntry', width: 16 },
         { header: 'Última salida', key: 'lastExit', width: 16 },
-        { header: 'Amplitud jornada', key: 'span', width: 17 },
+        { header: 'Horas trabajadas', key: 'worked', width: 18 },
+        { header: 'Intervalos válidos', key: 'intervals', width: 17 },
         { header: 'Entradas', key: 'entries', width: 11 },
         { header: 'Salidas', key: 'exits', width: 11 },
         { header: 'Total marcas', key: 'marks', width: 13 },
-        { header: 'Estado de marcación', key: 'status', width: 24 },
+        { header: 'Cruza medianoche', key: 'crossMidnight', width: 18 },
+        { header: 'Incidencias', key: 'issues', width: 13 },
+        { header: 'Estado', key: 'status', width: 25 },
       ];
       applyAttendanceHeaderStyle(dailySheet.getRow(1));
-      Array.from(dailyGroups.values())
+      reportJourneys
+        .slice()
         .sort((left, right) => left.dateKey.localeCompare(right.dateKey) || left.userName.localeCompare(right.userName, 'es'))
-        .forEach((group) => {
-          const recordsByTime = group.records.slice().sort((left, right) => new Date(left?.capturedAt ?? left?.createdAt ?? 0) - new Date(right?.capturedAt ?? right?.createdAt ?? 0));
-          const entries = recordsByTime.filter((record) => record?.type === 'entrada');
-          const exits = recordsByTime.filter((record) => record?.type === 'salida');
-          const firstEntry = entries[0];
-          const lastExit = exits[exits.length - 1];
-          const firstEntryMs = firstEntry ? new Date(firstEntry?.capturedAt ?? firstEntry?.createdAt ?? 0).getTime() : NaN;
-          const lastExitMs = lastExit ? new Date(lastExit?.capturedAt ?? lastExit?.createdAt ?? 0).getTime() : NaN;
-          const hasValidSpan = Number.isFinite(firstEntryMs) && Number.isFinite(lastExitMs) && lastExitMs >= firstEntryMs;
-          let statusLabel = 'Completa';
-          if (!entries.length && exits.length) statusLabel = 'Solo salida';
-          else if (entries.length && !exits.length) statusLabel = 'Solo entrada';
-          else if (!entries.length && !exits.length) statusLabel = 'Sin entrada/salida';
-          else if (entries.length !== exits.length) statusLabel = 'Marcas desbalanceadas';
-          else if (entries.length > 1 || exits.length > 1) statusLabel = 'Múltiples marcaciones';
+        .forEach((journey) => {
+          const sortedIntervals = journey.intervals.slice().sort((left, right) => left.startMs - right.startMs);
+          const firstInterval = sortedIntervals[0];
+          const lastInterval = sortedIntervals[sortedIntervals.length - 1];
+          const workedMinutes = sortedIntervals.reduce((sum, interval) => sum + interval.minutes, 0);
+          const crossesMidnight = sortedIntervals.some((interval) => interval.crossesMidnight);
+          const statusLabel = sortedIntervals.length === 0
+            ? 'REVISAR MARCACIÓN'
+            : journey.anomalies.length > 0
+              ? 'CALCULADA CON INCIDENCIAS'
+              : crossesMidnight
+                ? 'CALCULADA · CRUZA MEDIANOCHE'
+                : 'CALCULADA';
 
           dailySheet.addRow({
-            date: group.dateKey ? group.dateKey.split('-').reverse().join('/') : '',
-            userName: group.userName,
-            role: group.role,
-            firstEntry: firstEntry ? formatAttendanceTime(firstEntry?.capturedAt ?? firstEntry?.createdAt) : '-',
-            lastExit: lastExit ? formatAttendanceTime(lastExit?.capturedAt ?? lastExit?.createdAt) : '-',
-            span: hasValidSpan ? formatAttendanceSpan((lastExitMs - firstEntryMs) / 60000) : '-',
-            entries: entries.length,
-            exits: exits.length,
-            marks: recordsByTime.length,
+            date: journey.dateKey ? journey.dateKey.split('-').reverse().join('/') : '',
+            userName: journey.userName,
+            role: journey.role,
+            firstEntry: firstInterval ? formatAttendanceTime(firstInterval.entryRecord?.capturedAt ?? firstInterval.entryRecord?.createdAt) : '-',
+            lastExit: lastInterval ? `${formatAttendanceDate(lastInterval.exitRecord?.capturedAt ?? lastInterval.exitRecord?.createdAt)} ${formatAttendanceTime(lastInterval.exitRecord?.capturedAt ?? lastInterval.exitRecord?.createdAt)}` : '-',
+            worked: sortedIntervals.length ? formatAttendanceSpan(workedMinutes) : '-',
+            intervals: sortedIntervals.length,
+            entries: journey.entryCount,
+            exits: journey.exitCount,
+            marks: journey.markKeys.size,
+            crossMidnight: crossesMidnight ? 'Sí' : 'No',
+            issues: journey.anomalies.length,
             status: statusLabel,
           });
         });
       applyAttendanceDataBorders(dailySheet, 2, dailySheet.rowCount, 1, dailySheet.columnCount);
-      dailySheet.getColumn('span').alignment = { vertical: 'middle', horizontal: 'center' };
-      dailySheet.getColumn('entries').alignment = { vertical: 'middle', horizontal: 'center' };
-      dailySheet.getColumn('exits').alignment = { vertical: 'middle', horizontal: 'center' };
-      dailySheet.getColumn('marks').alignment = { vertical: 'middle', horizontal: 'center' };
+      ['worked', 'intervals', 'entries', 'exits', 'marks', 'crossMidnight', 'issues'].forEach((key) => {
+        dailySheet.getColumn(key).alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      dailySheet.getColumn('status').eachCell((cell, rowNumber) => {
+        if (rowNumber === 1) return;
+        const label = String(cell.value ?? '');
+        const needsReview = label.includes('REVISAR') || label.includes('INCIDENCIAS');
+        cell.font = { bold: true, color: { argb: needsReview ? 'FFC2412D' : 'FF11834C' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      });
+
+      const personSummaryMap = new Map();
+      reportJourneys.forEach((journey) => {
+        if (!personSummaryMap.has(journey.personKey)) {
+          personSummaryMap.set(journey.personKey, {
+            personKey: journey.personKey,
+            userName: journey.userName,
+            role: journey.role,
+            workedMinutes: 0,
+            daysWithMarks: 0,
+            daysWithWorkedTime: 0,
+            totalMarks: 0,
+            entries: 0,
+            exits: 0,
+            issueDays: 0,
+            issueMarks: 0,
+          });
+        }
+        const summary = personSummaryMap.get(journey.personKey);
+        const workedMinutes = journey.intervals.reduce((sum, interval) => sum + interval.minutes, 0);
+        summary.workedMinutes += workedMinutes;
+        summary.daysWithMarks += 1;
+        if (workedMinutes > 0) summary.daysWithWorkedTime += 1;
+        summary.totalMarks += journey.markKeys.size;
+        summary.entries += journey.entryCount;
+        summary.exits += journey.exitCount;
+        if (journey.anomalies.length > 0) summary.issueDays += 1;
+        summary.issueMarks += journey.anomalies.length;
+      });
+
+      const personSheet = workbook.addWorksheet('Resumen por persona', {
+        views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
+        autoFilter: { from: 'A1', to: 'K1' },
+      });
+      personSheet.columns = [
+        { header: 'Usuario', key: 'userName', width: 30 },
+        { header: 'Cargo / rol', key: 'role', width: 22 },
+        { header: 'Días con marcas', key: 'daysWithMarks', width: 15 },
+        { header: 'Días con horas calculadas', key: 'daysWithWorkedTime', width: 23 },
+        { header: 'Horas trabajadas', key: 'worked', width: 20 },
+        { header: 'Entradas', key: 'entries', width: 11 },
+        { header: 'Salidas', key: 'exits', width: 11 },
+        { header: 'Total marcas', key: 'marks', width: 13 },
+        { header: 'Jornadas con incidencia', key: 'issueDays', width: 22 },
+        { header: 'Marcas con incidencia', key: 'issueMarks', width: 21 },
+        { header: 'Observación', key: 'observation', width: 34 },
+      ];
+      applyAttendanceHeaderStyle(personSheet.getRow(1));
+      Array.from(personSummaryMap.values())
+        .sort((left, right) => left.userName.localeCompare(right.userName, 'es'))
+        .forEach((summary) => {
+          personSheet.addRow({
+            userName: summary.userName,
+            role: summary.role,
+            daysWithMarks: summary.daysWithMarks,
+            daysWithWorkedTime: summary.daysWithWorkedTime,
+            worked: formatAttendanceSpan(summary.workedMinutes),
+            entries: summary.entries,
+            exits: summary.exits,
+            marks: summary.totalMarks,
+            issueDays: summary.issueDays,
+            issueMarks: summary.issueMarks,
+            observation: summary.issueMarks > 0 ? 'Contiene marcas que conviene revisar en la hoja Incidencias.' : 'Sin incidencias detectadas por la secuencia Entrada → Salida.',
+          });
+        });
+      applyAttendanceDataBorders(personSheet, 2, personSheet.rowCount, 1, personSheet.columnCount);
+      ['daysWithMarks', 'daysWithWorkedTime', 'worked', 'entries', 'exits', 'marks', 'issueDays', 'issueMarks'].forEach((key) => {
+        personSheet.getColumn(key).alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+      personSheet.getColumn('worked').font = { bold: true, color: { argb: 'FF173A6B' } };
+
+      const issuesSheet = workbook.addWorksheet('Incidencias', {
+        views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
+        autoFilter: { from: 'A1', to: 'J1' },
+      });
+      issuesSheet.columns = [
+        { header: 'Fecha', key: 'date', width: 13 },
+        { header: 'Hora', key: 'time', width: 12 },
+        { header: 'Usuario', key: 'userName', width: 28 },
+        { header: 'Cargo / rol', key: 'role', width: 20 },
+        { header: 'Código', key: 'code', width: 14 },
+        { header: 'Tipo de marca', key: 'type', width: 14 },
+        { header: 'Incidencia detectada', key: 'issue', width: 32 },
+        { header: 'Tratamiento en cálculo', key: 'treatment', width: 56 },
+        { header: 'Ubicación', key: 'location', width: 34 },
+        { header: 'Motivo / nota', key: 'notes', width: 34 },
+      ];
+      applyAttendanceHeaderStyle(issuesSheet.getRow(1));
+      reportAnomalies
+        .slice()
+        .sort((left, right) => left.timestampMs - right.timestampMs || left.userName.localeCompare(right.userName, 'es'))
+        .forEach((anomaly) => {
+          const sourceValue = anomaly.record?.capturedAt ?? anomaly.record?.createdAt;
+          issuesSheet.addRow({
+            date: formatAttendanceDate(sourceValue),
+            time: formatAttendanceTime(sourceValue),
+            userName: anomaly.userName,
+            role: anomaly.role,
+            code: anomaly.record?.code || '',
+            type: anomaly.record?.type === 'salida' ? 'Salida' : 'Entrada',
+            issue: anomaly.issue,
+            treatment: anomaly.treatment,
+            location: anomaly.record?.location || '',
+            notes: anomaly.record?.reason || anomaly.record?.notes || '',
+          });
+        });
+      if (!reportAnomalies.length) {
+        issuesSheet.addRow({ issue: 'Sin incidencias detectadas en el período seleccionado.' });
+      }
+      applyAttendanceDataBorders(issuesSheet, 2, issuesSheet.rowCount, 1, issuesSheet.columnCount);
+      issuesSheet.getColumn('issue').font = { bold: true, color: { argb: 'FFC2412D' } };
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
