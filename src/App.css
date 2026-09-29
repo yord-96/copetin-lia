@@ -68555,6 +68555,14 @@ body:has(.accounting-bigcash-view) .workspace {
 .inventory-loss-head h2 { margin: 0; }
 .inventory-loss-head p { margin: .3rem 0 0; color: var(--c700); }
 .inventory-loss-head > strong { white-space: nowrap; color: var(--c700); }
+.inventory-loss-head .inventory-actions { flex-wrap: wrap; justify-content: flex-end; }
+.inventory-loss-head .inventory-loss-excel-button { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; color: #166534; border: 1px solid #bbd9c5; background: #f0fdf4; white-space: nowrap; }
+.inventory-loss-head .inventory-loss-excel-button:hover:not(:disabled) { background: #dcfce7; border-color: #86b99a; }
+.inventory-loss-head .inventory-loss-excel-button:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .inventory-loss-head { flex-direction: column; }
+  .inventory-loss-head .inventory-actions { width: 100%; justify-content: flex-start; }
+}
 .inventory-loss-filters { display: grid; grid-template-columns: minmax(170px,.8fr) 150px 150px minmax(260px,1.4fr) auto; gap: .6rem; }
 .inventory-loss-filters input, .inventory-loss-filters select { min-height: 40px; border: 1px solid rgba(164,184,188,.65); border-radius: .65rem; padding: .45rem .6rem; background: #fff; }
 .inventory-loss-table-wrap { max-height: 560px; }

@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import { FileSpreadsheet } from 'lucide-react';
+import { downloadInventoryLossExcel } from '../../utils/inventoryLossExcel';
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -74,6 +76,26 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
   const [processingDiscard, setProcessingDiscard] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [feedbackType, setFeedbackType] = useState('ok');
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  const exportExcel = async () => {
+    if (exportingExcel || !filteredRows.length) return;
+    setExportingExcel(true);
+    setFeedback('');
+    try {
+      await downloadInventoryLossExcel({
+        rows: filteredRows, activeView, dateFrom, dateTo, query,
+        economicsByRental: damageLossOverview?.summary?.economicsByRental ?? {},
+      });
+      setFeedback('Reporte Excel generado correctamente.');
+      setFeedbackType('ok');
+    } catch {
+      setFeedback('No se pudo exportar el reporte Excel. Intenta nuevamente.');
+      setFeedbackType('error');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   const allRows = useMemo(
     () => (Array.isArray(damageLossOverview?.rows) ? damageLossOverview.rows : []),
@@ -472,6 +494,10 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
           </div>
           <div className="inventory-actions">
             <strong>{filteredRows.length} registro(s)</strong>
+            <button type="button" className="ghost-button inventory-loss-excel-button" onClick={exportExcel} disabled={exportingExcel || !filteredRows.length} aria-busy={exportingExcel} title="Descargar en Excel los registros de la pestaña y filtros actuales">
+              <FileSpreadsheet size={17} aria-hidden="true" />
+              {exportingExcel ? 'Exportando...' : 'Exportar Excel'}
+            </button>
             <button type="button" className="primary-button" onClick={generateReport}>Generar reporte</button>
           </div>
         </div>
