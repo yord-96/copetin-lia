@@ -13,6 +13,93 @@ const normalizeText = (value) => String(value ?? '')
   .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase();
 
+
+const ATTENDANCE_TIME_ZONE = 'America/La_Paz';
+
+const getAttendanceDateKey = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce((accumulator, part) => {
+    if (part.type !== 'literal') accumulator[part.type] = part.value;
+    return accumulator;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+
+const formatAttendanceDate = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('es-BO', {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+};
+
+const formatAttendanceTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('es-BO', {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+};
+
+const formatAttendanceSpan = (minutes) => {
+  const totalMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(totalMinutes / 60);
+  const remainder = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+};
+
+const getAttendanceEvidenceLabel = (record) => {
+  const photoUrl = String(record?.photoUrl ?? '').trim();
+  const photoDataUrl = String(record?.photoDataUrl ?? '').trim();
+  if (photoUrl) return photoUrl;
+  if (photoDataUrl) return 'Evidencia almacenada en el sistema';
+  return 'Sin evidencia';
+};
+
+const applyAttendanceHeaderStyle = (row) => {
+  row.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+  row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173A6B' } };
+  row.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  row.height = 28;
+  row.eachCell((cell) => {
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFD7DFEA' } },
+      left: { style: 'thin', color: { argb: 'FFD7DFEA' } },
+      bottom: { style: 'thin', color: { argb: 'FFD7DFEA' } },
+      right: { style: 'thin', color: { argb: 'FFD7DFEA' } },
+    };
+  });
+};
+
+const applyAttendanceDataBorders = (worksheet, startRow, endRow, startColumn, endColumn) => {
+  if (endRow < startRow) return;
+  for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+    for (let columnIndex = startColumn; columnIndex <= endColumn; columnIndex += 1) {
+      const cell = worksheet.getCell(rowIndex, columnIndex);
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE4E9F0' } },
+        left: { style: 'thin', color: { argb: 'FFE4E9F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE4E9F0' } },
+        right: { style: 'thin', color: { argb: 'FFE4E9F0' } },
+      };
+      cell.alignment = { vertical: 'top', wrapText: true };
+    }
+  }
+};
+
 const getAttendancePhotoSource = (record) =>
   String(record?.photoUrl || record?.photoDataUrl || '').trim();
 
@@ -95,6 +182,7 @@ function AttendanceSection({
   const [error, setError] = useState('');
   const [photoPreview, setPhotoPreview] = useState(null);
   const [isReportLoading, setIsReportLoading] = useState(false);
+  const [isExportingAttendance, setIsExportingAttendance] = useState(false);
 
   useEffect(() => () => {
     if (photoDraft?.previewUrl) {
@@ -153,6 +241,229 @@ function AttendanceSection({
       return true;
     });
   }, [filters, records]);
+
+
+  const exportAttendanceExcel = async () => {
+    if (isExportingAttendance) return;
+    setError('');
+    setStatus('');
+    setIsExportingAttendance(true);
+    try {
+      const excelModule = await import('exceljs');
+      const ExcelJS = excelModule.default ?? excelModule;
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'El Copetín';
+      workbook.company = 'El Copetín';
+      workbook.subject = 'Reporte biométrico de asistencia';
+      workbook.title = 'Reporte de asistencia';
+      workbook.created = new Date();
+
+      const exportSource = await api.attendance.listRecords({
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        type: filters.type,
+        query: filters.query,
+        limit: 1000,
+      });
+      const exportQuery = normalizeText(filters.query);
+      const sortedRecords = (Array.isArray(exportSource) ? exportSource : [])
+        .filter((record) => {
+          const dateKey = getAttendanceDateKey(record?.capturedAt ?? record?.createdAt);
+          if (filters.dateFrom && dateKey < filters.dateFrom) return false;
+          if (filters.dateTo && dateKey > filters.dateTo) return false;
+          if (filters.type !== 'all' && record?.type !== filters.type) return false;
+          if (exportQuery) {
+            const haystack = normalizeText(`${record?.code} ${record?.userName} ${record?.location} ${record?.reason} ${record?.type} ${record?.responsibleName}`);
+            if (!haystack.includes(exportQuery)) return false;
+          }
+          return true;
+        })
+        .sort((left, right) => new Date(left?.capturedAt ?? left?.createdAt ?? 0) - new Date(right?.capturedAt ?? right?.createdAt ?? 0));
+      const uniqueUsers = new Set(sortedRecords.map((record) => String(record?.userId || record?.userName || '').trim()).filter(Boolean));
+      const entryCount = sortedRecords.filter((record) => record?.type === 'entrada').length;
+      const exitCount = sortedRecords.filter((record) => record?.type === 'salida').length;
+      const responsibleCount = sortedRecords.filter((record) => record?.markingMode === 'responsable').length;
+      const evidenceCount = sortedRecords.filter((record) => getAttendancePhotoSource(record)).length;
+      const gpsCount = sortedRecords.filter((record) => Number.isFinite(Number(record?.latitude)) && Number.isFinite(Number(record?.longitude))).length;
+
+      const summarySheet = workbook.addWorksheet('Resumen', {
+        views: [{ showGridLines: false }],
+      });
+      summarySheet.columns = [
+        { key: 'label', width: 31 },
+        { key: 'value', width: 34 },
+      ];
+      summarySheet.mergeCells('A1:B1');
+      summarySheet.getCell('A1').value = 'EL COPETÍN · REPORTE BIOMÉTRICO DE ASISTENCIA';
+      summarySheet.getCell('A1').font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 15 };
+      summarySheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE94A0A' } };
+      summarySheet.getCell('A1').alignment = { vertical: 'middle', horizontal: 'center' };
+      summarySheet.getRow(1).height = 32;
+      summarySheet.addRow([]);
+      [
+        ['Período desde', filters.dateFrom || 'Sin límite'],
+        ['Período hasta', filters.dateTo || 'Sin límite'],
+        ['Filtro de tipo', filters.type === 'entrada' ? 'Entradas' : filters.type === 'salida' ? 'Salidas' : 'Todas'],
+        ['Búsqueda aplicada', filters.query || 'Sin búsqueda'],
+        ['Zona horaria', ATTENDANCE_TIME_ZONE],
+        ['Generado', `${formatAttendanceDate(new Date())} ${formatAttendanceTime(new Date())}`],
+        ['Total de marcas', sortedRecords.length],
+        ['Entradas', entryCount],
+        ['Salidas', exitCount],
+        ['Personas con marcas', uniqueUsers.size],
+        ['Marcas por responsable', responsibleCount],
+        ['Marcas con evidencia fotográfica', evidenceCount],
+        ['Marcas con coordenadas GPS', gpsCount],
+      ].forEach(([label, value]) => summarySheet.addRow({ label, value }));
+      summarySheet.getColumn(1).font = { bold: true, color: { argb: 'FF173A6B' } };
+      applyAttendanceDataBorders(summarySheet, 3, summarySheet.rowCount, 1, 2);
+      summarySheet.getColumn(2).alignment = { vertical: 'middle', wrapText: true };
+
+      const detailSheet = workbook.addWorksheet('Detalle de marcas', {
+        views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
+        autoFilter: { from: 'A1', to: 'S1' },
+      });
+      detailSheet.columns = [
+        { header: 'Código', key: 'code', width: 14 },
+        { header: 'Fecha', key: 'date', width: 13 },
+        { header: 'Hora', key: 'time', width: 12 },
+        { header: 'Usuario', key: 'userName', width: 28 },
+        { header: 'Cargo / rol', key: 'role', width: 20 },
+        { header: 'Tipo', key: 'type', width: 11 },
+        { header: 'Ubicación', key: 'location', width: 40 },
+        { header: 'Motivo', key: 'reason', width: 36 },
+        { header: 'Modo de marcación', key: 'markingMode', width: 20 },
+        { header: 'Responsable', key: 'responsibleName', width: 26 },
+        { header: 'Tamaño del grupo', key: 'groupSize', width: 16 },
+        { header: 'ID de grupo', key: 'groupId', width: 24 },
+        { header: 'Participante manual', key: 'manual', width: 18 },
+        { header: 'Latitud', key: 'latitude', width: 14 },
+        { header: 'Longitud', key: 'longitude', width: 14 },
+        { header: 'Evidencia', key: 'evidence', width: 34 },
+        { header: 'Formato foto', key: 'photoMimeType', width: 17 },
+        { header: 'Tamaño foto (KB)', key: 'photoSizeKb', width: 18 },
+        { header: 'Notas', key: 'notes', width: 30 },
+      ];
+      applyAttendanceHeaderStyle(detailSheet.getRow(1));
+      sortedRecords.forEach((record) => {
+        detailSheet.addRow({
+          code: record?.code || '',
+          date: formatAttendanceDate(record?.capturedAt ?? record?.createdAt),
+          time: formatAttendanceTime(record?.capturedAt ?? record?.createdAt),
+          userName: record?.userName || 'Usuario',
+          role: record?.role || '',
+          type: record?.type === 'salida' ? 'Salida' : 'Entrada',
+          location: record?.location || '',
+          reason: record?.reason || '',
+          markingMode: record?.markingMode === 'responsable' ? 'Responsable / grupal' : 'Personal',
+          responsibleName: record?.responsibleName || '',
+          groupSize: record?.attendanceGroupSize || 1,
+          groupId: record?.attendanceGroupId || '',
+          manual: record?.isManualParticipant ? 'Sí' : 'No',
+          latitude: record?.latitude ?? '',
+          longitude: record?.longitude ?? '',
+          evidence: getAttendanceEvidenceLabel(record),
+          photoMimeType: record?.photoMimeType || '',
+          photoSizeKb: record?.photoSizeBytes ? Number((Number(record.photoSizeBytes) / 1024).toFixed(1)) : '',
+          notes: record?.notes || '',
+        });
+      });
+      applyAttendanceDataBorders(detailSheet, 2, detailSheet.rowCount, 1, detailSheet.columnCount);
+      detailSheet.getColumn('type').eachCell((cell, rowNumber) => {
+        if (rowNumber === 1) return;
+        const isExit = String(cell.value ?? '').toLowerCase() === 'salida';
+        cell.font = { bold: true, color: { argb: isExit ? 'FFC2412D' : 'FF11834C' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+
+      const dailyGroups = new Map();
+      sortedRecords.forEach((record) => {
+        const dateKey = getAttendanceDateKey(record?.capturedAt ?? record?.createdAt);
+        const personKey = String(record?.userId || record?.userName || 'usuario').trim();
+        const key = `${dateKey}|${personKey}`;
+        if (!dailyGroups.has(key)) {
+          dailyGroups.set(key, {
+            dateKey,
+            userName: record?.userName || 'Usuario',
+            role: record?.role || '',
+            records: [],
+          });
+        }
+        dailyGroups.get(key).records.push(record);
+      });
+
+      const dailySheet = workbook.addWorksheet('Jornada por persona', {
+        views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
+        autoFilter: { from: 'A1', to: 'J1' },
+      });
+      dailySheet.columns = [
+        { header: 'Fecha', key: 'date', width: 13 },
+        { header: 'Usuario', key: 'userName', width: 28 },
+        { header: 'Cargo / rol', key: 'role', width: 20 },
+        { header: 'Primera entrada', key: 'firstEntry', width: 16 },
+        { header: 'Última salida', key: 'lastExit', width: 16 },
+        { header: 'Amplitud jornada', key: 'span', width: 17 },
+        { header: 'Entradas', key: 'entries', width: 11 },
+        { header: 'Salidas', key: 'exits', width: 11 },
+        { header: 'Total marcas', key: 'marks', width: 13 },
+        { header: 'Estado de marcación', key: 'status', width: 24 },
+      ];
+      applyAttendanceHeaderStyle(dailySheet.getRow(1));
+      Array.from(dailyGroups.values())
+        .sort((left, right) => left.dateKey.localeCompare(right.dateKey) || left.userName.localeCompare(right.userName, 'es'))
+        .forEach((group) => {
+          const recordsByTime = group.records.slice().sort((left, right) => new Date(left?.capturedAt ?? left?.createdAt ?? 0) - new Date(right?.capturedAt ?? right?.createdAt ?? 0));
+          const entries = recordsByTime.filter((record) => record?.type === 'entrada');
+          const exits = recordsByTime.filter((record) => record?.type === 'salida');
+          const firstEntry = entries[0];
+          const lastExit = exits[exits.length - 1];
+          const firstEntryMs = firstEntry ? new Date(firstEntry?.capturedAt ?? firstEntry?.createdAt ?? 0).getTime() : NaN;
+          const lastExitMs = lastExit ? new Date(lastExit?.capturedAt ?? lastExit?.createdAt ?? 0).getTime() : NaN;
+          const hasValidSpan = Number.isFinite(firstEntryMs) && Number.isFinite(lastExitMs) && lastExitMs >= firstEntryMs;
+          let statusLabel = 'Completa';
+          if (!entries.length && exits.length) statusLabel = 'Solo salida';
+          else if (entries.length && !exits.length) statusLabel = 'Solo entrada';
+          else if (!entries.length && !exits.length) statusLabel = 'Sin entrada/salida';
+          else if (entries.length !== exits.length) statusLabel = 'Marcas desbalanceadas';
+          else if (entries.length > 1 || exits.length > 1) statusLabel = 'Múltiples marcaciones';
+
+          dailySheet.addRow({
+            date: group.dateKey ? group.dateKey.split('-').reverse().join('/') : '',
+            userName: group.userName,
+            role: group.role,
+            firstEntry: firstEntry ? formatAttendanceTime(firstEntry?.capturedAt ?? firstEntry?.createdAt) : '-',
+            lastExit: lastExit ? formatAttendanceTime(lastExit?.capturedAt ?? lastExit?.createdAt) : '-',
+            span: hasValidSpan ? formatAttendanceSpan((lastExitMs - firstEntryMs) / 60000) : '-',
+            entries: entries.length,
+            exits: exits.length,
+            marks: recordsByTime.length,
+            status: statusLabel,
+          });
+        });
+      applyAttendanceDataBorders(dailySheet, 2, dailySheet.rowCount, 1, dailySheet.columnCount);
+      dailySheet.getColumn('span').alignment = { vertical: 'middle', horizontal: 'center' };
+      dailySheet.getColumn('entries').alignment = { vertical: 'middle', horizontal: 'center' };
+      dailySheet.getColumn('exits').alignment = { vertical: 'middle', horizontal: 'center' };
+      dailySheet.getColumn('marks').alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const rangeLabel = `${filters.dateFrom || 'inicio'}_${filters.dateTo || 'fin'}`.replace(/[^0-9A-Za-z_-]+/g, '-');
+      link.href = url;
+      link.download = `asistencia-biometrica-${rangeLabel}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus(`Reporte Excel generado con ${sortedRecords.length} marca${sortedRecords.length === 1 ? '' : 's'} visibles.`);
+    } catch (exportError) {
+      setError(exportError?.message || 'No se pudo generar el reporte Excel de asistencia.');
+    } finally {
+      setIsExportingAttendance(false);
+    }
+  };
 
   const selectableUsers = useMemo(
     () => users
@@ -663,7 +974,18 @@ function AttendanceSection({
               <span>02 · Reporte</span>
               <h3>Marcas registradas</h3>
             </div>
-            <strong>{isReportLoading ? '…' : filteredRecords.length}</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <strong>{isReportLoading ? '…' : filteredRecords.length}</strong>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={exportAttendanceExcel}
+                disabled={isExportingAttendance || isReportLoading || filteredRecords.length === 0}
+                title="Generar reporte biométrico completo en Excel con los filtros visibles"
+              >
+                {isExportingAttendance ? 'Generando Excel...' : 'Generar Excel'}
+              </button>
+            </div>
           </div>
 
           <div className="attendance-filters">
