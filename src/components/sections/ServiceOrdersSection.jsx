@@ -5518,6 +5518,54 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const bypassStockValidation = isHistoricalReconstruction || isHistoricalReturnedContractEdit;
 
+  const manualDocumentCodeConflict = useMemo(() => {
+    if (draft.recordId || draft.documentCodeMode === 'auto') return '';
+    const requestedCode = String(draft.manualDocumentCode ?? '').trim();
+    if (!requestedCode) return '';
+    const normalizedCode = requestedCode.toUpperCase();
+    const codeMatches = (value) => String(value ?? '').trim().toUpperCase() === normalizedCode;
+
+    if (draft.entityType === 'contract') {
+      const activeContracts = (Array.isArray(contracts) ? contracts : []).filter((contract) => (
+        contract && !contract.deletedAt
+      ));
+      const directConflict = activeContracts.some((contract) => codeMatches(contract.contractCode));
+      if (directConflict) {
+        return `El codigo ${requestedCode} ya existe. Usa otro codigo para continuar.`;
+      }
+
+      const activeRentalConflict = (Array.isArray(rentals) ? rentals : []).some((rental) => {
+        if (!rental || rental.deletedAt || String(rental.status ?? '').toLowerCase() === 'cancelled') return false;
+        if (!codeMatches(rental.contractCode)) return false;
+
+        const linkedContract = activeContracts.find((contract) => (
+          (rental.contractId && String(contract.id ?? '') === String(rental.contractId))
+          || (contract.rentalId && String(contract.rentalId ?? '') === String(rental.id ?? ''))
+          || (rental.orderCode && contract.orderCode && String(contract.orderCode).trim() === String(rental.orderCode).trim())
+        ));
+
+        // Si la orden conserva un numero viejo tras editar el contrato, ese numero
+        // anterior queda libre. Una orden realmente huerfana si reserva el codigo.
+        return linkedContract ? codeMatches(linkedContract.contractCode) : true;
+      });
+
+      if (activeRentalConflict) {
+        return `El codigo ${requestedCode} ya existe. Usa otro codigo para continuar.`;
+      }
+    }
+
+    if (draft.entityType === 'quote') {
+      const quoteConflict = (Array.isArray(quotes) ? quotes : []).some((quote) => (
+        quote && !quote.deletedAt && codeMatches(quote.quoteCode)
+      ));
+      if (quoteConflict) {
+        return `El codigo ${requestedCode} ya existe. Usa otro codigo para continuar.`;
+      }
+    }
+
+    return '';
+  }, [contracts, draft.documentCodeMode, draft.entityType, draft.manualDocumentCode, draft.recordId, quotes, rentals]);
+
   const stockIssues = useMemo(
     () => {
       // La disponibilidad pesada se calcula desde el paso Items (currentStep >= 2).
@@ -7758,6 +7806,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       if (!draft.recordId && draft.documentCodeMode !== 'auto' && !draft.manualDocumentCode.trim()) {
         return 'Indica el codigo del libro o vuelve a automatico.';
       }
+      if (manualDocumentCodeConflict) return manualDocumentCodeConflict;
       return '';
     }
     if (stepIndex === 1) {
@@ -7873,6 +7922,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     if (!draft.recordId && draft.documentCodeMode !== 'auto' && !draft.manualDocumentCode.trim()) {
       throw new Error('Debes indicar el codigo del libro.');
     }
+    if (manualDocumentCodeConflict) throw new Error(manualDocumentCodeConflict);
     if (!draft.eventDate) throw new Error('Debes indicar la fecha del evento.');
     if (!draft.address.trim()) throw new Error('Debes indicar la direccion del evento.');
     if (!draft.deliveryDate) throw new Error('Debes indicar la fecha de entrega.');
@@ -16400,7 +16450,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 value={draft.manualDocumentCode}
                                 onChange={(event) => setDraftField('manualDocumentCode', event.target.value)}
                                 placeholder="Ej: 900 o 1700"
+                                aria-invalid={Boolean(manualDocumentCodeConflict)}
                               />
+                              {manualDocumentCodeConflict ? (
+                                <small className="status error" role="alert">{manualDocumentCodeConflict}</small>
+                              ) : null}
                             </label>
                           ) : null}
                           {draft.entityType === 'contract' ? (

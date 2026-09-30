@@ -10424,7 +10424,16 @@ const consumeCommercialDocumentCode = (state, payload, fieldPrefix, fieldNext, c
   }
   const exists = commercialDocumentCodeExists(state, collectionName, codeField, manualCode);
   if (exists) {
-    throw new Error(`Ya existe un registro con el codigo ${manualCode}.`);
+    const conflictCode = collectionName === 'contracts' && codeField === 'contractCode'
+      ? 'CONTRACT_CODE_CONFLICT'
+      : collectionName === 'quotes' && codeField === 'quoteCode'
+        ? 'QUOTE_CODE_CONFLICT'
+        : 'COMMERCIAL_DOCUMENT_CODE_CONFLICT';
+    throw createBusinessConflictError(
+      `El codigo ${manualCode} ya existe. Usa otro codigo para continuar.`,
+      conflictCode,
+      { collectionName, codeField, documentCode: manualCode },
+    );
   }
   if (codeMode === 'current') {
     const numericPart = parseDocumentNumericPart(manualCode);
