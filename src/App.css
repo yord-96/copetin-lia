@@ -74007,3 +74007,8 @@ button.inventory-loss-row-action.is-discard:hover {
 .daily-column-filter-panel footer { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #e2e8f0; padding-top: 10px; }
 .daily-column-filter-panel footer button { border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #15345f; padding: 8px 12px; font: inherit; font-weight: 700; cursor: pointer; }
 .daily-column-filter-panel footer button.apply { background: #15345f; border-color: #15345f; color: white; }
+
+.attendance-report-policy { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 14px; margin: 0 0 14px; border: 1px solid #d9e1eb; border-radius: 10px; background: #f8fafc; }
+.attendance-report-policy label { display: flex; align-items: center; gap: 10px; color: #173a6b; font-size: 12px; font-weight: 700; }
+.attendance-report-policy select { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #173a6b; }
+.attendance-report-policy p { flex: 1 1 280px; margin: 0; color: #526174; font-size: 12px; line-height: 1.5; }

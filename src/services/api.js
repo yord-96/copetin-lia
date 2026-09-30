@@ -1071,7 +1071,8 @@ const fetchAttendanceRecordsDirect = async (filters = {}) => {
   if (type) params.set('type', type);
   if (query) params.set('query', query);
   if (filters.userId) params.set('userId', String(filters.userId));
-  params.set('timezoneOffsetMinutes', String(new Date().getTimezoneOffset()));
+  // Attendance reports always use Bolivia time, regardless of the viewer's device.
+  params.set('timezoneOffsetMinutes', '240');
   params.set('limit', String(Math.min(1000, Math.max(20, Number(filters?.limit ?? 300) || 300))));
 
   const response = await fetch(getServerStateUrl(`/attendance?${params.toString()}`), {
@@ -1610,7 +1611,48 @@ const pushServerState = async ({ attempt = 0 } = {}) => {
 
 const stableJson = (value) => JSON.stringify(value ?? null);
 
-const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLECTIONS) => {
+const buildSettingsPatch = (beforeSettings, afterSettings) => {
+  const before = beforeSettings && typeof beforeSettings === 'object' && !Array.isArray(beforeSettings)
+    ? beforeSettings
+    : {};
+  const after = afterSettings && typeof afterSettings === 'object' && !Array.isArray(afterSettings)
+    ? afterSettings
+    : {};
+  const patch = {};
+
+  Object.keys(after).forEach((key) => {
+    if (key === 'numbering') {
+      const beforeNumbering = before.numbering && typeof before.numbering === 'object' && !Array.isArray(before.numbering)
+        ? before.numbering
+        : {};
+      const afterNumbering = after.numbering && typeof after.numbering === 'object' && !Array.isArray(after.numbering)
+        ? after.numbering
+        : {};
+      const numberingPatch = {};
+      Object.keys(afterNumbering).forEach((numberingKey) => {
+        if (stableJson(beforeNumbering[numberingKey]) !== stableJson(afterNumbering[numberingKey])) {
+          numberingPatch[numberingKey] = afterNumbering[numberingKey];
+        }
+      });
+      if (Object.keys(numberingPatch).length > 0) patch.numbering = numberingPatch;
+      return;
+    }
+
+    if (key === 'maintenance') {
+      // Los marcadores de mantenimiento son internos del runtime y nunca deben
+      // viajar como efecto colateral de una mutacion de usuario.
+      return;
+    }
+
+    if (stableJson(before[key]) !== stableJson(after[key])) {
+      patch[key] = after[key];
+    }
+  });
+
+  return patch;
+};
+
+const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLECTIONS, { includeSettings = false } = {}) => {
   if (!beforeState || !afterState) return null;
   const upserts = {};
   const deletes = {};
@@ -1649,11 +1691,14 @@ const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLEC
     }
   }
 
-  const settingsChanged = stableJson(beforeState.settings) !== stableJson(afterState.settings);
+  const settingsPatch = includeSettings
+    ? buildSettingsPatch(beforeState.settings, afterState.settings)
+    : {};
+  const settingsChanged = Object.keys(settingsPatch).length > 0;
   const patch = {
     upserts,
     deletes,
-    ...(settingsChanged ? { settings: afterState.settings ?? {} } : {}),
+    ...(settingsChanged ? { settings: settingsPatch } : {}),
   };
   const hasChanges = changedRows > 0 || settingsChanged;
   if (!hasChanges) return { empty: true };
@@ -1663,12 +1708,18 @@ const buildStatePatch = (beforeState, afterState, collections = PATCHABLE_COLLEC
   return patch;
 };
 
-const pushServerStatePatch = async ({ beforeState, afterState, collections = PATCHABLE_COLLECTIONS, attempt = 0 } = {}) => {
+const pushServerStatePatch = async ({
+  beforeState,
+  afterState,
+  collections = PATCHABLE_COLLECTIONS,
+  includeSettings = false,
+  attempt = 0,
+} = {}) => {
   if (!shouldUseServerState()) {
     return null;
   }
 
-  const patch = buildStatePatch(beforeState, afterState, collections);
+  const patch = buildStatePatch(beforeState, afterState, collections, { includeSettings });
   if (patch?.empty) {
     return null;
   }
@@ -1700,7 +1751,7 @@ const pushServerStatePatch = async ({ beforeState, afterState, collections = PAT
         rememberServerRevision(meta.revision);
       }
       await sleep(getRetryDelayMs(error, attempt));
-      return pushServerStatePatch({ beforeState, afterState, collections, attempt: attempt + 1 });
+      return pushServerStatePatch({ beforeState, afterState, collections, includeSettings, attempt: attempt + 1 });
     }
     throw error;
   }
@@ -1710,7 +1761,7 @@ const pushServerStatePatch = async ({ beforeState, afterState, collections = PAT
     if (isTransientServerError(error) && attempt < SAVE_TRANSIENT_RETRIES) {
       applyRemoteBackoff(error);
       await sleep(getRetryDelayMs(error, attempt));
-      return pushServerStatePatch({ beforeState, afterState, collections, attempt: attempt + 1 });
+      return pushServerStatePatch({ beforeState, afterState, collections, includeSettings, attempt: attempt + 1 });
     }
     throw error;
   }
@@ -2488,6 +2539,11 @@ const getTargetedMutationCollections = (domain, method) => {
     }
     return CASH_MOVEMENT_PATCH_COLLECTIONS;
   }
+  if (domain === 'settings' && method === 'update') {
+    // Settings se persiste como un parche dedicado; no necesita arrastrar
+    // colecciones comerciales ni inventario.
+    return [];
+  }
   if (domain === 'inventory') {
     if (method === 'processRecovery') return INVENTORY_RECOVERY_PATCH_COLLECTIONS;
     if (method === 'createMovement') return INVENTORY_MOVEMENT_PATCH_COLLECTIONS;
@@ -2620,6 +2676,7 @@ const callBridge = async (domain, method, mutates, ...args) => {
           beforeState: beforeMutationState,
           afterState: afterMutationState,
           collections: targetedCollections ?? PATCHABLE_COLLECTIONS,
+          includeSettings: domain === 'settings' && method === 'update',
         });
         announceDataChange({ domain, method, collections: targetedCollections });
         return result;

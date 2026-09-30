@@ -1,0 +1,868 @@
+{
+  "beforeFile": "C:/Users/Milton/Downloads/copetin-base-datos-2026-09-28T14-35-11-442Z.json",
+  "afterFile": "C:/Users/Milton/Downloads/copetin-base-datos-2026-09-30T13-19-03-025Z.json",
+  "settingsChanges": [
+    {
+      "key": "numbering",
+      "before": {
+        "quotePrefix": "COT-",
+        "quoteNext": 69,
+        "contractPrefix": "",
+        "contractNext": 2783,
+        "serviceOrderPrefix": "OS-",
+        "serviceOrderNext": 1461,
+        "deliveryPrefix": "ENT-",
+        "deliveryNext": 311,
+        "supplierQuotePrefix": "PRO-COT-",
+        "supplierQuoteNext": 1,
+        "supplierLoanPrefix": "SUB-",
+        "supplierLoanNext": 44,
+        "hrImportPrefix": "BIO-",
+        "hrImportNext": 1,
+        "adjustmentPrefix": "AJ-",
+        "adjustmentNext": 1,
+        "movementPrefix": "MOV-",
+        "movementNext": 1
+      },
+      "after": {
+        "quotePrefix": "COT-",
+        "quoteNext": 50,
+        "contractPrefix": "CON-",
+        "contractNext": 2,
+        "serviceOrderPrefix": "OS-",
+        "serviceOrderNext": 97,
+        "deliveryPrefix": "ENT-",
+        "deliveryNext": 5,
+        "supplierQuotePrefix": "PRO-COT-",
+        "supplierQuoteNext": 1,
+        "supplierLoanPrefix": "SUB-",
+        "supplierLoanNext": 2,
+        "hrImportPrefix": "BIO-",
+        "hrImportNext": 1,
+        "adjustmentPrefix": "AJ-",
+        "adjustmentNext": 1,
+        "movementPrefix": "MOV-",
+        "movementNext": 1
+      }
+    },
+    {
+      "key": "maintenance",
+      "before": {
+        "deletedContractCleanupRevision": 1,
+        "deletedContractCleanupAt": "2026-09-08T15:48:43.410Z",
+        "deletedContractCleanupCount": 0,
+        "contract1544RepairAt": "2026-09-25T15:16:52.026Z",
+        "contract1544RepairCount": 6
+      },
+      "after": {
+        "deletedContractCleanupRevision": 1,
+        "deletedContractCleanupAt": "2026-09-29T22:44:09.897Z",
+        "deletedContractCleanupCount": 0
+      }
+    }
+  ],
+  "collections": [
+    {
+      "collection": "categories",
+      "before": 24,
+      "after": 24,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "clients",
+      "before": 906,
+      "after": 920,
+      "missing": 0,
+      "added": 14
+    },
+    {
+      "collection": "users",
+      "before": 24,
+      "after": 35,
+      "missing": 0,
+      "added": 11
+    },
+    {
+      "collection": "items",
+      "before": 2059,
+      "after": 2060,
+      "missing": 0,
+      "added": 1
+    },
+    {
+      "collection": "inventoryCombos",
+      "before": 37,
+      "after": 37,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "quotes",
+      "before": 68,
+      "after": 74,
+      "missing": 0,
+      "added": 6
+    },
+    {
+      "collection": "contracts",
+      "before": 1469,
+      "after": 1496,
+      "missing": 0,
+      "added": 27
+    },
+    {
+      "collection": "rentals",
+      "before": 1460,
+      "after": 1487,
+      "missing": 0,
+      "added": 27
+    },
+    {
+      "collection": "deliveries",
+      "before": 1379,
+      "after": 1407,
+      "missing": 0,
+      "added": 28
+    },
+    {
+      "collection": "transportRoutes",
+      "before": 1,
+      "after": 1,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "vehicles",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "drivers",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "calendarEvents",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "calendarBoardNotes",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "generatedReports",
+      "before": 2902,
+      "after": 2954,
+      "missing": 0,
+      "added": 52
+    },
+    {
+      "collection": "suppliers",
+      "before": 19,
+      "after": 19,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "supplierQuotes",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "supplierLoans",
+      "before": 61,
+      "after": 65,
+      "missing": 0,
+      "added": 4
+    },
+    {
+      "collection": "personnelEmployees",
+      "before": 41,
+      "after": 41,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "personnelAttendance",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "personnelIncidents",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "inventoryMovements",
+      "before": 11581,
+      "after": 11821,
+      "missing": 7,
+      "added": 247
+    },
+    {
+      "collection": "stockRecoveries",
+      "before": 85,
+      "after": 85,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "cashSessions",
+      "before": 1,
+      "after": 1,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "cashMovements",
+      "before": 3209,
+      "after": 3264,
+      "missing": 7,
+      "added": 62
+    },
+    {
+      "collection": "cashDebts",
+      "before": 1,
+      "after": 1,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "attendanceRecords",
+      "before": 66,
+      "after": 85,
+      "missing": 0,
+      "added": 19
+    },
+    {
+      "collection": "resetLogs",
+      "before": 36,
+      "after": 37,
+      "missing": 0,
+      "added": 1
+    },
+    {
+      "collection": "systemAuditLog",
+      "before": 800,
+      "after": 800,
+      "missing": 209,
+      "added": 209
+    },
+    {
+      "collection": "userPresence",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "serviceOrders",
+      "before": 0,
+      "after": 0,
+      "missing": 0,
+      "added": 0
+    },
+    {
+      "collection": "legacyContracts",
+      "before": 159,
+      "after": 159,
+      "missing": 0,
+      "added": 0
+    }
+  ],
+  "reusedCodes": [
+    {
+      "collection": "quotes",
+      "code": "COT-00049",
+      "id": "2a6e3dc1-cc4c-413e-9328-bc3718a1a7ef",
+      "createdAt": "2026-09-30T12:29:27.096Z",
+      "collisions": [
+        {
+          "id": "f820b8a1-dd86-426b-b1aa-acf9cd83b4ff",
+          "createdAt": "2026-08-28T20:12:53.649Z",
+          "deleted": true,
+          "status": "borrador"
+        }
+      ]
+    },
+    {
+      "collection": "rentals",
+      "code": "OS-00026",
+      "id": "69d6a03e-c4d7-40b4-8ffc-2e3cd463009f",
+      "createdAt": "2026-09-29T22:52:58.654Z",
+      "contractCode": "2835",
+      "collisions": [
+        {
+          "id": "650468e3-50f1-4806-b596-a37f3bd0bcdb",
+          "createdAt": "2026-06-24T18:00:36.008Z",
+          "deleted": true,
+          "status": "cancelled"
+        }
+      ]
+    },
+    {
+      "collection": "rentals",
+      "code": "OS-00031",
+      "id": "f5a128e3-d88c-49ab-a5c0-cd911d3b9fd5",
+      "createdAt": "2026-09-29T23:05:29.564Z",
+      "contractCode": "2831",
+      "collisions": [
+        {
+          "id": "677c9b93-711f-491b-b560-0523a7ea45c8",
+          "createdAt": "2026-06-25T17:25:48.909Z",
+          "deleted": true,
+          "status": "cancelled"
+        }
+      ]
+    },
+    {
+      "collection": "rentals",
+      "code": "OS-00034",
+      "id": "f4f5cb0e-a840-42dc-b5b3-8d5e2c13b9f0",
+      "createdAt": "2026-09-29T23:10:55.212Z",
+      "contractCode": "2832",
+      "collisions": [
+        {
+          "id": "1b585bf5-5269-4fcd-a666-0e873b3adc67",
+          "createdAt": "2026-06-25T21:26:55.369Z",
+          "deleted": true,
+          "status": "cancelled"
+        }
+      ]
+    },
+    {
+      "collection": "rentals",
+      "code": "OS-00095",
+      "id": "74fcc995-3f19-46e4-9678-79c91b79b1d5",
+      "createdAt": "2026-09-30T06:16:49.010Z",
+      "contractCode": "2839",
+      "collisions": [
+        {
+          "id": "d9fdb436-ffed-4792-9df5-5038b3392ad7",
+          "createdAt": "2026-07-03T00:22:12.743Z",
+          "deleted": true,
+          "status": "cancelled"
+        }
+      ]
+    },
+    {
+      "collection": "rentals",
+      "code": "OS-00096",
+      "id": "278fe62d-4064-4f6f-956b-d0ffe3355781",
+      "createdAt": "2026-09-30T06:18:32.078Z",
+      "contractCode": "2840",
+      "collisions": [
+        {
+          "id": "d00773a8-e961-4ec3-ac2a-a508cd1fce72",
+          "createdAt": "2026-07-03T14:15:19.231Z",
+          "deleted": true,
+          "status": "cancelled"
+        }
+      ]
+    },
+    {
+      "collection": "deliveries",
+      "code": "ENT-00001",
+      "id": "743691e7-0b4c-49fa-a0ab-9bb5ff23e489",
+      "createdAt": "2026-09-29T22:52:58.709Z",
+      "collisions": [
+        {
+          "id": "c2835a78-4347-469a-bbe6-4a5df70f2f9e",
+          "createdAt": "2026-06-08T16:13:05.353Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "67c9b6e4-1049-47bb-bd03-20c6fe8c7495",
+          "createdAt": "2026-08-27T21:42:19.393Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "07352824-2483-40a4-a5ca-9dad7e496744",
+          "createdAt": "2026-09-08T18:41:50.939Z",
+          "deleted": false,
+          "status": "programada"
+        }
+      ]
+    },
+    {
+      "collection": "deliveries",
+      "code": "ENT-00002",
+      "id": "401a4935-3c2c-4c6a-904f-38b2820b70cf",
+      "createdAt": "2026-09-29T22:52:59.186Z",
+      "collisions": [
+        {
+          "id": "ecde7ebf-603c-4d15-8183-1427b9e2ccac",
+          "createdAt": "2026-06-08T16:13:07.899Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "5e3bba6f-edf4-4a5f-aa66-0d52cd15038b",
+          "createdAt": "2026-08-27T23:25:46.158Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "f8e3a59c-911d-4947-aafa-d75882d42ef5",
+          "createdAt": "2026-09-08T18:41:51.403Z",
+          "deleted": false,
+          "status": "programada"
+        }
+      ]
+    },
+    {
+      "collection": "deliveries",
+      "code": "ENT-00003",
+      "id": "01511824-6f05-40ab-96a0-73d7a0caf2ad",
+      "createdAt": "2026-09-29T23:10:55.247Z",
+      "collisions": [
+        {
+          "id": "07dbbc7a-fb11-4b27-9811-0b7234e08ff5",
+          "createdAt": "2026-06-15T16:31:20.994Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "85e6b168-8003-4324-b7f5-4311efe7c589",
+          "createdAt": "2026-08-28T00:09:25.374Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "da08302a-745e-430a-9850-5826fbd53d6a",
+          "createdAt": "2026-09-08T20:58:58.480Z",
+          "deleted": false,
+          "status": "completada"
+        }
+      ]
+    },
+    {
+      "collection": "deliveries",
+      "code": "ENT-00004",
+      "id": "6f9334ac-6980-40e0-9ced-52e40f1d5d39",
+      "createdAt": "2026-09-29T23:10:55.729Z",
+      "collisions": [
+        {
+          "id": "ac64b396-9d07-45ba-8ca5-8c7c478f8b21",
+          "createdAt": "2026-06-15T17:11:41.744Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "df50019a-edc0-40ef-a166-404b62cb59d8",
+          "createdAt": "2026-08-28T00:09:25.679Z",
+          "deleted": false,
+          "status": "completada"
+        },
+        {
+          "id": "97999c42-e506-4722-8962-bded0582370c",
+          "createdAt": "2026-09-08T20:58:59.064Z",
+          "deleted": false,
+          "status": "completada"
+        }
+      ]
+    },
+    {
+      "collection": "supplierLoans",
+      "code": "SUB-00001",
+      "id": "f3ce031c-fad8-4ce7-8603-22c2c9583b0b",
+      "createdAt": "2026-09-29T22:52:59.187Z",
+      "collisions": [
+        {
+          "id": "b9d2919a-efd3-4a09-a599-48e82fafa090",
+          "createdAt": "2026-08-27T21:42:19.712Z",
+          "deleted": false,
+          "status": "programado"
+        },
+        {
+          "id": "878c028e-6ae2-422a-897a-36ad1934b1cf",
+          "createdAt": "2026-09-08T18:41:51.403Z",
+          "deleted": false,
+          "status": "programado"
+        }
+      ]
+    }
+  ],
+  "historicalLinkChanges": [
+    {
+      "id": "d00773a8-e961-4ec3-ac2a-a508cd1fce72",
+      "orderCode": "OS-00096",
+      "oldContractCode": "1639",
+      "newContractCode": "2840",
+      "updatedAt": "2026-09-30T06:19:19.484Z",
+      "deleted": true
+    },
+    {
+      "id": "7481a31e-88a9-4d0f-934b-1bc3fc36445f",
+      "orderCode": "OS-01455",
+      "oldContractCode": "0000REP",
+      "newContractCode": "2809",
+      "updatedAt": "2026-09-30T05:46:36.799Z",
+      "deleted": false
+    }
+  ],
+  "missingMovements": [
+    {
+      "collection": "cashMovements",
+      "id": "9152676d-052e-49fa-8812-f367f85560d7",
+      "contractCode": "821",
+      "amountBs": 500,
+      "type": "ingreso_garantia",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T16:38:12.872Z",
+          "action": "actualizar_contrato",
+          "entityCode": "821"
+        },
+        {
+          "createdAt": "2026-09-29T16:31:50.693Z",
+          "action": "update",
+          "entityCode": "821"
+        },
+        {
+          "createdAt": "2026-09-29T16:31:13.805Z",
+          "action": "reset_economico",
+          "entityCode": "821"
+        },
+        {
+          "createdAt": "2026-09-29T16:30:45.354Z",
+          "action": "update",
+          "entityCode": "821"
+        }
+      ]
+    },
+    {
+      "collection": "cashMovements",
+      "id": "5d9815d0-2ce5-4ee0-a8b3-b23c4b357867",
+      "contractCode": "2420",
+      "amountBs": 200,
+      "type": "ingreso_garantia",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T23:16:04.780Z",
+          "action": "actualizar_contrato",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:12:36.016Z",
+          "action": "update",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:12:03.834Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:08:06.102Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:07:26.223Z",
+          "action": "update",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:55:08.004Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:47:29.910Z",
+          "action": "update",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:47:12.337Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:47:04.286Z",
+          "action": "actualizar_contrato",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:46:29.429Z",
+          "action": "update",
+          "entityCode": "2420"
+        }
+      ]
+    },
+    {
+      "collection": "cashMovements",
+      "id": "mov-88334494-c994-4a87-b0bc-ed7509eafdea",
+      "contractCode": "2420",
+      "amountBs": -200,
+      "type": "egreso_manual",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T23:16:04.780Z",
+          "action": "actualizar_contrato",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:12:36.016Z",
+          "action": "update",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:12:03.834Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:08:06.102Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T23:07:26.223Z",
+          "action": "update",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:55:08.004Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:47:29.910Z",
+          "action": "update",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:47:12.337Z",
+          "action": "reset_economico",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:47:04.286Z",
+          "action": "actualizar_contrato",
+          "entityCode": "2420"
+        },
+        {
+          "createdAt": "2026-09-29T17:46:29.429Z",
+          "action": "update",
+          "entityCode": "2420"
+        }
+      ]
+    },
+    {
+      "collection": "cashMovements",
+      "id": "mov-b1cce4d4-f304-4a34-b525-0578d63d8385",
+      "contractCode": "2562",
+      "amountBs": 382,
+      "type": "cobro_saldo_devolucion",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:44:53.667Z",
+          "action": "reset_economico",
+          "entityCode": "2562"
+        },
+        {
+          "createdAt": "2026-09-29T15:44:39.167Z",
+          "action": "update",
+          "entityCode": "2562"
+        }
+      ]
+    },
+    {
+      "collection": "cashMovements",
+      "id": "mov-81d12365-8941-4951-bd7e-17286c1ab770",
+      "contractCode": "2562",
+      "amountBs": -200,
+      "type": "egreso_manual",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:44:53.667Z",
+          "action": "reset_economico",
+          "entityCode": "2562"
+        },
+        {
+          "createdAt": "2026-09-29T15:44:39.167Z",
+          "action": "update",
+          "entityCode": "2562"
+        }
+      ]
+    },
+    {
+      "collection": "cashMovements",
+      "id": "af81100c-83d8-453c-af8a-692d600a99fb",
+      "contractCode": "2471",
+      "amountBs": 200,
+      "type": "ingreso_garantia",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T14:54:08.261Z",
+          "action": "actualizar_contrato",
+          "entityCode": "2471"
+        },
+        {
+          "createdAt": "2026-09-29T14:51:22.994Z",
+          "action": "update",
+          "entityCode": "2471"
+        },
+        {
+          "createdAt": "2026-09-29T14:50:53.568Z",
+          "action": "reset_economico",
+          "entityCode": "2471"
+        },
+        {
+          "createdAt": "2026-09-29T14:50:41.158Z",
+          "action": "update",
+          "entityCode": "2471"
+        }
+      ]
+    },
+    {
+      "collection": "cashMovements",
+      "id": "60ab75c5-49e1-4f4f-8e4d-08af485ac53c",
+      "contractCode": "2562",
+      "amountBs": 200,
+      "type": "ingreso_garantia",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:44:53.667Z",
+          "action": "reset_economico",
+          "entityCode": "2562"
+        },
+        {
+          "createdAt": "2026-09-29T15:44:39.167Z",
+          "action": "update",
+          "entityCode": "2562"
+        }
+      ]
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-98d50b88-b733-4aab-bee0-9fad3240686c",
+      "contractCode": "2255",
+      "type": "salida",
+      "audit": []
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-28f7ca42-ff8e-41e0-8018-96714637e1a7",
+      "contractCode": "1553",
+      "type": "salida",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T16:59:56.000Z",
+          "action": "actualizar_contrato",
+          "entityCode": "1553"
+        }
+      ]
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-edbd43ef-c4ea-425f-84a5-4c33cf2b88f9",
+      "contractCode": "1714",
+      "type": "salida",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:15:31.356Z",
+          "action": "actualizar_contrato",
+          "entityCode": "1714"
+        },
+        {
+          "createdAt": "2026-09-28T19:42:35.798Z",
+          "action": "update",
+          "entityCode": "1714"
+        }
+      ]
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-2971481f-ed4e-4454-bf54-fbb2deff73c8",
+      "contractCode": "1714",
+      "type": "salida",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:15:31.356Z",
+          "action": "actualizar_contrato",
+          "entityCode": "1714"
+        },
+        {
+          "createdAt": "2026-09-28T19:42:35.798Z",
+          "action": "update",
+          "entityCode": "1714"
+        }
+      ]
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-b34d4d77-5544-45ae-83b9-336687e6ca8e",
+      "contractCode": "1714",
+      "type": "salida",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:15:31.356Z",
+          "action": "actualizar_contrato",
+          "entityCode": "1714"
+        },
+        {
+          "createdAt": "2026-09-28T19:42:35.798Z",
+          "action": "update",
+          "entityCode": "1714"
+        }
+      ]
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-b548449e-b14c-4406-938f-7b8e66dea9cf",
+      "contractCode": "1714",
+      "type": "salida",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:15:31.356Z",
+          "action": "actualizar_contrato",
+          "entityCode": "1714"
+        },
+        {
+          "createdAt": "2026-09-28T19:42:35.798Z",
+          "action": "update",
+          "entityCode": "1714"
+        }
+      ]
+    },
+    {
+      "collection": "inventoryMovements",
+      "id": "mov-a3e2d8fc-d3ca-4684-a692-1cc97c607f4b",
+      "contractCode": "1714",
+      "type": "salida",
+      "audit": [
+        {
+          "createdAt": "2026-09-29T15:15:31.356Z",
+          "action": "actualizar_contrato",
+          "entityCode": "1714"
+        },
+        {
+          "createdAt": "2026-09-28T19:42:35.798Z",
+          "action": "update",
+          "entityCode": "1714"
+        }
+      ]
+    }
+  ]
+}

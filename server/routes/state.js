@@ -6416,7 +6416,36 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
       });
 
       if (settings) {
-        nextState.settings = settings;
+        const currentSettings = nextState.settings && typeof nextState.settings === 'object' && !Array.isArray(nextState.settings)
+          ? nextState.settings
+          : {};
+        const incomingNumbering = settings.numbering && typeof settings.numbering === 'object' && !Array.isArray(settings.numbering)
+          ? settings.numbering
+          : null;
+        const incomingMaintenance = settings.maintenance && typeof settings.maintenance === 'object' && !Array.isArray(settings.maintenance)
+          ? settings.maintenance
+          : null;
+
+        nextState.settings = {
+          ...currentSettings,
+          ...settings,
+          ...(incomingNumbering
+            ? {
+              numbering: {
+                ...(currentSettings.numbering ?? {}),
+                ...incomingNumbering,
+              },
+            }
+            : {}),
+          ...(incomingMaintenance
+            ? {
+              maintenance: {
+                ...(currentSettings.maintenance ?? {}),
+                ...incomingMaintenance,
+              },
+            }
+            : {}),
+        };
       }
 
       return nextState;
