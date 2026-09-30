@@ -7947,9 +7947,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     if (guaranteeBs > 0 && draft.guaranteeStatus === 'validado' && draft.guaranteePaymentMethod === 'qr' && !draft.guaranteePaymentAccount) {
       throw new Error('Selecciona la cuenta QR donde ingreso la garantia.');
     }
-    if (paidAtApprovalBs > 0 && draft.initialPaymentMethod === 'qr' && !draft.initialPaymentAccount) {
-      throw new Error('Selecciona la cuenta QR donde ingreso el pago inicial.');
-    }
 
     const supplierFulfillmentPlan = (() => {
       if (isHistoricalReconstruction) return [];
@@ -18056,40 +18053,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           </select>
                           <small className={`orders-field-live-summary ${draft.guaranteePaymentAccount ? 'is-ok' : 'is-warning'}`}>
                             {draft.guaranteePaymentAccount ? `Cuenta seleccionada: ${draft.guaranteePaymentAccount}` : 'Falta seleccionar cuenta QR.'}
-                          </small>
-                        </label>
-                      ) : null}
-                      <label>
-                        Pago inicial (Bs)
-                        <input type="number" min="0" step="0.01" value={draft.paidAtApprovalBs} onChange={(event) => setDraftField('paidAtApprovalBs', event.target.value)} />
-                        <small className={`orders-field-live-summary ${paidAtApprovalBs > 0 ? 'is-ok' : 'is-muted'}`}>
-                          {paidAtApprovalBs > 0 ? `Recibido: ${formatBs(paidAtApprovalBs)}` : 'Sin pago inicial registrado.'}
-                        </small>
-                      </label>
-                      <label>
-                        Metodo pago inicial
-                        <select value={draft.initialPaymentMethod} onChange={(event) => setDraftField('initialPaymentMethod', event.target.value)} disabled={Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) <= 0}>
-                          <option value="efectivo">Efectivo</option>
-                          <option value="qr">QR</option>
-                          <option value="transferencia">Transferencia</option>
-                        </select>
-                        <small className={`orders-field-live-summary ${paidAtApprovalBs > 0 ? 'is-info' : 'is-muted'}`}>
-                          {paidAtApprovalBs > 0
-                            ? `Metodo actual: ${formatPaymentMethodLabel(draft.initialPaymentMethod, draft.initialPaymentAccount)}`
-                            : 'Se activara al registrar pago inicial.'}
-                        </small>
-                      </label>
-                      {Math.max(0, Number(draft.paidAtApprovalBs ?? 0)) > 0 && draft.initialPaymentMethod === 'qr' ? (
-                        <label>
-                          Cuenta QR pago inicial
-                          <select value={draft.initialPaymentAccount} onChange={(event) => setDraftField('initialPaymentAccount', event.target.value)}>
-                            <option value="">Seleccionar cuenta</option>
-                            {QR_ACCOUNT_OPTIONS.map((account) => (
-                              <option key={account} value={account}>{account}</option>
-                            ))}
-                          </select>
-                          <small className={`orders-field-live-summary ${draft.initialPaymentAccount ? 'is-ok' : 'is-warning'}`}>
-                            {draft.initialPaymentAccount ? `Cuenta seleccionada: ${draft.initialPaymentAccount}` : 'Falta seleccionar cuenta QR.'}
                           </small>
                         </label>
                       ) : null}
