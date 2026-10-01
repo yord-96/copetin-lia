@@ -4352,6 +4352,22 @@ export const api = {
       }
       return callBridge('cash', 'createManualMovement', true, payload);
     },
+    approveFundDelivery: async (payload = {}) => {
+      if (!shouldUseServerState()) throw new Error('La aprobacion de entrega de fondos requiere conexion con el servidor.');
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      if (!movementId) throw new Error('Entrega de fondos no identificada.');
+      const response = await fetch(getServerStateUrl(`/cash/fund-delivery/${encodeURIComponent(movementId)}/approve`), {
+        method: 'PATCH', cache: 'no-store',
+        headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo aprobar la entrega de fondos.');
+      const result = await response.json();
+      if (result?.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
+      await applyDirectCashResultLocally(result);
+      announceDataChange({ domain: 'cash', method: 'approveFundDelivery', collections: ['cashMovements'] });
+      return result;
+    },
     updatePettyExpense: async (payload) => {
       if (!shouldUseServerState()) throw new Error('La edicion atomica requiere conexion con el servidor.');
       const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();

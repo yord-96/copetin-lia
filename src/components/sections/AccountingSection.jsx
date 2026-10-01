@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import DailyCashTable from '../DailyCashTable';
-import { DAILY_CASH_COLUMNS, buildDailyCashRow, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
+import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
   getCommercialContractCode,
@@ -611,6 +611,7 @@ function AccountingSection({
   onOpenCashSession,
   onCloseCashSession,
   onCreateCashMovement,
+  onApproveFundDelivery,
   onUpdatePettyExpense,
   onDeletePettyExpense,
   onCreateCashDebt,
@@ -631,6 +632,14 @@ function AccountingSection({
   const [bigCashQuery, setBigCashQuery] = useState('');
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [dailyColumnFilters, setDailyColumnFilters] = useState({});
+  const [fundModal, setFundModal] = useState(null);
+  const [fundSubmitting, setFundSubmitting] = useState(false);
+  const [fundActionError, setFundActionError] = useState('');
+  const [fundApprovalBusyId, setFundApprovalBusyId] = useState('');
+  const [fundForm, setFundForm] = useState(() => ({
+    amountBs: '', paymentMethod: 'efectivo', paymentAccount: '', description: '', createdAt: '',
+    recipientName: '', recipientDocument: '', notes: '',
+  }));
   const [bigCashWorkspaceQuery, setBigCashWorkspaceQuery] = useState('');
   const [receivablesView, setReceivablesView] = useState('pending');
   const [guaranteesView, setGuaranteesView] = useState('pending');
@@ -1354,6 +1363,15 @@ function AccountingSection({
   const selectedMonthKey = getMonthKey(`${selectedDate}T12:00:00`);
   const monthStartDate = getMonthStartInput(selectedDate);
   const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
+  const fundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements), [sortedMovements]);
+  const currentFundSummary = fundTimeline;
+  const pendingFundDeliveries = useMemo(() => postedMovements
+    .filter((movement) => (
+      normalizeText(movement?.accountingTag) === 'big_cash_fund_out'
+      || normalizeText(movement?.category) === 'entrega_fondos'
+    ))
+    .filter((movement) => normalizeText(movement?.fundReportStatus || 'pending_approval') !== 'approved')
+    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements]);
   const isDeveloperUser = useMemo(() => {
     const roles = [
       ...(Array.isArray(currentUser?.roleIds) ? currentUser.roleIds : []),
@@ -1444,6 +1462,12 @@ function AccountingSection({
   }, [contractById, contractByOrderCode, contractByRentalId, rentalById]);
 
   const getDailyCustomerName = useCallback((movement) => {
+    const tag = normalizeText(movement?.accountingTag);
+    const category = normalizeText(movement?.category);
+    if (tag === 'big_cash_fund_out' || category === 'entrega_fondos') {
+      return String(movement?.fundRecipientName ?? '').trim() || 'Entrega de fondos';
+    }
+    if (tag === 'big_cash_fund_in' || category === 'ingreso_fondos') return 'Fondo operativo';
     const directName = String(movement?.customerName ?? movement?.clientName ?? '').trim();
     if (directName) return directName;
 
@@ -1565,6 +1589,9 @@ function AccountingSection({
     const target = normalizeText(movement?.collectionTarget);
 
     if (amount > 0) {
+      if (tag === 'big_cash_fund_in' || category === 'ingreso_fondos') {
+        return { key: 'fund_in', label: 'Ingreso de fondos' };
+      }
       if (isGuaranteeMovement(movement) || tag === 'validated_guarantee' || tag === 'contract_guarantee' || target === 'guarantee') {
         return { key: 'guarantee', label: 'Garantías recibidas' };
       }
@@ -1595,6 +1622,9 @@ function AccountingSection({
       return { key: 'other_income', label: 'Otros ingresos' };
     }
 
+    if (tag === 'big_cash_fund_out' || category === 'entrega_fondos') {
+      return { key: 'fund_out', label: 'Entrega de fondos' };
+    }
     if (isConfirmedGuaranteeReturnMovement(movement)) {
       return { key: 'guarantee_refund', label: 'Devoluciones de garantía' };
     }
@@ -1618,9 +1648,9 @@ function AccountingSection({
       reference: getMovementReference(movement),
       method: getPaymentMethodLabel(movement),
       user: getMovementUserLabel(movement),
-    }),
+    }, fundTimeline.byMovementId.get(String(movement?.id ?? ''))),
     movement,
-  })), [dailyReportRows, getDailyCustomerName, getDailyMovementNature, getMovementReference, getMovementUserLabel]);
+  })), [dailyReportRows, fundTimeline, getDailyCustomerName, getDailyMovementNature, getMovementReference, getMovementUserLabel]);
   const visibleDailyTableRows = useMemo(() => filterDailyCashRows(dailyTableRows, dailyColumnFilters), [dailyTableRows, dailyColumnFilters]);
 
   const dailyIncomeRows = useMemo(
@@ -3964,6 +3994,141 @@ function AccountingSection({
       setCashActionError(error.message || 'No se pudo anular y reemplazar el recibo.');
     } finally {
       endCashSubmit();
+    }
+  };
+
+  const openFundAction = (kind) => {
+    setFundActionError('');
+    setFundModal(kind);
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setFundForm({
+      amountBs: '',
+      paymentMethod: 'efectivo',
+      paymentAccount: '',
+      description: kind === 'in' ? 'Ingreso de fondos a Caja Grande' : 'Entrega de fondos de Caja Grande',
+      createdAt: now.toISOString().slice(0, 16),
+      recipientName: '',
+      recipientDocument: '',
+      notes: '',
+    });
+  };
+
+  const getFundSnapshotForMovement = useCallback((movement) => {
+    const after = fundTimeline.byMovementId.get(String(movement?.id ?? '')) ?? null;
+    if (!after) return null;
+    const amountBs = toNumber(movement?.amountBs);
+    const isCash = normalizePaymentMethod(movement?.paymentMethod) === 'efectivo';
+    return {
+      before: {
+        totalBs: Number((after.totalBs - amountBs).toFixed(2)),
+        cashBs: Number((after.cashBs - (isCash ? amountBs : 0)).toFixed(2)),
+        digitalBs: Number((after.digitalBs - (!isCash ? amountBs : 0)).toFixed(2)),
+      },
+      after,
+    };
+  }, [fundTimeline]);
+
+  const printFundDeliveryReport = useCallback((movement, explicitSnapshot = null) => {
+    if (!movement) return;
+    const popup = window.open('', '_blank', 'width=1100,height=850');
+    if (!popup) {
+      setFundActionError('El navegador bloqueó la ventana del reporte. Habilita ventanas emergentes para imprimir la entrega.');
+      return;
+    }
+    const snapshot = explicitSnapshot ?? getFundSnapshotForMovement(movement);
+    const after = snapshot?.after ?? { totalBs: 0, cashBs: 0, digitalBs: 0, accounts: [] };
+    const before = snapshot?.before ?? { totalBs: 0, cashBs: 0, digitalBs: 0 };
+    const amountBs = Math.abs(toNumber(movement?.amountBs));
+    const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[char]));
+    const method = getPaymentMethodLabel(movement);
+    const accountRows = (Array.isArray(after.accounts) ? after.accounts : [])
+      .filter((row) => Math.abs(toNumber(row?.amountBs)) > 0.0001)
+      .map((row) => `<tr><td>${esc(row.label)}</td><td class="money">${esc(formatBs(row.amountBs))}</td></tr>`).join('');
+    const approved = normalizeText(movement?.fundReportStatus) === 'approved';
+    popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Entrega de fondos ${esc(movement?.receiptCode ?? '')}</title><style>
+      @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.head{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid #173a70;padding-bottom:12px}.brand{color:#173a70;font-weight:900;letter-spacing:.08em}.head h1{margin:5px 0 2px;font-size:24px}.meta{text-align:right;line-height:1.6}.status{display:inline-block;border:1px solid ${approved?'#7ac598':'#f0b76b'};background:${approved?'#edf9f1':'#fff8ea'};color:${approved?'#14733b':'#9a5a00'};padding:5px 9px;border-radius:999px;font-weight:800}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.summary article{border:1px solid #d7e0eb;border-radius:8px;padding:11px}.summary small{display:block;color:#64748b;text-transform:uppercase;font-weight:700}.summary strong{display:block;margin-top:5px;font-size:19px;color:#173a70}.summary .delivery strong{color:#d84a16}.detail{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.detail div{border:1px solid #dfe6ef;padding:9px}.detail span{display:block;color:#64748b;font-size:9px;text-transform:uppercase;font-weight:700}.detail strong{display:block;margin-top:4px}.composition{margin-top:16px}.composition h2{font-size:14px;color:#173a70;margin:0 0 7px}.composition table{width:100%;border-collapse:collapse}.composition td{border:1px solid #dbe3ed;padding:7px}.money{text-align:right;font-weight:800}.signatures{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:62px}.signature{text-align:center;border-top:1px solid #475569;padding-top:7px;min-height:70px}.signature strong{display:block}.signature small{color:#64748b}.note{margin-top:16px;border:1px solid #dbe3ed;background:#f8fafc;padding:10px;min-height:55px}.toolbar{text-align:right;margin:12px 0}.toolbar button{border:0;border-radius:7px;background:#173a70;color:#fff;padding:9px 14px;font-weight:800}@media print{.toolbar{display:none}}</style></head><body>
+      <div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
+      <header class="head"><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Entrega / rendición de fondos</h1><div>${esc(movement?.receiptCode ?? movement?.receipt ?? 'Sin número')}</div></div><div class="meta"><span class="status">${approved?'APROBADA':'PENDIENTE DE APROBACIÓN'}</span><br>${esc(formatDateTime(movement?.createdAt))}</div></header>
+      <section class="summary"><article><small>Fondo antes</small><strong>${esc(formatBs(before.totalBs))}</strong></article><article class="delivery"><small>Total entregado</small><strong>${esc(formatBs(amountBs))}</strong></article><article><small>Fondo restante</small><strong>${esc(formatBs(after.totalBs))}</strong></article></section>
+      <section class="detail"><div><span>Medio entregado</span><strong>${esc(method)}</strong></div><div><span>Entregado a</span><strong>${esc(movement?.fundRecipientName || '-')}</strong></div><div><span>Documento / CI</span><strong>${esc(movement?.fundRecipientDocument || '-')}</strong></div><div><span>Registrado por</span><strong>${esc(getMovementUserLabel(movement))}</strong></div><div><span>Efectivo restante</span><strong>${esc(formatBs(after.cashBs))}</strong></div><div><span>Digital restante</span><strong>${esc(formatBs(after.digitalBs))}</strong></div></section>
+      <section class="composition"><h2>Composición del fondo restante</h2><table><tbody>${accountRows || '<tr><td>Sin saldo restante</td><td class="money">Bs 0,00</td></tr>'}</tbody></table></section>
+      <div class="note"><strong>Observaciones</strong><br>${esc(movement?.notes || 'Sin observaciones.')}</div>
+      <section class="signatures"><div class="signature"><strong>ENTREGADO POR</strong><small>${esc(getMovementUserLabel(movement))}</small></div><div class="signature"><strong>RECIBIDO POR</strong><small>${esc(movement?.fundRecipientName || 'Nombre / CI')}</small></div><div class="signature"><strong>APROBADO POR</strong><small>${approved ? esc(movement?.fundApprovedBy || 'Aprobado') : 'Nombre / cargo / firma'}</small></div></section>
+    </body></html>`);
+    popup.document.close();
+  }, [formatBs, formatDateTime, getFundSnapshotForMovement, getMovementUserLabel]);
+
+  const handleSubmitFundAction = async (event) => {
+    event.preventDefault();
+    if (!fundModal || fundSubmitting) return;
+    const amountBs = Math.max(0, toNumber(fundForm.amountBs));
+    if (amountBs <= 0) { setFundActionError('Ingresa un monto mayor a cero.'); return; }
+    if (fundForm.paymentMethod === 'qr' && !fundForm.paymentAccount) { setFundActionError('Selecciona la cuenta QR.'); return; }
+    if (fundModal === 'out' && !String(fundForm.recipientName ?? '').trim()) { setFundActionError('Indica quién recibe los fondos.'); return; }
+    setFundSubmitting(true);
+    setFundActionError('');
+    try {
+      const before = {
+        totalBs: currentFundSummary.totalBs,
+        cashBs: currentFundSummary.cashBs,
+        digitalBs: currentFundSummary.digitalBs,
+      };
+      const created = await onCreateCashMovement?.({
+        type: fundModal === 'in' ? 'ingreso' : 'egreso',
+        cashBoxType: 'BIG_CASH',
+        amountBs,
+        description: fundForm.description || (fundModal === 'in' ? 'Ingreso de fondos a Caja Grande' : 'Entrega de fondos de Caja Grande'),
+        category: fundModal === 'in' ? 'ingreso_fondos' : 'entrega_fondos',
+        accountingTag: fundModal === 'in' ? 'big_cash_fund_in' : 'big_cash_fund_out',
+        paymentMethod: fundForm.paymentMethod,
+        paymentAccount: fundForm.paymentMethod === 'qr' ? fundForm.paymentAccount : '',
+        responsible: currentUserName,
+        notes: fundForm.notes,
+        fundReportStatus: fundModal === 'in' ? 'registered' : 'pending_approval',
+        fundRecipientName: fundModal === 'out' ? fundForm.recipientName : '',
+        fundRecipientDocument: fundModal === 'out' ? fundForm.recipientDocument : '',
+        createdAt: fundForm.createdAt ? new Date(fundForm.createdAt).toISOString() : new Date().toISOString(),
+        receiptIssuedAt: fundForm.createdAt ? new Date(fundForm.createdAt).toISOString() : new Date().toISOString(),
+        createdBy: currentUserName,
+      });
+      const movement = created?.movement ?? (Array.isArray(created?.movements) ? created.movements[0] : null);
+      if (fundModal === 'out' && movement) {
+        const timeline = buildBigCashFundTimeline([...sortedMovements, movement]);
+        const after = timeline.byMovementId.get(String(movement.id));
+        const signed = toNumber(movement.amountBs);
+        const isCash = normalizePaymentMethod(movement.paymentMethod) === 'efectivo';
+        const movementBefore = after ? {
+          totalBs: Number((after.totalBs - signed).toFixed(2)),
+          cashBs: Number((after.cashBs - (isCash ? signed : 0)).toFixed(2)),
+          digitalBs: Number((after.digitalBs - (!isCash ? signed : 0)).toFixed(2)),
+        } : before;
+        printFundDeliveryReport(movement, { before: movementBefore, after: after ?? currentFundSummary });
+      } else if (movement) {
+        await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
+      }
+      setFundModal(null);
+      setCashActionFeedback(fundModal === 'in' ? 'Ingreso de fondos registrado.' : 'Entrega registrada y reporte generado para firma y aprobación.');
+    } catch (error) {
+      setFundActionError(error?.message || 'No se pudo registrar el movimiento de fondos.');
+    } finally {
+      setFundSubmitting(false);
+    }
+  };
+
+  const handleApproveFundDelivery = async (movement) => {
+    if (!movement?.id || fundApprovalBusyId) return;
+    if (!window.confirm('¿Confirmas que esta entrega de fondos fue recibida y aprobada?')) return;
+    setFundApprovalBusyId(String(movement.id));
+    setFundActionError('');
+    try {
+      const result = await onApproveFundDelivery?.({ movementId: movement.id, approvedBy: currentUserName });
+      const approved = result?.movement ?? movement;
+      printFundDeliveryReport(approved);
+    } catch (error) {
+      setFundActionError(error?.message || 'No se pudo aprobar la entrega.');
+    } finally {
+      setFundApprovalBusyId('');
     }
   };
 
@@ -7633,10 +7798,102 @@ function AccountingSection({
                 </div>
               </div>
 
-              <DailyCashTable key={dailyReportDate} allRows={dailyTableRows} rows={visibleDailyTableRows} filters={dailyColumnFilters} onFiltersChange={setDailyColumnFilters} formatBs={formatBs} />
+              <DailyCashTable
+                key={dailyReportDate}
+                allRows={dailyTableRows}
+                rows={visibleDailyTableRows}
+                filters={dailyColumnFilters}
+                onFiltersChange={setDailyColumnFilters}
+                formatBs={formatBs}
+                onFundIncome={() => openFundAction('in')}
+                onFundDelivery={() => openFundAction('out')}
+              />
             </article>
           </section>
         ) : null}
+        {fundModal ? (
+          <div className="bigcash-report-backdrop fund-action-backdrop" onClick={() => !fundSubmitting && setFundModal(null)}>
+            <section className="fund-action-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="fund-action-modal-head">
+                <div>
+                  <span>CAJA GRANDE · FONDO OPERATIVO</span>
+                  <h2>{fundModal === 'in' ? 'Ingreso de fondos' : 'Entrega de fondos'}</h2>
+                  <p>{fundModal === 'in'
+                    ? 'Registra dinero que ingresa al fondo y conserva si fue recibido en efectivo o por una cuenta digital.'
+                    : 'Registra la salida real del fondo. Se generará un reporte para firma y aprobación.'}</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setFundModal(null)} disabled={fundSubmitting}>×</button>
+              </header>
+
+              <div className="fund-current-summary">
+                <article><small>Fondo total</small><strong>{formatBs(currentFundSummary.totalBs)}</strong></article>
+                <article><small>Efectivo</small><strong>{formatBs(currentFundSummary.cashBs)}</strong></article>
+                <article><small>Digital</small><strong>{formatBs(currentFundSummary.digitalBs)}</strong></article>
+              </div>
+
+              <form className="fund-action-form" onSubmit={handleSubmitFundAction}>
+                <label>
+                  <span>Monto (Bs)</span>
+                  <input type="number" min="0.01" step="0.01" value={fundForm.amountBs} onChange={(event) => setFundForm((current) => ({ ...current, amountBs: event.target.value }))} required />
+                </label>
+                <label>
+                  <span>Fecha y hora</span>
+                  <input type="datetime-local" value={fundForm.createdAt} onChange={(event) => setFundForm((current) => ({ ...current, createdAt: event.target.value }))} required />
+                </label>
+                <label>
+                  <span>Medio</span>
+                  <select value={fundForm.paymentMethod} onChange={(event) => setFundForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="qr">QR / digital</option>
+                  </select>
+                </label>
+                {fundForm.paymentMethod === 'qr' ? <label>
+                  <span>Cuenta digital</span>
+                  <select value={fundForm.paymentAccount} onChange={(event) => setFundForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
+                    <option value="">Seleccionar cuenta</option>
+                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                  </select>
+                </label> : null}
+                <label className="fund-form-wide">
+                  <span>Concepto</span>
+                  <input value={fundForm.description} onChange={(event) => setFundForm((current) => ({ ...current, description: event.target.value }))} required />
+                </label>
+                {fundModal === 'out' ? <>
+                  <label>
+                    <span>Recibido por</span>
+                    <input value={fundForm.recipientName} onChange={(event) => setFundForm((current) => ({ ...current, recipientName: event.target.value }))} placeholder="Nombre completo" required />
+                  </label>
+                  <label>
+                    <span>CI / documento</span>
+                    <input value={fundForm.recipientDocument} onChange={(event) => setFundForm((current) => ({ ...current, recipientDocument: event.target.value }))} placeholder="Opcional" />
+                  </label>
+                </> : null}
+                <label className="fund-form-wide">
+                  <span>Observación</span>
+                  <textarea rows={3} value={fundForm.notes} onChange={(event) => setFundForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Detalle adicional del movimiento" />
+                </label>
+                {fundActionError ? <p className="fund-action-error">{fundActionError}</p> : null}
+                <footer className="fund-action-form-actions">
+                  <button type="button" className="ghost-button" onClick={() => setFundModal(null)} disabled={fundSubmitting}>Cancelar</button>
+                  <button type="submit" className={`fund-submit-button ${fundModal === 'in' ? 'income' : 'delivery'}`} disabled={fundSubmitting}>{fundSubmitting ? 'Registrando...' : fundModal === 'in' ? 'Registrar ingreso' : 'Registrar entrega y generar reporte'}</button>
+                </footer>
+              </form>
+
+              {fundModal === 'out' && pendingFundDeliveries.length > 0 ? <section className="fund-pending-deliveries">
+                <header><div><span>CONTROL</span><h3>Entregas pendientes de aprobación</h3></div><b>{pendingFundDeliveries.length}</b></header>
+                <div>
+                  {pendingFundDeliveries.slice(0, 6).map((movement) => <article key={movement.id}>
+                    <span><strong>{movement.receiptCode || movement.receipt || 'Entrega'}</strong><small>{formatDateTime(movement.createdAt)} · {getPaymentMethodLabel(movement)}</small></span>
+                    <b>{formatBs(Math.abs(toNumber(movement.amountBs)))}</b>
+                    <button type="button" onClick={() => printFundDeliveryReport(movement)}>Imprimir</button>
+                    <button type="button" className="approve" onClick={() => void handleApproveFundDelivery(movement)} disabled={fundApprovalBusyId === String(movement.id)}>{fundApprovalBusyId === String(movement.id) ? 'Aprobando...' : 'Aprobar'}</button>
+                  </article>)}
+                </div>
+              </section> : null}
+            </section>
+          </div>
+        ) : null}
+
         {vipTopUpModalOpen ? (
           <div className="bigcash-report-backdrop" onClick={() => !vipTopUpSubmitting && setVipTopUpModalOpen(false)}>
             <section className="bigcash-report-modal" style={{ maxWidth: 760 }} onClick={(event) => event.stopPropagation()}>

@@ -126,6 +126,9 @@ const summarizeAccountingMovement = (movement = {}) => {
     'receiptCustomerName', 'receiptIssuedAt',
     'contractAllocationBs', 'guaranteeAllocationBs', 'surplusAllocationBs',
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
+    'fundReportStatus', 'fundRecipientName', 'fundRecipientDocument',
+    'fundApprovedAt', 'fundApprovedBy', 'fundApprovalNotes',
+    'accountingPeriodId', 'accountingPeriodStatus',
   ];
   return Object.fromEntries(fields
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
@@ -1750,6 +1753,12 @@ const buildDirectMovement = (state, payload = {}) => {
     damageCollectedBs: directMoney(payload.damageCollectedBs),
     transportExpenseBs: directMoney(payload.transportExpenseBs),
     clientOperationId: String(payload.clientOperationId ?? '').trim() || null,
+    fundReportStatus: String(payload.fundReportStatus ?? '').trim(),
+    fundRecipientName: String(payload.fundRecipientName ?? '').trim(),
+    fundRecipientDocument: String(payload.fundRecipientDocument ?? '').trim(),
+    fundApprovedAt: payload.fundApprovedAt ?? null,
+    fundApprovedBy: String(payload.fundApprovedBy ?? '').trim(),
+    fundApprovalNotes: String(payload.fundApprovalNotes ?? '').trim(),
     createdAt,
     receiptIssuedAt,
   });
@@ -2044,10 +2053,61 @@ const reconstructDirectCashSessionFromMovements = (state) => {
 const getDirectCurrentCashBalance = (state, cashBoxType) => Number(
   (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
     .filter((movement) => !isArchivedAccountingRecord(movement))
-    .filter((movement) => !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
+    .filter((movement) => !movement?.deletedAt && !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
     .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === cashBoxType)
     .reduce((sum, movement) => sum + Number(movement?.amountBs ?? 0), 0)
     .toFixed(2)
+);
+
+const getDirectOperationalFundRows = (state) => {
+  const rows = (Array.isArray(state?.cashMovements) ? state.cashMovements : [])
+    .filter((movement) => !isArchivedAccountingRecord(movement))
+    .filter((movement) => !movement?.deletedAt && !movement?.voidedAt && String(movement?.receiptStatus ?? '').toLowerCase() !== 'anulado')
+    .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH')
+    .slice()
+    .sort((a, b) => {
+      const time = new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0);
+      return time || String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    });
+  const anchorIndex = rows.findIndex((movement) => (
+    String(movement?.accountingTag ?? '').trim().toLowerCase() === 'big_cash_fund_in'
+    || String(movement?.category ?? '').trim().toLowerCase() === 'ingreso_fondos'
+  ));
+  return anchorIndex >= 0 ? rows.slice(anchorIndex) : [];
+};
+
+const getDirectOperationalFundRowsThrough = (state, dateValue) => {
+  const parsed = new Date(dateValue ?? new Date());
+  const cutoff = Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
+  return getDirectOperationalFundRows(state).filter((movement) => {
+    const time = new Date(movement?.createdAt ?? 0).getTime();
+    return Number.isFinite(time) && time <= cutoff;
+  });
+};
+
+const getDirectOperationalFundBalanceThrough = (state, dateValue) => Number(
+  getDirectOperationalFundRowsThrough(state, dateValue)
+    .reduce((sum, movement) => sum + Number(movement?.amountBs ?? 0), 0)
+    .toFixed(2)
+);
+
+const getDirectBigCashChannelBalance = (state, paymentMethod, paymentAccount = '', dateValue = null) => {
+  const method = directPaymentMethod(paymentMethod);
+  const account = method === 'qr' ? String(paymentAccount ?? '').trim().toUpperCase() : '';
+  const sourceRows = dateValue ? getDirectOperationalFundRowsThrough(state, dateValue) : getDirectOperationalFundRows(state);
+  return Number(sourceRows
+    .filter((movement) => directPaymentMethod(movement?.paymentMethod) === method)
+    .filter((movement) => method !== 'qr' || String(movement?.paymentAccount ?? '').trim().toUpperCase() === account)
+    .reduce((sum, movement) => sum + Number(movement?.amountBs ?? 0), 0)
+    .toFixed(2));
+};
+
+const isBigCashFundDeliveryPayload = (payload = {}) => (
+  String(payload?.cashBoxType ?? '').toUpperCase() === 'BIG_CASH'
+  && (
+    String(payload?.accountingTag ?? '').trim().toLowerCase() === 'big_cash_fund_out'
+    || String(payload?.category ?? '').trim().toLowerCase() === 'entrega_fondos'
+  )
 );
 
 const summarizeDirectCashState = (state) => ({
@@ -4343,20 +4403,57 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
         throw error;
       }
       if (payload.type === 'egreso') {
-        if (payload.cashBoxType !== 'PETTY_CASH') {
+        const isFundDelivery = isBigCashFundDeliveryPayload(payload);
+        if (payload.cashBoxType !== 'PETTY_CASH' && !isFundDelivery) {
           const error = new Error('Los gastos operativos deben registrarse desde Caja Chica.');
           error.statusCode = 400;
           throw error;
         }
-        if (!activeSession) {
-          const error = new Error('No existe una sesion vigente de Caja Chica.');
-          error.statusCode = 400;
-          throw error;
-        }
-        if (amountBs > pettyCashBalance) {
-          const error = new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${pettyCashBalance.toFixed(2)}.`);
-          error.statusCode = 400;
-          throw error;
+        if (isFundDelivery) {
+          const movementDate = payload?.createdAt ?? new Date().toISOString();
+          const operationalFundRows = getDirectOperationalFundRows(state);
+          const anchor = operationalFundRows[0] ?? null;
+          if (!anchor) {
+            const error = new Error('Primero debes registrar un Ingreso fondos para iniciar el fondo operativo.');
+            error.statusCode = 400;
+            throw error;
+          }
+          if (new Date(movementDate).getTime() < new Date(anchor.createdAt).getTime()) {
+            const error = new Error('La entrega no puede tener una fecha anterior al inicio del fondo operativo.');
+            error.statusCode = 400;
+            throw error;
+          }
+          const operationalFundBalance = getDirectOperationalFundBalanceThrough(state, movementDate);
+          if (amountBs > operationalFundBalance) {
+            const error = new Error(`Caja Grande no tiene fondo suficiente. Disponible: Bs ${operationalFundBalance.toFixed(2)}.`);
+            error.statusCode = 400;
+            throw error;
+          }
+          if (directPaymentMethod(payload.paymentMethod) === 'qr' && !String(payload?.paymentAccount ?? '').trim()) {
+            const error = new Error('Debes seleccionar la cuenta QR desde la que se entregan los fondos.');
+            error.statusCode = 400;
+            throw error;
+          }
+          const channelBalance = getDirectBigCashChannelBalance(state, payload.paymentMethod, payload.paymentAccount, movementDate);
+          if (amountBs > channelBalance) {
+            const label = directPaymentMethod(payload.paymentMethod) === 'qr'
+              ? `QR ${String(payload.paymentAccount ?? '').trim().toUpperCase()}`
+              : 'Efectivo';
+            const error = new Error(`${label} no tiene saldo suficiente. Disponible: Bs ${channelBalance.toFixed(2)}.`);
+            error.statusCode = 400;
+            throw error;
+          }
+        } else {
+          if (!activeSession) {
+            const error = new Error('No existe una sesion vigente de Caja Chica.');
+            error.statusCode = 400;
+            throw error;
+          }
+          if (amountBs > pettyCashBalance) {
+            const error = new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${pettyCashBalance.toFixed(2)}.`);
+            error.statusCode = 400;
+            throw error;
+          }
         }
       }
 
@@ -4407,13 +4504,14 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
       }
 
       const signedAmount = payload.type === 'egreso' ? -amountBs : amountBs;
+      const isFundDelivery = payload.type === 'egreso' && isBigCashFundDeliveryPayload(payload);
       const movement = {
         ...buildDirectMovement(state, {
           ...payload,
-          sessionId: payload.type === 'egreso' ? activeSession?.id ?? null : activeSession?.id ?? null,
+          sessionId: activeSession?.id ?? null,
           type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
           amountBs: signedAmount,
-          cashBoxType: payload.type === 'egreso' ? 'PETTY_CASH' : payload.cashBoxType,
+          cashBoxType: isFundDelivery ? 'BIG_CASH' : payload.type === 'egreso' ? 'PETTY_CASH' : payload.cashBoxType,
         }),
         accountingPeriodId: periodId,
         accountingPeriodStatus: 'current',
@@ -4440,6 +4538,47 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
       res.status(error.statusCode).json({ error: error.message });
       return;
     }
+    next(error);
+  }
+});
+
+
+router.patch('/__copetin_db/cash/fund-delivery/:movementId/approve', async (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const movementId = String(req.params.movementId ?? '').trim();
+    const approvedBy = String(payload?.approvedBy ?? payload?.createdBy ?? '').trim();
+    if (!movementId) return res.status(400).json({ error: 'Entrega de fondos no identificada.' });
+    if (!approvedBy) return res.status(400).json({ error: 'Debes identificar a la persona que aprueba la entrega.' });
+    let movement = null;
+    const result = await updateStateSnapshot((state) => {
+      state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+      const row = state.cashMovements.find((entry) => String(entry?.id ?? '') === movementId);
+      if (!row) { const error = new Error('Entrega de fondos no encontrada.'); error.statusCode = 404; throw error; }
+      const tag = String(row?.accountingTag ?? '').trim().toLowerCase();
+      const category = String(row?.category ?? '').trim().toLowerCase();
+      if (tag !== 'big_cash_fund_out' && category !== 'entrega_fondos') {
+        const error = new Error('El movimiento seleccionado no corresponde a una entrega de fondos.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (row?.voidedAt || row?.deletedAt || String(row?.receiptStatus ?? '').toLowerCase() === 'anulado') {
+        const error = new Error('No se puede aprobar una entrega anulada o eliminada.');
+        error.statusCode = 409;
+        throw error;
+      }
+      row.fundReportStatus = 'approved';
+      row.fundApprovedAt = new Date().toISOString();
+      row.fundApprovedBy = approvedBy;
+      row.fundApprovalNotes = String(payload?.notes ?? '').trim();
+      row.updatedAt = row.fundApprovedAt;
+      movement = structuredClone(row);
+      return state;
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true, movement, summary: null, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     next(error);
   }
 });

@@ -737,6 +737,7 @@ function AdminApp() {
             onOpenCashSession={controller.handleOpenCashSession}
             onCloseCashSession={controller.handleCloseCashSession}
             onCreateCashMovement={controller.handleCreateCashMovement}
+            onApproveFundDelivery={controller.handleApproveFundDelivery}
             onUpdatePettyExpense={controller.handleUpdatePettyExpense}
             onDeletePettyExpense={controller.handleDeletePettyExpense}
             onCreateCashDebt={controller.handleCreateCashDebt}

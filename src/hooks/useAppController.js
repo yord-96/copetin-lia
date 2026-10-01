@@ -1709,6 +1709,22 @@ export const useAppController = () => {
     }
   };
 
+  const handleApproveFundDelivery = async (payload) => {
+    setError('');
+    try {
+      const result = await api.cash.approveFundDelivery(payload);
+      if (result?.movement?.id) {
+        setCashMovements((current) => current.map((movement) => (
+          String(movement?.id) === String(result.movement.id) ? result.movement : movement
+        )));
+      }
+      return result;
+    } catch (requestError) {
+      setError(requestError.message || 'No se pudo aprobar la entrega de fondos.');
+      throw requestError;
+    }
+  };
+
   const handleUpdatePettyExpense = async (payload) => {
     setError('');
     try {
@@ -3123,6 +3139,7 @@ export const useAppController = () => {
     handleDeleteCashDebt,
     handleUpdateTreasuryAccounts,
     handleCreateCashMovement,
+    handleApproveFundDelivery,
     handleUpdatePettyExpense,
     handleDeletePettyExpense,
     handleVoidAndReplaceCashMovementReceipt,

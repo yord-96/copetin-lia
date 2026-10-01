@@ -4623,6 +4623,12 @@ const buildCashMovement = ({
   transportRevenueBs = 0,
   damageCollectedBs = 0,
   transportExpenseBs = 0,
+  fundReportStatus = '',
+  fundRecipientName = '',
+  fundRecipientDocument = '',
+  fundApprovedAt = null,
+  fundApprovedBy = '',
+  fundApprovalNotes = '',
   createdAt = null,
   receiptIssuedAt = null,
 }) => ({
@@ -4676,6 +4682,12 @@ const buildCashMovement = ({
   transportRevenueBs: Number(Number(transportRevenueBs ?? 0).toFixed(2)),
   damageCollectedBs: Number(Number(damageCollectedBs ?? 0).toFixed(2)),
   transportExpenseBs: Number(Number(transportExpenseBs ?? 0).toFixed(2)),
+  fundReportStatus: String(fundReportStatus ?? '').trim(),
+  fundRecipientName: String(fundRecipientName ?? '').trim(),
+  fundRecipientDocument: String(fundRecipientDocument ?? '').trim(),
+  fundApprovedAt,
+  fundApprovedBy: String(fundApprovedBy ?? '').trim(),
+  fundApprovalNotes: String(fundApprovalNotes ?? '').trim(),
   createdAt: Number.isNaN(new Date(createdAt ?? '').getTime())
     ? new Date().toISOString()
     : new Date(createdAt).toISOString(),
@@ -18735,7 +18747,13 @@ const createWebBridge = () => ({
             String(accountingTag ?? '') === 'guarantee_refund'
             || String(category ?? '').toLowerCase() === 'garantia_devuelta_manual'
           );
-        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.BIG_CASH && !isBigCashGuaranteeRefund) {
+        const isBigCashFundDelivery = movementType === 'egreso'
+          && cashBoxType === CASH_BOX_TYPES.BIG_CASH
+          && (
+            String(accountingTag ?? '').toLowerCase() === 'big_cash_fund_out'
+            || String(category ?? '').toLowerCase() === 'entrega_fondos'
+          );
+        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.BIG_CASH && !isBigCashGuaranteeRefund && !isBigCashFundDelivery) {
           throw new Error('Caja Grande no registra gastos directos. Transfiere fondos a Caja Chica y registra el egreso alli.');
         }
         const availableBigCashBs = calculateOperationalBigCashBalance(state);
@@ -18747,6 +18765,9 @@ const createWebBridge = () => ({
         }
         if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH && amountRaw > availablePettyCashBs) {
           throw new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${availablePettyCashBs.toFixed(2)}.`);
+        }
+        if (isBigCashFundDelivery && amountRaw > availableBigCashBs) {
+          throw new Error(`Caja Grande no tiene fondo suficiente. Disponible: Bs ${availableBigCashBs.toFixed(2)}.`);
         }
         const sessionId = activeSession?.id ?? null;
 
@@ -18830,6 +18851,12 @@ const createWebBridge = () => ({
             linkedOrderCode,
             accountingTag,
             transportExpenseBs: accountingTag === 'transport_expense' ? amountRaw : transportExpenseBs,
+            fundReportStatus: payload?.fundReportStatus ?? '',
+            fundRecipientName: payload?.fundRecipientName ?? '',
+            fundRecipientDocument: payload?.fundRecipientDocument ?? '',
+            fundApprovedAt: payload?.fundApprovedAt ?? null,
+            fundApprovedBy: payload?.fundApprovedBy ?? '',
+            fundApprovalNotes: payload?.fundApprovalNotes ?? '',
             createdAt: payload?.createdAt ?? null,
             receiptIssuedAt: payload?.receiptIssuedAt ?? payload?.createdAt ?? null,
           });

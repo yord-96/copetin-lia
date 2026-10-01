@@ -154,7 +154,7 @@ function DailyFiltersPanel({ rows, filters, position, formatBs, onFiltersChange,
   );
 }
 
-export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs }) {
+export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery }) {
   const [filtersOpen, setFiltersOpen] = useState(null);
   const triggerRef = useRef(null);
   const totals = totalDailyCashRows(rows);
@@ -182,7 +182,8 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
     <div className="daily-table-filter-summary" aria-live="polite">
       <span><strong>{rows.length}</strong> de {allRows.length} movimientos{filterCount ? ` · ${filterCount} filtro(s) activo(s)` : ''}</span>
       <div className="daily-filter-toolbar">
-        <small>El reporte y el Excel incluyen los resultados visibles.</small>
+        <button type="button" className="daily-fund-action income" onClick={onFundIncome}>Ingreso fondos</button>
+        <button type="button" className="daily-fund-action delivery" onClick={onFundDelivery}>Entrega fondos</button>
         {filterCount > 0 && <button
           type="button"
           className="daily-filter-clear-button"
@@ -214,13 +215,13 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
           <span className="daily-header-label">{column.label}</span>
         </th>)}</tr></thead>
         <tbody>
-          {rows.map((row, index) => <tr key={row.id ?? index}>{DAILY_CASH_COLUMNS.map((column) => <td key={column.key} className={`daily-col-${column.key} ${column.money ? 'daily-money-cell' : ''} ${column.tone === 'out' && row[column.key] != null ? 'daily-expense-cell' : ''} ${column.tone === 'income' ? 'daily-revenue-cell' : ''} ${column.key === 'nature' && row.expense != null ? 'daily-expense-text' : column.key === 'nature' && row.income != null ? 'daily-revenue-text' : ''}`}>
-            {dailyCashCellText(column, row[column.key], formatBs)}
+          {rows.map((row, index) => <tr key={row.id ?? index}>{DAILY_CASH_COLUMNS.map((column) => <td key={column.key} className={`daily-col-${column.key} ${(column.money || column.balance) ? 'daily-money-cell' : ''} ${column.tone === 'out' && row[column.key] != null ? 'daily-expense-cell' : ''} ${column.tone === 'income' ? 'daily-revenue-cell' : ''} ${column.key === 'nature' && row.expense != null ? 'daily-expense-text' : column.key === 'nature' && row.income != null ? 'daily-revenue-text' : ''}`}>
+            {column.balance && row.fund != null ? <span className="daily-fund-cell"><strong>{formatBs(row.fund)}</strong><small>Efec. {formatBs(row.fundCash ?? 0)} · Digital {formatBs(row.fundDigital ?? 0)}</small></span> : dailyCashCellText(column, row[column.key], formatBs)}
           </td>)}</tr>)}
           {!rows.length && <tr><td colSpan={DAILY_CASH_COLUMNS.length}><p className="status">{allRows.length ? 'No hay movimientos que coincidan con los filtros.' : 'No hay movimientos confirmados para este día.'}</p></td></tr>}
         </tbody>
         <tfoot><tr><th scope="row" colSpan={6}>TOTAL {filterCount ? 'FILTRADO' : 'DEL DÍA'}</th>{DAILY_CASH_COLUMNS.slice(6).map((column) => <td key={column.key} className={`daily-col-${column.key} daily-money-cell ${column.tone === 'out' ? 'daily-expense-cell' : column.tone === 'income' ? 'daily-revenue-cell' : ''}`}>
-          {column.money ? formatBs(totals[column.key]) : ''}
+          {column.money ? formatBs(totals[column.key]) : column.balance ? formatBs(rows.length ? rows[rows.length - 1].fund ?? 0 : 0) : ''}
         </td>)}</tr></tfoot>
       </table>
     </div>

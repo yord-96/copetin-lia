@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DAILY_CASH_COLUMNS, buildDailyCashRow, filterDailyCashRows, totalDailyCashRows, getDailyCashFilterOptions, createDailyCashWorkbook, buildDailyCashReportHtml } from './dailyCashReport.js';
+import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, getDailyCashFilterOptions, createDailyCashWorkbook, buildDailyCashReportHtml } from './dailyCashReport.js';
 
 const row = (id, amountBs, key, extra = {}) => buildDailyCashRow({ id, amountBs, receiptCode: `RC-${id}` }, {
   hour: '08:30', customer: 'Cliente de prueba', nature: { key, label: key }, reference: '0012', method: 'Efectivo', user: 'Operador', ...extra,
@@ -8,9 +8,9 @@ const row = (id, amountBs, key, extra = {}) => buildDailyCashRow({ id, amountBs,
 const rows = [row(1, 125.75, 'rental'), row(6, 35, 'extra'), row(2, -50, 'guarantee_refund'), row(3, 20, 'guarantee'), row(4, -10.25, 'transport_expense'), row(5, 12.5, 'damage')];
 
 test('separa ingresos y egresos sin duplicar conceptos y conserva devolución positiva en su columna', () => {
-  assert.equal(rows[1].refund, 50);
-  assert.equal(rows[1].expense, 50);
-  assert.equal(rows[1].income, null);
+  assert.equal(rows[2].refund, 50);
+  assert.equal(rows[2].expense, 50);
+  assert.equal(rows[2].income, null);
   const totals = totalDailyCashRows(rows);
   assert.equal(totals.income, 193.25);
   assert.equal(totals.expense, 60.25);
@@ -29,7 +29,7 @@ test('combina filtros, distingue vacíos de cero y admite selección vacía', ()
   assert.equal(getDailyCashFilterOptions([row(8, 1, 'rental', { customer: 'José' })], DAILY_CASH_COLUMNS[2], 'jose')[0].label, 'José');
 });
 
-test('Excel conserva las 15 columnas y filas filtradas, montos numéricos, rojos y subtotales', async () => {
+test('Excel conserva las 16 columnas y filas filtradas, montos numéricos, rojos y subtotales', async () => {
   const filters = { income: [''] };
   const visible = filterDailyCashRows(rows, filters);
   const workbook = await createDailyCashWorkbook({ rows: visible, date: '2026-09-29', filters });
@@ -45,12 +45,32 @@ test('Excel conserva las 15 columnas y filas filtradas, montos numéricos, rojos
   assert.equal(sheet.getCell('O11').value.result, 60.25);
   assert.equal(sheet.getCell('O11').value.formula, 'SUBTOTAL(109,O9:O10)');
   assert.equal(sheet.getCell('N11').value.formula, 'SUBTOTAL(109,N9:N10)');
-  assert.equal(sheet.autoFilter, 'A8:O10');
+  assert.equal(sheet.autoFilter, 'A8:P10');
   const html = buildDailyCashReportHtml({ rows: visible, date: '2026-09-29', filters });
   assert.match(html, /RC-2/);
   assert.doesNotMatch(html, /RC-1/);
   assert.match(html, /TOTAL DE MOVIMIENTOS VISIBLES/);
-  assert.equal((html.match(/<th>/g) || []).length, 15);
+  assert.equal((html.match(/<th>/g) || []).length, 16);
+});
+
+test('fondo acumulado arrastra efectivo y digital entre movimientos y días', () => {
+  const movements = [
+    { id: 'old', cashBoxType: 'BIG_CASH', amountBs: 9999, paymentMethod: 'efectivo', createdAt: '2026-10-01T08:00:00-04:00' },
+    { id: 'a', cashBoxType: 'BIG_CASH', amountBs: 5000, paymentMethod: 'efectivo', accountingTag: 'big_cash_fund_in', category: 'ingreso_fondos', createdAt: '2026-10-02T08:00:00-04:00' },
+    { id: 'b', cashBoxType: 'BIG_CASH', amountBs: 500, paymentMethod: 'qr', paymentAccount: 'CIDRE', createdAt: '2026-10-02T09:00:00-04:00' },
+    { id: 'c', cashBoxType: 'BIG_CASH', amountBs: -200, paymentMethod: 'efectivo', createdAt: '2026-10-02T10:00:00-04:00' },
+    { id: 'd', cashBoxType: 'BIG_CASH', amountBs: -300, paymentMethod: 'qr', paymentAccount: 'CIDRE', createdAt: '2026-10-02T11:00:00-04:00' },
+    { id: 'e', cashBoxType: 'BIG_CASH', amountBs: 100, paymentMethod: 'efectivo', createdAt: '2026-10-03T08:00:00-04:00' },
+  ];
+  const timeline = buildBigCashFundTimeline(movements);
+  assert.equal(timeline.byMovementId.has('old'), false);
+  assert.equal(timeline.byMovementId.get('a').totalBs, 5000);
+  assert.equal(timeline.byMovementId.get('b').digitalBs, 500);
+  assert.equal(timeline.byMovementId.get('c').cashBs, 4800);
+  assert.equal(timeline.byMovementId.get('d').totalBs, 5000);
+  assert.equal(timeline.byMovementId.get('e').totalBs, 5100);
+  assert.equal(timeline.cashBs, 4900);
+  assert.equal(timeline.digitalBs, 200);
 });
 
 test('reportes vacíos y texto con símbolos no generan fórmulas ni HTML ejecutable', async () => {
