@@ -12,6 +12,8 @@ import { heartbeatPresence, leavePresence, listPresence } from '../storage/prese
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
 import { isRentalExcludedFromReceivables } from '../../src/utils/accountingRentals.js';
+import { getConfirmedContractLedgerPaidBs } from '../../src/utils/receivables.js';
+import { getGuaranteeLedgerEvidence } from '../../src/utils/guaranteeSettlement.js';
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
@@ -28,6 +30,16 @@ const gzipAsync = promisify(gzip);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
 const accountingBackupDirectory = path.join(projectRoot, 'data', 'backups');
+
+// Cache de respuestas contables pesadas por revision. Evita reconstruir miles de
+// contratos/alquileres al volver a Caja Grande cuando la base no cambio.
+const accountingBaseOverviewCache = new Map();
+const accountingContextCache = new Map();
+const rememberAccountingCache = (cache, key, payload, maxEntries = 4) => {
+  cache.set(key, payload);
+  while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
+  return payload;
+};
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
 const configuredResetSecurityCode = String(process.env.RESET_SECURITY_CODE ?? '').trim();
 const resetSecurityCode = configuredResetSecurityCode && configuredResetSecurityCode !== 'cambia-este-codigo'
@@ -6942,6 +6954,12 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
     const allMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
       .filter((movement) => !isArchivedAccountingRecord(movement));
     const recentLimit = Math.min(1500, Math.max(100, Number(req.query.limit ?? 750) || 750));
+    const contextCacheKey = `${snapshot?.revision ?? 'none'}:${recentLimit}`;
+    const cachedContext = accountingContextCache.get(contextCacheKey);
+    if (cachedContext) {
+      await sendJsonPayload(req, res, cachedContext);
+      return;
+    }
     const sortedMovements = allMovements
       .slice()
       .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0));
@@ -7047,7 +7065,7 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       })
       .sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
 
-    await sendJsonPayload(req, res, {
+    const contextPayload = {
       revision: snapshot?.revision ?? null,
       updatedAt: snapshot?.updatedAt ?? null,
       movements: [...selectedMovements.values()]
@@ -7060,7 +7078,9 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
       totalMovements: allMovements.length,
       visibleMovements: selectedMovements.size,
       truncated: selectedMovements.size < allMovements.length,
-    });
+    };
+    rememberAccountingCache(accountingContextCache, contextCacheKey, contextPayload);
+    await sendJsonPayload(req, res, contextPayload);
   } catch (error) {
     next(error);
   }
@@ -7758,6 +7778,22 @@ const summarizeOrdersRental = (rental = {}) => ({
   _ordersSummaryOnly: true,
 });
 
+// Contabilidad necesita los saldos auditables del ledger, pero no necesita
+// descargar cada linea historica para calcularlos. Precalculamos aqui el resumen
+// que usan Cobros/Garantias y evitamos enviar ~1.5 MB de economicLedger al navegador.
+const buildAccountingLedgerSummary = (contract = {}) => {
+  const totalBs = Number(contract?.totals?.totalBs ?? contract?.totalBs ?? 0);
+  const guaranteeEvidence = getGuaranteeLedgerEvidence(contract);
+  return {
+    confirmedCommercialPaidBs: getConfirmedContractLedgerPaidBs(contract, totalBs),
+    guaranteeEvidence: {
+      paidBs: Number(guaranteeEvidence?.paidBs ?? 0),
+      appliedBs: Number(guaranteeEvidence?.appliedBs ?? 0),
+      refundedBs: Number(guaranteeEvidence?.refundedBs ?? 0),
+    },
+  };
+};
+
 // Contabilidad necesita todos los saldos y referencias, pero no las lineas de
 // productos, documentos ni revisiones completas de cada contrato. Este resumen
 // conserva la informacion economica exacta y reduce varios MB de transferencia.
@@ -7811,14 +7847,7 @@ const summarizeAccountingContract = (contract = {}) => ({
     discountBs: contract?.totals?.discountBs ?? null,
     pendingPaymentBs: contract?.totals?.pendingPaymentBs ?? null,
   },
-  // Caja Grande necesita la misma evidencia economica resumida que Ordenes.
-  // Sin estas lineas, los contratos antiguos vuelven a usar saldos guardados
-  // antes del ultimo cobro o ajuste (por ejemplo 2049 y 2026).
-  economicLedger: (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
-    .map(summarizeOrdersEconomicLedgerEntry),
-  economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
-  economicResetAt: contract?.economicResetAt ?? null,
-  economicResetVersion: contract?.economicResetVersion ?? null,
+  accountingLedgerSummary: buildAccountingLedgerSummary(contract),
   _summaryOnly: true,
   _accountingSummaryOnly: true,
 });
@@ -7924,7 +7953,6 @@ const summarizeAccountingRental = (rental = {}) => {
         }
       : null,
     returnReport,
-    returnIssueSummary: returnReport,
     // Contabilidad necesita distinguir material pendiente con el cliente de
     // daños/faltantes. Se envía solo el resumen mínimo, sin cargar la orden completa.
     operational: rental?.operational?.clientPendingPickup?.active
@@ -10195,10 +10223,16 @@ router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
     const snapshot = await getStateSnapshot();
     const state = snapshot?.state ?? {};
     const includeCommercial = String(req.query?.scope ?? 'full').trim().toLowerCase() !== 'petty';
+    const baseCacheKey = `${snapshot?.revision ?? 'none'}:${includeCommercial ? 'full' : 'petty'}`;
+    const cachedBaseOverview = accountingBaseOverviewCache.get(baseCacheKey);
+    if (cachedBaseOverview) {
+      await sendJsonPayload(req, res, cachedBaseOverview);
+      return;
+    }
     const allContracts = Array.isArray(state.contracts) ? state.contracts : [];
     const activeContracts = allContracts.filter((contract) => !contract?.deletedAt);
     const deletedContracts = allContracts.filter((contract) => Boolean(contract?.deletedAt));
-    await sendJsonPayload(req, res, {
+    const baseOverviewPayload = {
       initialized: snapshot.initialized,
       revision: snapshot.revision,
       version: snapshot.version,
@@ -10221,7 +10255,9 @@ router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
         cashSessions: (Array.isArray(state.cashSessions) ? state.cashSessions : [])
           .filter((session) => !isArchivedAccountingRecord(session)),
       },
-    });
+    };
+    rememberAccountingCache(accountingBaseOverviewCache, baseCacheKey, baseOverviewPayload);
+    await sendJsonPayload(req, res, baseOverviewPayload);
   } catch (error) {
     next(error);
   }

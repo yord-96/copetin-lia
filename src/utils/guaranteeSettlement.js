@@ -42,6 +42,19 @@ const isCashCollectedDamageEntry = (entry) => (
 export const getGuaranteeLedgerEvidence = (contract) => {
   const ledger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
     .filter(isActiveLedgerEntry);
+  if (ledger.length === 0) {
+    const summary = contract?.accountingLedgerSummary?.guaranteeEvidence;
+    if (summary && ['paidBs', 'appliedBs', 'refundedBs'].some((key) => Number.isFinite(Number(summary?.[key])))) {
+      return {
+        paidBs: toMoney(summary?.paidBs),
+        appliedBs: toMoney(summary?.appliedBs),
+        refundedBs: toMoney(summary?.refundedBs),
+        paymentEntries: [],
+        applicationEntries: [],
+        refundEntries: [],
+      };
+    }
+  }
   const deposits = ledger.filter((entry) => entry?.type === 'deposit' && isConfirmedLedgerEntry(entry));
   const depositsById = new Map(deposits
     .map((entry) => [String(entry?.id ?? '').trim(), entry])

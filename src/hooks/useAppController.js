@@ -173,6 +173,8 @@ export const useAppController = () => {
   const accountingOverviewLoadedRef = useRef(false);
   const accountingCommercialLoadedRef = useRef(false);
   const accountingOverviewRequestRef = useRef(null);
+  const accountingCommercialRequestRef = useRef(null);
+  const accountingRefreshPendingRef = useRef(false);
   const fullWorkspaceLoadedRef = useRef(false);
   const clientsOverviewLoadedRef = useRef(false);
   const clientsOverviewRequestRef = useRef(null);
@@ -321,32 +323,69 @@ export const useAppController = () => {
     }
   }, []);
 
-  const loadAccountingData = useCallback(async ({ force = false, includeCommercial = true } = {}) => {
-    if (
-      !force
-      && accountingOverviewLoadedRef.current
-      && (!includeCommercial || accountingCommercialLoadedRef.current)
-    ) return;
+  const loadAccountingData = useCallback(async ({
+    force = false,
+    includeCommercial = true,
+    silent = false,
+    refreshCommercial = true,
+  } = {}) => {
+    const criticalLoaded = accountingOverviewLoadedRef.current;
+    const commercialLoaded = accountingCommercialLoadedRef.current;
+
+    const loadCommercialOverview = async ({ forceCommercial = false } = {}) => {
+      if (!includeCommercial) return;
+      if (!forceCommercial && accountingCommercialLoadedRef.current) return;
+      if (accountingCommercialRequestRef.current) return accountingCommercialRequestRef.current;
+
+      const request = api.sync.getAccountingBaseOverview({ includeCommercial: true })
+        .then((overview) => {
+          setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
+          setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
+          setClients((current) => mergeProgressiveClients(current, overview?.clients));
+          setCashSessions(Array.isArray(overview?.cashSessions) ? overview.cashSessions : []);
+          accountingCommercialLoadedRef.current = true;
+        })
+        .catch((accountingError) => {
+          console.warn('[copetin] No se pudo completar el detalle comercial de Contabilidad.', accountingError);
+          if (!accountingOverviewLoadedRef.current) throw accountingError;
+        })
+        .finally(() => {
+          accountingCommercialRequestRef.current = null;
+        });
+
+      accountingCommercialRequestRef.current = request;
+      return request;
+    };
+
+    if (!force && criticalLoaded) {
+      if (includeCommercial && !commercialLoaded && refreshCommercial) {
+        // La parte comercial es pesada. Se completa despues de pintar Caja Grande.
+        window.setTimeout(() => loadCommercialOverview().catch(() => {}), 0);
+      }
+      return;
+    }
+
     if (accountingOverviewRequestRef.current) {
       await accountingOverviewRequestRef.current;
-      if (!includeCommercial || accountingCommercialLoadedRef.current) return;
+      if (!force) {
+        if (includeCommercial && !accountingCommercialLoadedRef.current && refreshCommercial) {
+          window.setTimeout(() => loadCommercialOverview().catch(() => {}), 0);
+        }
+        return;
+      }
     }
 
     deferredGroupsLoadedRef.current.add('accounting-operations');
-    setAccountingOperationsLoading(true);
+    if (!silent) setAccountingOperationsLoading(true);
+
+    // Primer paint: solo historial contable + saldo. Son los datos que necesita
+    // Caja Grande para abrir y son mucho mas livianos que contratos/alquileres.
     const request = Promise.all([
-      api.sync.getAccountingBaseOverview({ includeCommercial }),
       api.cash.getAccountingContext(),
       api.cash.getFastSummary(),
-    ]).then(([overview, context, summary]) => {
-      if (includeCommercial) {
-        setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
-        setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
-        setClients((current) => mergeProgressiveClients(current, overview?.clients));
-        accountingCommercialLoadedRef.current = true;
-      }
-      setCashSessions(Array.isArray(overview?.cashSessions) ? overview.cashSessions : []);
+    ]).then(([context, summary]) => {
       setCashSummary(summary ?? null);
+      if (summary?.activeSession) setCashSessions([summary.activeSession]);
       setCashMovements(Array.isArray(context?.movements) ? context.movements : []);
       setCashDebts(Array.isArray(context?.debts) ? context.debts : []);
       setCashPaymentChannels(Array.isArray(context?.paymentChannels) ? context.paymentChannels : []);
@@ -363,11 +402,17 @@ export const useAppController = () => {
       throw accountingError;
     }).finally(() => {
       accountingOverviewRequestRef.current = null;
-      setAccountingOperationsLoading(false);
+      if (!silent) setAccountingOperationsLoading(false);
     });
 
     accountingOverviewRequestRef.current = request;
     await request;
+
+    if (includeCommercial && refreshCommercial) {
+      // No se espera este request: la pantalla ya queda utilizable y React
+      // incorpora Cobros/Garantias cuando termina el resumen comercial.
+      window.setTimeout(() => loadCommercialOverview({ forceCommercial: force }).catch(() => {}), 0);
+    }
   }, []);
 
   const prepareClientsOverview = useCallback(async ({ force = false } = {}) => {
@@ -525,6 +570,40 @@ export const useAppController = () => {
     ) return;
     prepareTabData(activeTab).catch(() => {});
   }, [activeTab, authReady, currentUser, prepareTabData]);
+
+  useEffect(() => {
+    if (!authReady || !currentUser || !String(activeTab).startsWith('contabilidad')) return undefined;
+    const resumeAccounting = () => {
+      if (document.visibilityState !== 'visible' || !accountingRefreshPendingRef.current) return;
+      accountingRefreshPendingRef.current = false;
+      const run = async () => {
+        await loadAccountingData({
+          force: true,
+          includeCommercial: false,
+          silent: true,
+          refreshCommercial: false,
+        }).catch(() => {});
+        const refreshCommercial = () => loadAccountingData({
+          includeCommercial: String(activeTab) !== 'contabilidad_caja_chica',
+          silent: true,
+          refreshCommercial: true,
+        }).catch(() => {});
+        if ('requestIdleCallback' in window) {
+          window.requestIdleCallback(refreshCommercial, { timeout: 4500 });
+        } else {
+          window.setTimeout(refreshCommercial, 2200);
+        }
+      };
+      // Deja que Chrome pinte la pestaña restaurada antes de parsear JSON.
+      window.setTimeout(run, 450);
+    };
+    document.addEventListener('visibilitychange', resumeAccounting);
+    window.addEventListener('focus', resumeAccounting);
+    return () => {
+      document.removeEventListener('visibilitychange', resumeAccounting);
+      window.removeEventListener('focus', resumeAccounting);
+    };
+  }, [activeTab, authReady, currentUser, loadAccountingData]);
 
   useEffect(() => {
     if (!authReady || !currentUser || fullWorkspaceLoadedRef.current) return;
@@ -889,13 +968,39 @@ export const useAppController = () => {
       }
 
       if (String(activeTab).startsWith('contabilidad')) {
+        // No descargamos/parseamos varios MB mientras la pestaña esta oculta.
+        // Al volver, se refresca primero Caja/Movimientos de forma silenciosa.
+        if (document.visibilityState !== 'visible') {
+          accountingRefreshPendingRef.current = true;
+          accountingCommercialLoadedRef.current = false;
+          return;
+        }
         window.clearTimeout(refreshTimer);
         refreshTimer = window.setTimeout(() => {
-          if (!disposed) loadAccountingData({
+          if (disposed) return;
+          accountingCommercialLoadedRef.current = false;
+          loadAccountingData({
             force: true,
-            includeCommercial: String(activeTab) !== 'contabilidad_caja_chica',
+            includeCommercial: false,
+            silent: true,
+            refreshCommercial: false,
           }).catch(() => {});
-        }, isRemoteChange ? 250 : 0);
+          // El bloque comercial se actualiza despues, cuando el navegador tenga
+          // oportunidad de pintar y procesar interacciones del usuario.
+          const refreshCommercial = () => {
+            if (disposed || document.visibilityState !== 'visible') return;
+            loadAccountingData({
+              includeCommercial: String(activeTab) !== 'contabilidad_caja_chica',
+              silent: true,
+              refreshCommercial: true,
+            }).catch(() => {});
+          };
+          if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(refreshCommercial, { timeout: 3500 });
+          } else {
+            window.setTimeout(refreshCommercial, 1800);
+          }
+        }, isRemoteChange ? 300 : 0);
         return;
       }
 

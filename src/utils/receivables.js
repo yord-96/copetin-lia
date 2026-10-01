@@ -16,6 +16,12 @@ const isConfirmedLedgerEntry = (entry) => Boolean(
 export const getConfirmedContractLedgerPaidBs = (contract, contractTotalBs = 0) => {
   const ledger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
     .filter((entry) => !entry?.deletedAt);
+  if (ledger.length === 0) {
+    const summarized = Number(contract?.accountingLedgerSummary?.confirmedCommercialPaidBs);
+    if (Number.isFinite(summarized)) {
+      return Math.min(Math.max(0, money(contractTotalBs)), Math.max(0, money(summarized)));
+    }
+  }
   const deposits = ledger
     .filter((entry) => {
       if (entry?.type !== 'deposit' || entry?.reclassifiedFromPayment || !isConfirmedLedgerEntry(entry)) return false;
