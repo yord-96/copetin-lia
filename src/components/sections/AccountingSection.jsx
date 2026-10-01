@@ -647,6 +647,10 @@ function AccountingSection({
   const [receivablesView, setReceivablesView] = useState('pending');
   const [guaranteesView, setGuaranteesView] = useState('pending');
   const [returnIssuesView, setReturnIssuesView] = useState('pending');
+  const needsReceivableDetail = bigCashWorkspaceTab === 'receivables';
+  const needsFinalizedReceivableDetail = needsReceivableDetail && receivablesView === 'finalized';
+  const needsGuaranteeDetail = bigCashWorkspaceTab === 'guarantees';
+  const needsIssueDetail = bigCashWorkspaceTab === 'issues';
   const [isExportingGuarantees, setIsExportingGuarantees] = useState(false);
   const [showReturnIssuesReport, setShowReturnIssuesReport] = useState(false);
   const [isExportingReturnIssues, setIsExportingReturnIssues] = useState(false);
@@ -1194,6 +1198,35 @@ function AccountingSection({
     () => sortedMovements.filter((movement) => !isVoidedCashMovement(movement)),
     [sortedMovements],
   );
+
+  const postedMovementReferenceIndex = useMemo(() => {
+    const byReference = new Map();
+    postedMovements.forEach((movement) => {
+      if (isVoidedCashMovement(movement)) return;
+      const keys = [
+        movement?.linkedRentalId,
+        movement?.linkedContractId,
+        movement?.linkedOrderCode,
+        movement?.contractCode,
+        movement?.reference,
+        movement?.sourceId,
+      ].map(normalizeText).filter(Boolean);
+      [...new Set(keys)].forEach((key) => {
+        const rows = byReference.get(key);
+        if (rows) rows.push(movement);
+        else byReference.set(key, [movement]);
+      });
+    });
+    return byReference;
+  }, [postedMovements]);
+
+  const getIndexedMovements = useCallback((references = []) => {
+    const found = new Set();
+    references.map(normalizeText).filter(Boolean).forEach((key) => {
+      (postedMovementReferenceIndex.get(key) ?? []).forEach((movement) => found.add(movement));
+    });
+    return [...found];
+  }, [postedMovementReferenceIndex]);
 
   const sortedCashDebts = useMemo(
     () => cashDebts
@@ -2002,7 +2035,9 @@ function AccountingSection({
     };
   }, []);
 
-  const regularGuaranteeLifecycleRows = useMemo(() => rentals
+  const regularGuaranteeLifecycleRows = useMemo(() => {
+    if (!needsGuaranteeDetail) return [];
+    return rentals
     .filter((rental) => !rental?.deletedAt)
     .map((rental) => {
       const contract = getRentalContract(rental);
@@ -2021,18 +2056,7 @@ function AccountingSection({
         contract?.contractCode,
         contract?.orderCode,
       ].map(normalizeText).filter(Boolean));
-      const linkedContractMovements = postedMovements
-        .filter((movement) => {
-          if (isVoidedCashMovement(movement)) return false;
-          return [
-            movement?.linkedRentalId,
-            movement?.linkedContractId,
-            movement?.linkedOrderCode,
-            movement?.contractCode,
-            movement?.reference,
-            movement?.sourceId,
-          ].map(normalizeText).some((key) => key && referenceKeys.has(key));
-        })
+      const linkedContractMovements = getIndexedMovements([...referenceKeys])
         .sort((a, b) => new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0));
       const linkedGuaranteePaymentMovements = linkedContractMovements.filter((movement) => (
         isGuaranteeMovement(movement) || toNumber(movement?.guaranteeAllocationBs) > 0
@@ -2046,7 +2070,7 @@ function AccountingSection({
           contract?.approvedAt ?? contract?.contractDate ?? contract?.createdAt ?? rental?.createdAt ?? 0,
         ).getTime(),
       };
-      const refundMovements = postedMovements
+      const refundMovements = linkedContractMovements
         .filter((movement) => isConfirmedGuaranteeReturnMovement(movement))
         .filter((movement) => cashMovementMatchesContractReferences(movement, contractReferences))
         .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0));
@@ -2109,7 +2133,7 @@ function AccountingSection({
         if (owner === 'transporte' || owner === 'lavado') return sum;
         return sum + Math.max(0, toNumber(line?.penaltyBs ?? (toNumber(line?.damagedFeeBs) + toNumber(line?.missingFeeBs))));
       }, 0).toFixed(2)));
-      const collectedDamageBs = Math.max(0, Number(postedMovements.reduce((sum, movement) => {
+      const collectedDamageBs = Math.max(0, Number(linkedContractMovements.reduce((sum, movement) => {
         if (isVoidedCashMovement(movement)) return sum;
         const sameReference = [movement?.linkedRentalId, movement?.linkedContractId, movement?.linkedOrderCode, movement?.sourceId]
           .map(normalizeText)
@@ -2201,10 +2225,12 @@ function AccountingSection({
       };
     })
     .filter(Boolean)
-    .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0)),
-  [getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, postedMovements, rentals]);
+    .sort((a, b) => Number(b.isReadyToReturn) - Number(a.isReadyToReturn) || new Date(b.eventDate ?? 0) - new Date(a.eventDate ?? 0));
+  }, [getIndexedMovements, getRentalContract, getRentalGuaranteeInfo, getRentalResponsibleName, needsGuaranteeDetail, rentals]);
 
-  const legacyGuaranteeLifecycleRows = useMemo(() => legacyReceivableRows
+  const legacyGuaranteeLifecycleRows = useMemo(() => {
+    if (!needsGuaranteeDetail) return [];
+    return legacyReceivableRows
     .map((row) => {
       const contractCode = getCommercialContractCode(row?.contractCode);
       if (!contractCode) return null;
@@ -2248,7 +2274,8 @@ function AccountingSection({
         statusLabel: pendingBs > 0.009 ? 'Garantía por cobrar' : isReadyToReturn ? 'Lista para devolver' : heldBs > 0.009 ? 'En custodia' : 'Liquidada',
       };
     })
-    .filter(Boolean), [legacyReceivableRows]);
+    .filter(Boolean);
+  }, [legacyReceivableRows, needsGuaranteeDetail]);
 
   const guaranteeLifecycleRows = useMemo(
     () => [...regularGuaranteeLifecycleRows, ...legacyGuaranteeLifecycleRows],
@@ -2275,14 +2302,53 @@ function AccountingSection({
     .sort((left, right) => new Date(right?.returnedAt ?? 0) - new Date(left?.returnedAt ?? 0)),
   [guaranteeLifecycleRows]);
 
+  const lightweightGuaranteeMetrics = useMemo(() => {
+    if (needsGuaranteeDetail) return null;
+    return rentals.reduce((totals, rental) => {
+      if (rental?.deletedAt) return totals;
+      const status = String(rental?.status ?? '').toLowerCase();
+      if (!['active', 'returned'].includes(status)) return totals;
+      const contract = getRentalContract(rental);
+      const guaranteeInfo = getRentalGuaranteeInfo(rental, contract);
+      if (guaranteeInfo.declaredBs <= 0) return totals;
+      const ledgerEvidence = getGuaranteeLedgerEvidence(contract);
+      const paidBs = Math.max(
+        toNumber(ledgerEvidence?.paidBs),
+        guaranteeInfo.isValidated ? guaranteeInfo.validatedBs : 0,
+        toNumber(rental?.depositBs),
+      );
+      const appliedBs = Math.max(
+        toNumber(ledgerEvidence?.appliedBs),
+        toNumber(rental?.returnSettlement?.discountCoveredByDepositBs),
+        toNumber(rental?.returnSettlement?.guaranteeAppliedBs),
+        toNumber(rental?.guarantee?.appliedBs),
+        toNumber(contract?.guarantee?.appliedBs),
+      );
+      const refundedBs = Math.max(
+        toNumber(ledgerEvidence?.refundedBs),
+        toNumber(rental?.guarantee?.refundedBs),
+        toNumber(contract?.guarantee?.refundedBs),
+      );
+      const pendingRefundBs = Math.max(0, paidBs - appliedBs - refundedBs);
+      if (pendingRefundBs > 0.009 || guaranteeInfo.unvalidatedBs > 0.009) totals.pendingCount += 1;
+      totals.heldBs += pendingRefundBs;
+      totals.unvalidatedBs += Math.max(0, guaranteeInfo.unvalidatedBs);
+      return totals;
+    }, { heldBs: 0, unvalidatedBs: 0, pendingCount: 0 });
+  }, [getRentalContract, getRentalGuaranteeInfo, needsGuaranteeDetail, rentals]);
+
   const calculatedGuaranteesHeldBs = useMemo(
     () => sumBy(guaranteeLifecycleRows.filter((row) => row.isMoneyHeld), (row) => row.refundableBs),
     [guaranteeLifecycleRows],
   );
-  const guaranteesHeldBs = calculatedGuaranteesHeldBs;
+  const guaranteesHeldBs = needsGuaranteeDetail
+    ? calculatedGuaranteesHeldBs
+    : Number((lightweightGuaranteeMetrics?.heldBs ?? 0).toFixed(2));
   const unvalidatedGuaranteesBs = useMemo(
-    () => sumBy(guaranteeLifecycleRows, (row) => row.unvalidatedBs),
-    [guaranteeLifecycleRows],
+    () => needsGuaranteeDetail
+      ? sumBy(guaranteeLifecycleRows, (row) => row.unvalidatedBs)
+      : Number((lightweightGuaranteeMetrics?.unvalidatedBs ?? 0).toFixed(2)),
+    [guaranteeLifecycleRows, lightweightGuaranteeMetrics, needsGuaranteeDetail],
   );
   const operationalBigCashBs = useMemo(
     () => Math.max(0, Number((bigCashBalanceBs - guaranteesHeldBs).toFixed(2))),
@@ -2306,10 +2372,11 @@ function AccountingSection({
 
   useEffect(() => {
     if (activeModule !== 'contabilidad_caja_grande') return;
+    if (!needsReceivableDetail && !needsGuaranteeDetail && !needsIssueDetail) return;
     let current = true;
     loadLegacyAccountingRows().catch(() => { if (current) setLegacyReceivableRows([]); });
     return () => { current = false; };
-  }, [activeModule, cashMovements, loadLegacyAccountingRows]);
+  }, [activeModule, cashMovements, loadLegacyAccountingRows, needsGuaranteeDetail, needsIssueDetail, needsReceivableDetail]);
 
   const pendingReceivableRows = useMemo(
     () => {
@@ -2364,7 +2431,9 @@ function AccountingSection({
   );
 
   const regularFinalizedReceivableRows = useMemo(
-    () => rentals
+    () => {
+      if (!needsFinalizedReceivableDetail) return [];
+      return rentals
       .filter((rental) => !receivableExcludedRentalIds.has(String(rental?.id ?? rental?.rentalId ?? '')))
       .map((rental) => {
         const contract = getRentalContract(rental);
@@ -2396,7 +2465,16 @@ function AccountingSection({
         const exactCollectionSource = exactFinalizedCollections[String(rental.id)];
         const collectionSource = Array.isArray(exactCollectionSource)
           ? exactCollectionSource
-          : postedMovements;
+          : getIndexedMovements([
+              contract?.id,
+              rental?.contractId,
+              rental?.id,
+              contract?.rentalId,
+              contract?.contractCode,
+              rental?.contractCode,
+              contract?.orderCode,
+              rental?.orderCode,
+            ]);
         const collectionMovements = collectionSource
           .filter((movement) => {
             if (toNumber(movement?.amountBs) <= 0 || movement?.isInternalTransfer) return false;
@@ -2452,8 +2530,9 @@ function AccountingSection({
         };
       })
       .filter(Boolean)
-      .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0)),
-    [exactFinalizedCollections, getMovementUserLabel, getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, postedMovements, receivableExcludedRentalIds, rentals],
+      .sort((a, b) => new Date(b.finalizedAt ?? 0) - new Date(a.finalizedAt ?? 0));
+    },
+    [exactFinalizedCollections, getIndexedMovements, getMovementUserLabel, getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, needsFinalizedReceivableDetail, receivableExcludedRentalIds, rentals],
   );
 
   const finalizedReceivableRows = useMemo(() => {
@@ -2487,7 +2566,9 @@ function AccountingSection({
   }, [legacyReceivableRows, regularFinalizedReceivableRows]);
 
   const derivedReturnIssueRows = useMemo(
-    () => rentals
+    () => {
+      if (!needsIssueDetail) return [];
+      return rentals
       .filter((rental) => !rental?.deletedAt && String(rental?.status ?? '').toLowerCase() === 'returned')
       .flatMap((rental) => {
         const contract = getRentalContract(rental);
@@ -2552,12 +2633,14 @@ function AccountingSection({
             };
           });
       })
-      .sort((a, b) => new Date(b.returnedAt ?? 0) - new Date(a.returnedAt ?? 0)),
-    [getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, rentals],
+      .sort((a, b) => new Date(b.returnedAt ?? 0) - new Date(a.returnedAt ?? 0));
+    },
+    [getRentalContract, getRentalReceivableBreakdown, getRentalResponsibleName, needsIssueDetail, rentals],
   );
 
   const regularReturnIssueRows = useMemo(
     () => {
+      if (!needsIssueDetail) return [];
       if (!Array.isArray(cashReturnIssues) || cashReturnIssues.length === 0) return derivedReturnIssueRows;
 
       const consolidatedCashRows = consolidateReturnIssueLines(cashReturnIssues);
@@ -2602,10 +2685,12 @@ function AccountingSection({
         };
       }).sort((a, b) => new Date(b?.returnedAt ?? 0) - new Date(a?.returnedAt ?? 0));
     },
-    [cashReturnIssues, derivedReturnIssueRows],
+    [cashReturnIssues, derivedReturnIssueRows, needsIssueDetail],
   );
 
-  const legacyReturnIssueRows = useMemo(() => legacyReceivableRows.flatMap((row) => {
+  const legacyReturnIssueRows = useMemo(() => {
+    if (!needsIssueDetail) return [];
+    return legacyReceivableRows.flatMap((row) => {
     const chargeLines = (Array.isArray(row?.items) ? row.items : [])
       .filter((line) => ['missing', 'damaged', 'resolved'].includes(String(line?.status ?? '').toLowerCase()) && toNumber(line?.chargeBs) > 0.009);
     let remainingPendingBs = Math.max(0, toNumber(row?.damageDueBs));
@@ -2649,7 +2734,8 @@ function AccountingSection({
         status: 'Rezagado',
       };
     }).filter((line) => line.contractCode);
-  }), [legacyReceivableRows]);
+  });
+  }, [legacyReceivableRows, needsIssueDetail]);
 
   const returnIssueRows = useMemo(
     () => [...regularReturnIssueRows, ...legacyReturnIssueRows]
@@ -6702,8 +6788,8 @@ function AccountingSection({
             ['accounts', 'Cuentas', accountLedgerData.accounts.length || null],
             ['receipts', 'Comprobantes', receiptBrowserData.total || null],
             ['receivables', 'Cobros', pendingReceivableRows.length],
-            ['guarantees', 'Garantías', guaranteesToReturnRows.length],
-            ['issues', 'Daños y faltantes', returnIssueRows.length],
+            ['guarantees', 'Garantías', needsGuaranteeDetail ? guaranteesToReturnRows.length : (lightweightGuaranteeMetrics?.pendingCount ?? 0)],
+            ['issues', 'Daños y faltantes', needsIssueDetail ? returnIssueRows.length : (Array.isArray(cashReturnIssues) ? cashReturnIssues.length : 0)],
             ['prepaid', 'Prepago VIP', prepaidLedgerRows.length],
             ['movements', 'Movimientos', filteredBigCashRows.length],
             ['voided', 'Anulados', voidedBigCashRows.length],
