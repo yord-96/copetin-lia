@@ -737,12 +737,12 @@ function AttendanceSection({
           </div>
 
           <div className="attendance-report-policy">
-            <label>L?mite por intervalo
+            <label>Límite por intervalo
               <select value={maxIntervalHours} onChange={(event) => setMaxIntervalHours(Number(event.target.value))} disabled={isExportingAttendance}>
                 {[12, 16, 18, 24].map((hours) => <option key={hours} value={hours}>{hours} horas</option>)}
               </select>
             </label>
-            <p>El Excel separa horas calculadas, jornadas en curso e incidencias. Los intervalos que superan este l?mite quedan para revisi?n y no suman horas. No define el horario laboral.</p>
+            <p>El Excel separa horas calculadas, jornadas en curso e incidencias. Los intervalos que superan este límite quedan para revisión y no suman horas. No define el horario laboral.</p>
           </div>
 
           <div className="attendance-mobile-records">
