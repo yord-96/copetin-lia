@@ -74424,3 +74424,55 @@ button.inventory-loss-row-action.is-discard:hover {
     border-right: 0 !important;
   }
 }
+
+/* ========================================================================== */
+/* HOTFIX · DESGLOSES SIN ESTIRAMIENTO                                        */
+/* Corrige el alto excesivo: cada bloque termina donde termina su contenido.  */
+/* ========================================================================== */
+
+.accounting-bigcash-view .daily-sector-breakdowns {
+  align-items: start !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-block {
+  min-height: 0 !important;
+  height: auto !important;
+  align-self: start !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-list {
+  align-content: start !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-list > div {
+  min-height: 58px !important;
+  height: auto !important;
+  padding: 8px 10px 7px !important;
+  gap: 4px 8px !important;
+  align-items: end !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-block h4 {
+  padding: 8px 11px 7px !important;
+  font-size: 10px !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-list strong {
+  font-size: 9px !important;
+  line-height: 1.1 !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-list small {
+  font-size: 7.5px !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-list b {
+  font-size: 10px !important;
+}
+
+/* El bloque derecho NO debe igualar la altura del izquierdo. */
+.accounting-bigcash-view .daily-breakdown-block:last-child {
+  align-self: start !important;
+}
