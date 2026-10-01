@@ -7232,14 +7232,14 @@ function AccountingSection({
                           <td><strong>{row.customerName}</strong></td>
                           <td>{row.responsibleName}</td>
                           <td>{formatDate(row.eventDate)}</td>
-                          <td className="amount">{formatBs(row.totalBs)}</td>
-                          <td className="amount">{formatBs(row.paidBs)}</td>
-                          <td className="amount">{formatBs(row.transportBs)}</td>
-                          <td className="amount">{formatBs(row.extraBs)}</td>
-                          <td className="amount">{formatBs(row.damageBs)}</td>
+                          <td className="amount bigcash-finalized-money">{formatBs(row.totalBs)}</td>
+                          <td className="amount bigcash-finalized-money">{formatBs(row.paidBs)}</td>
+                          <td className="amount bigcash-finalized-money">{formatBs(row.transportBs)}</td>
+                          <td className="amount bigcash-finalized-money">{formatBs(row.extraBs)}</td>
+                          <td className="amount bigcash-finalized-money">{formatBs(row.damageBs)}</td>
                           <td className="amount bigcash-total-liquidated">{formatBs(row.settledBs)}</td>
-                          <td>{formatDate(row.finalizedAt)}</td>
-                          <td>{row.finalizedByName || '-'}</td>
+                          <td className="bigcash-finalized-date">{formatDate(row.finalizedAt)}</td>
+                          <td className="bigcash-finalized-by">{row.finalizedByName || '-'}</td>
                           <td className="bigcash-receivable-actions">
                             {row.isLegacy ? <button type="button" className="accounting-inline-action is-secondary" onClick={() => openLegacyEconomicEdit(row)}>Editar</button> : <button
                               type="button"
@@ -7302,7 +7302,7 @@ function AccountingSection({
                     <tr><td colSpan={12}><p className="status">No se encontraron contratos por cobrar con ese criterio.</p></td></tr>
                   ) : null}
                   {receivablesView === 'finalized' && visibleFinalizedReceivableRows.length === 0 ? (
-                    <tr><td colSpan={12}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
+                    <tr><td colSpan={13}><p className="status">No se encontraron contratos cobrados y finalizados con ese criterio.</p></td></tr>
                   ) : null}
                 </tbody>
               </table>
