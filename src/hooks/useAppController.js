@@ -174,6 +174,7 @@ export const useAppController = () => {
   const accountingCommercialLoadedRef = useRef(false);
   const accountingOverviewRequestRef = useRef(null);
   const accountingCommercialRequestRef = useRef(null);
+  const accountingCommercialStaleRef = useRef(false);
   const accountingRefreshPendingRef = useRef(false);
   const fullWorkspaceLoadedRef = useRef(false);
   const clientsOverviewLoadedRef = useRef(false);
@@ -328,6 +329,8 @@ export const useAppController = () => {
     includeCommercial = true,
     silent = false,
     refreshCommercial = true,
+    waitCommercial = false,
+    forceCommercial = false,
   } = {}) => {
     const criticalLoaded = accountingOverviewLoadedRef.current;
     const commercialLoaded = accountingCommercialLoadedRef.current;
@@ -344,6 +347,7 @@ export const useAppController = () => {
           setClients((current) => mergeProgressiveClients(current, overview?.clients));
           setCashSessions(Array.isArray(overview?.cashSessions) ? overview.cashSessions : []);
           accountingCommercialLoadedRef.current = true;
+          accountingCommercialStaleRef.current = false;
         })
         .catch((accountingError) => {
           console.warn('[copetin] No se pudo completar el detalle comercial de Contabilidad.', accountingError);
@@ -358,9 +362,15 @@ export const useAppController = () => {
     };
 
     if (!force && criticalLoaded) {
-      if (includeCommercial && !commercialLoaded && refreshCommercial) {
-        // La parte comercial es pesada. Se completa despues de pintar Caja Grande.
-        window.setTimeout(() => loadCommercialOverview().catch(() => {}), 0);
+      if (includeCommercial && refreshCommercial && (!commercialLoaded || accountingCommercialStaleRef.current || forceCommercial)) {
+        if (waitCommercial) {
+          await loadCommercialOverview({ forceCommercial: forceCommercial || accountingCommercialStaleRef.current });
+        } else {
+          window.setTimeout(
+            () => loadCommercialOverview({ forceCommercial: forceCommercial || accountingCommercialStaleRef.current }).catch(() => {}),
+            0,
+          );
+        }
       }
       return;
     }
@@ -368,8 +378,15 @@ export const useAppController = () => {
     if (accountingOverviewRequestRef.current) {
       await accountingOverviewRequestRef.current;
       if (!force) {
-        if (includeCommercial && !accountingCommercialLoadedRef.current && refreshCommercial) {
-          window.setTimeout(() => loadCommercialOverview().catch(() => {}), 0);
+        if (includeCommercial && refreshCommercial && (!accountingCommercialLoadedRef.current || accountingCommercialStaleRef.current || forceCommercial)) {
+          if (waitCommercial) {
+            await loadCommercialOverview({ forceCommercial: forceCommercial || accountingCommercialStaleRef.current });
+          } else {
+            window.setTimeout(
+              () => loadCommercialOverview({ forceCommercial: forceCommercial || accountingCommercialStaleRef.current }).catch(() => {}),
+              0,
+            );
+          }
         }
         return;
       }
@@ -409,11 +426,26 @@ export const useAppController = () => {
     await request;
 
     if (includeCommercial && refreshCommercial) {
-      // No se espera este request: la pantalla ya queda utilizable y React
-      // incorpora Cobros/Garantias cuando termina el resumen comercial.
-      window.setTimeout(() => loadCommercialOverview({ forceCommercial: force }).catch(() => {}), 0);
+      if (waitCommercial) {
+        await loadCommercialOverview({ forceCommercial: forceCommercial || force || accountingCommercialStaleRef.current });
+      } else {
+        window.setTimeout(
+          () => loadCommercialOverview({ forceCommercial: forceCommercial || force || accountingCommercialStaleRef.current }).catch(() => {}),
+          0,
+        );
+      }
     }
   }, []);
+
+  const ensureAccountingCommercialData = useCallback(async () => {
+    await loadAccountingData({
+      includeCommercial: true,
+      silent: true,
+      refreshCommercial: true,
+      waitCommercial: true,
+      forceCommercial: accountingCommercialStaleRef.current,
+    });
+  }, [loadAccountingData]);
 
   const prepareClientsOverview = useCallback(async ({ force = false } = {}) => {
     if (!force && clientsOverviewLoadedRef.current) return;
@@ -455,7 +487,7 @@ export const useAppController = () => {
       return;
     }
     if (requestedTab.startsWith('contabilidad')) {
-      await loadAccountingData({ includeCommercial: requestedTab !== 'contabilidad_caja_chica' });
+      await loadAccountingData({ includeCommercial: false, refreshCommercial: false });
       return;
     }
     if (requestedTab === 'disponibilidad') {
@@ -577,22 +609,13 @@ export const useAppController = () => {
       if (document.visibilityState !== 'visible' || !accountingRefreshPendingRef.current) return;
       accountingRefreshPendingRef.current = false;
       const run = async () => {
+        accountingCommercialStaleRef.current = true;
         await loadAccountingData({
           force: true,
           includeCommercial: false,
           silent: true,
           refreshCommercial: false,
         }).catch(() => {});
-        const refreshCommercial = () => loadAccountingData({
-          includeCommercial: String(activeTab) !== 'contabilidad_caja_chica',
-          silent: true,
-          refreshCommercial: true,
-        }).catch(() => {});
-        if ('requestIdleCallback' in window) {
-          window.requestIdleCallback(refreshCommercial, { timeout: 4500 });
-        } else {
-          window.setTimeout(refreshCommercial, 2200);
-        }
       };
       // Deja que Chrome pinte la pestaña restaurada antes de parsear JSON.
       window.setTimeout(run, 450);
@@ -972,34 +995,19 @@ export const useAppController = () => {
         // Al volver, se refresca primero Caja/Movimientos de forma silenciosa.
         if (document.visibilityState !== 'visible') {
           accountingRefreshPendingRef.current = true;
-          accountingCommercialLoadedRef.current = false;
+          accountingCommercialStaleRef.current = true;
           return;
         }
         window.clearTimeout(refreshTimer);
         refreshTimer = window.setTimeout(() => {
           if (disposed) return;
-          accountingCommercialLoadedRef.current = false;
+          accountingCommercialStaleRef.current = true;
           loadAccountingData({
             force: true,
             includeCommercial: false,
             silent: true,
             refreshCommercial: false,
           }).catch(() => {});
-          // El bloque comercial se actualiza despues, cuando el navegador tenga
-          // oportunidad de pintar y procesar interacciones del usuario.
-          const refreshCommercial = () => {
-            if (disposed || document.visibilityState !== 'visible') return;
-            loadAccountingData({
-              includeCommercial: String(activeTab) !== 'contabilidad_caja_chica',
-              silent: true,
-              refreshCommercial: true,
-            }).catch(() => {});
-          };
-          if ('requestIdleCallback' in window) {
-            window.requestIdleCallback(refreshCommercial, { timeout: 3500 });
-          } else {
-            window.setTimeout(refreshCommercial, 1800);
-          }
         }, isRemoteChange ? 300 : 0);
         return;
       }
@@ -1201,6 +1209,7 @@ export const useAppController = () => {
       availabilityOverviewRequestRef.current = null;
       accountingOverviewLoadedRef.current = false;
       accountingCommercialLoadedRef.current = false;
+      accountingCommercialStaleRef.current = false;
       accountingOverviewRequestRef.current = null;
       fullWorkspaceLoadedRef.current = false;
       setCurrentUser(session);
@@ -3146,6 +3155,7 @@ export const useAppController = () => {
     ordersModuleLoading,
     availabilityModuleLoading,
     prepareTabData,
+    ensureAccountingCommercialData,
     prepareOrdersEditorData,
     prepareClientsOverview,
     error,

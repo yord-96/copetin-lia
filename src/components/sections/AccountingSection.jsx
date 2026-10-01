@@ -599,6 +599,7 @@ function AccountingSection({
   cashReturnIssues = [],
   cashMovementMeta = { total: 0, visible: 0, truncated: false },
   operationsLoading = false,
+  onEnsureCommercialData,
   cashSessions = [],
   rentals = [],
   contracts = [],
@@ -697,6 +698,13 @@ function AccountingSection({
       daily: { dateFrom: today, dateTo: today },
     };
   });
+  useEffect(() => {
+    if (!['receivables', 'guarantees', 'issues', 'prepaid'].includes(bigCashWorkspaceTab)) return;
+    Promise.resolve(onEnsureCommercialData?.()).catch((commercialError) => {
+      console.warn('[copetin] No se pudo cargar el detalle comercial de Caja Grande.', commercialError);
+    });
+  }, [bigCashWorkspaceTab, onEnsureCommercialData]);
+
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
   const [pettyWorkspaceTab, setPettyWorkspaceTab] = useState('expenses');

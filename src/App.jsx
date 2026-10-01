@@ -730,6 +730,7 @@ function AdminApp() {
             cashReturnIssues={controller.cashReturnIssues}
             cashMovementMeta={controller.cashMovementMeta}
             operationsLoading={controller.accountingOperationsLoading}
+            onEnsureCommercialData={controller.ensureAccountingCommercialData}
             currentUser={controller.currentUser}
             formatBs={formatBs}
             formatDate={formatDate}
