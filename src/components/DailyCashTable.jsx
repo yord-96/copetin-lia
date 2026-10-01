@@ -75,7 +75,7 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
       <table className="accounting-table bigcash-table daily-report-table">
         <thead><tr>{DAILY_CASH_COLUMNS.map((column) => <th key={column.key} scope="col" className={`daily-col-${column.key}`}>
           <button type="button" className={`daily-column-filter-trigger${filters[column.key] ? ' is-active' : ''}`} onClick={(event) => open(event, column)} aria-label={`Filtrar ${column.label}${filters[column.key] ? ' (activo)' : ''}`} aria-haspopup="dialog" aria-expanded={openFilter?.column.key === column.key}>
-            <span>{column.label}</span><Filter size={12} aria-hidden="true" />
+            <span className="daily-column-filter-label">{column.label}</span><span className="daily-column-filter-icon" aria-hidden="true"><Filter size={13} /></span>
           </button>
         </th>)}</tr></thead>
         <tbody>
