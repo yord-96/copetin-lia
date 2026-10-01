@@ -73823,21 +73823,22 @@ button.inventory-loss-row-action.is-discard:hover {
   border-spacing: 0 !important;
 }
 
-/* Proporciones pensadas para las 14 columnas actuales. */
-.accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 6.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 10.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 8.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 5.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 7.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 7% !important; }
+/* Proporciones pensadas para las 15 columnas actuales. */
+.accounting-bigcash-view .daily-report-table th:nth-child(1) { width: 6% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(2) { width: 4.5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(3) { width: 9.5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(4) { width: 8% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(5) { width: 5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(6) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(7) { width: 6.5% !important; }
 .accounting-bigcash-view .daily-report-table th:nth-child(8) { width: 6.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 7.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 7.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 7.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 8% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 6.5% !important; }
-.accounting-bigcash-view .daily-report-table th:nth-child(14) { width: 6% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(9) { width: 6% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(10) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(11) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(12) { width: 7% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(13) { width: 7.5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(14) { width: 6.5% !important; }
+.accounting-bigcash-view .daily-report-table th:nth-child(15) { width: 6% !important; }
 
 .accounting-bigcash-view .daily-report-table thead th {
   position: sticky;
@@ -73920,6 +73921,7 @@ button.inventory-loss-row-action.is-discard:hover {
 .accounting-bigcash-view .daily-report-table .daily-col-hour,
 .accounting-bigcash-view .daily-report-table .daily-col-reference,
 .accounting-bigcash-view .daily-report-table .daily-col-contract,
+.accounting-bigcash-view .daily-report-table .daily-col-extra,
 .accounting-bigcash-view .daily-report-table .daily-col-transport,
 .accounting-bigcash-view .daily-report-table .daily-col-guarantee,
 .accounting-bigcash-view .daily-report-table .daily-col-refund,

@@ -444,6 +444,7 @@ const getPaymentMethodLabel = (movement) => {
 
 const getCollectionConceptLabel = (movement) => {
   const target = normalizeText(movement?.collectionTarget ?? movement?.accountingTag ?? movement?.category ?? movement?.type);
+  if (target.includes('extra') || target.includes('cobro_extra')) return 'Cobro extra';
   if (target.includes('damage') || target.includes('dano') || target.includes('faltante')) return 'Daños / faltantes';
   if (target.includes('transport')) return 'Transporte';
   if (target.includes('guarantee') || target.includes('garantia')) return 'Garantía';
@@ -1567,6 +1568,9 @@ function AccountingSection({
       if (isGuaranteeMovement(movement) || tag === 'validated_guarantee' || tag === 'contract_guarantee' || target === 'guarantee') {
         return { key: 'guarantee', label: 'Garantías recibidas' };
       }
+      if (tag === 'contract_extra_collection' || category === 'cobro_extra_contrato' || target === 'extra') {
+        return { key: 'extra', label: 'Cobros extra' };
+      }
       if (tag === 'contract_damage_collection' || category.includes('danos_faltantes') || target === 'damage') {
         return { key: 'damage', label: 'Daños y faltantes cobrados' };
       }
@@ -2358,6 +2362,12 @@ function AccountingSection({
             paymentMethodLabel: getPaymentMethodLabel(movement),
             registeredBy: getMovementUserLabel(movement),
             receiptCode: String(movement?.receiptCode ?? movement?.receipt ?? '').trim(),
+            accountingTag: normalizeText(movement?.accountingTag),
+            category: normalizeText(movement?.category),
+            collectionTarget: normalizeText(movement?.collectionTarget),
+            isExtra: normalizeText(movement?.accountingTag) === 'contract_extra_collection'
+              || normalizeText(movement?.category) === 'cobro_extra_contrato'
+              || normalizeText(movement?.collectionTarget) === 'extra',
           }))
           .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
         return {
@@ -2375,6 +2385,7 @@ function AccountingSection({
           paidBs: breakdown.paidBs,
           transportBs,
           damageBs: Math.max(0, penaltiesBs),
+          extraBs: collectionMovements.reduce((total, movement) => total + (movement.isExtra ? Math.max(0, toNumber(movement.amountBs)) : 0), 0),
           settledBs: Math.max(0, totalBs + penaltiesBs),
           collectionMovements,
           collectionsLoaded: Array.isArray(exactCollectionSource),
@@ -2405,6 +2416,7 @@ function AccountingSection({
         paidBs: toNumber(row.commercialCollectedBs) + toNumber(row.damageCollectedBs),
         transportBs: 0,
         damageBs: toNumber(row.itemChargesBs),
+        extraBs: 0,
         settledBs: toNumber(row.commercialCollectedBs) + toNumber(row.damageCollectedBs),
         collectionMovements: [],
         collectionsLoaded: true,
@@ -3311,7 +3323,7 @@ function AccountingSection({
       contractsSheet.getRow(5).height = 42;
 
       const contractHeaderRow = 7;
-      contractsSheet.getRow(contractHeaderRow).values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total contrato', 'Pagado', 'Transporte', 'Daños / faltantes', 'Total liquidado', 'Finalizado', 'Finalizado por'];
+      contractsSheet.getRow(contractHeaderRow).values = ['N°', 'Contrato', 'OS', 'Cliente', 'Responsable', 'Fecha evento', 'Total contrato', 'Pagado', 'Transporte', 'Cobro extra', 'Daños / faltantes', 'Total liquidado', 'Finalizado', 'Finalizado por'];
       styleHeader(contractsSheet.getRow(contractHeaderRow));
       visibleFinalizedReceivableRows.forEach((row, index) => {
         const excelRow = contractsSheet.addRow([
@@ -3324,6 +3336,7 @@ function AccountingSection({
           toNumber(row.totalBs),
           toNumber(row.paidBs),
           toNumber(row.transportBs),
+          toNumber(row.extraBs),
           toNumber(row.damageBs),
           toNumber(row.settledBs),
           row.finalizedAt ? new Date(row.finalizedAt) : '',
@@ -3437,6 +3450,7 @@ function AccountingSection({
         <td class="amount">${escapeHtml(formatBs(row.totalBs))}</td>
         <td class="amount">${escapeHtml(formatBs(row.paidBs))}</td>
         <td class="amount">${escapeHtml(formatBs(row.transportBs))}</td>
+        <td class="amount">${escapeHtml(formatBs(row.extraBs))}</td>
         <td class="amount">${escapeHtml(formatBs(row.damageBs))}</td>
         <td class="amount">${escapeHtml(formatBs(row.settledBs))}</td>
         <td class="center">${escapeHtml(formatDate(row.finalizedAt))}</td>
@@ -3460,7 +3474,7 @@ function AccountingSection({
     </style></head><body>
       <header class="head"><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte de Cobros y Contratos Finalizados</h1><p>Historial con trazabilidad de cobros registrados.</p></div><div class="meta"><div><span>Periodo</span><strong>${escapeHtml(finalizedReceivablesReportRange)}</strong></div><div><span>Generado</span><strong>${escapeHtml(new Intl.DateTimeFormat('es-BO',{dateStyle:'medium',timeStyle:'short'}).format(new Date()))}</strong></div><div><span>Contratos</span><strong>${visibleFinalizedReceivableRows.length}</strong></div></div></header>
       <section class="cards"><div class="card"><span>Contratos encontrados</span><strong>${visibleFinalizedReceivableRows.length}</strong></div><div class="card money"><span>Total liquidado</span><strong>${escapeHtml(formatBs(visibleFinalizedReceivableTotalBs))}</strong></div><div class="card"><span>Movimientos de cobro</span><strong>${finalizedReceivablesCollectionRows.filter((row)=>row.amountBs>0).length}</strong></div></section>
-      <section class="section"><h2>Contratos finalizados</h2><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total contrato</th><th>Pagado</th><th>Transporte</th><th>Daños / faltantes</th><th>Total liquidado</th><th>Fecha finalización</th><th>Finalizado por</th></tr></thead><tbody>${contractRows || '<tr><td colspan="12">Sin resultados.</td></tr>'}</tbody></table></section>
+      <section class="section"><h2>Contratos finalizados</h2><table><thead><tr><th>N°</th><th>Contrato / OS</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total contrato</th><th>Pagado</th><th>Transporte</th><th>Cobro extra</th><th>Daños / faltantes</th><th>Total liquidado</th><th>Fecha finalización</th><th>Finalizado por</th></tr></thead><tbody>${contractRows || '<tr><td colspan="13">Sin resultados.</td></tr>'}</tbody></table></section>
       <section class="section"><h2>Detalle de cobros realizados</h2><table><thead><tr><th>N°</th><th>Contrato / cliente</th><th>Fecha / hora</th><th>Qué se cobró</th><th>Cómo</th><th>Monto</th><th>Recibo</th><th>Registrado por</th></tr></thead><tbody>${collectionRows || '<tr><td colspan="8">Sin movimientos vinculados.</td></tr>'}</tbody></table></section>
       <div class="no-print"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
     </body></html>`);
@@ -6967,6 +6981,7 @@ function AccountingSection({
                       <th>Total contrato</th>
                       <th>Pagado</th>
                       <th>Transporte</th>
+                      <th>Cobro extra</th>
                       <th>Daños / faltantes</th>
                       <th>Total liquidado</th>
                       <th>Fecha finalización</th>
@@ -7020,6 +7035,7 @@ function AccountingSection({
                           <td className="amount">{formatBs(row.totalBs)}</td>
                           <td className="amount">{formatBs(row.paidBs)}</td>
                           <td className="amount">{formatBs(row.transportBs)}</td>
+                          <td className="amount">{formatBs(row.extraBs)}</td>
                           <td className="amount">{formatBs(row.damageBs)}</td>
                           <td className="amount bigcash-total-liquidated">{formatBs(row.settledBs)}</td>
                           <td>{formatDate(row.finalizedAt)}</td>
@@ -7040,7 +7056,7 @@ function AccountingSection({
                         </tr>,
                         isExpanded ? (
                           <tr key={`${row.id}-collections`}>
-                            <td colSpan={12} style={{ padding: '10px 16px 16px' }}>
+                            <td colSpan={13} style={{ padding: '10px 16px 16px' }}>
                               <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle de cobros registrados en Caja Grande</div>
                               {isLoadingCollections ? (
                                 <p className="status">Consultando el historial completo de Caja Grande...</p>
@@ -7687,7 +7703,7 @@ function AccountingSection({
                     <h4>Detalle de contratos del rango</h4>
                     <div className="bigcash-table-wrap">
                       <table className="bigcash-report-table">
-                        <thead><tr><th>N°</th><th>Contrato</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total contrato</th><th>Pagado</th><th>Transporte</th><th>Daños / faltantes</th><th>Total liquidado</th><th>Fecha finalización</th><th>Finalizado por</th></tr></thead>
+                        <thead><tr><th>N°</th><th>Contrato</th><th>Cliente</th><th>Responsable</th><th>Evento</th><th>Total contrato</th><th>Pagado</th><th>Transporte</th><th>Cobro extra</th><th>Daños / faltantes</th><th>Total liquidado</th><th>Fecha finalización</th><th>Finalizado por</th></tr></thead>
                         <tbody>
                           {visibleFinalizedReceivableRows.map((row, index) => (
                             <tr key={`report-contract-${row.id}`}>
@@ -7699,6 +7715,7 @@ function AccountingSection({
                               <td className="amount">{formatBs(row.totalBs)}</td>
                               <td className="amount">{formatBs(row.paidBs)}</td>
                               <td className="amount">{formatBs(row.transportBs)}</td>
+                              <td className="amount">{formatBs(row.extraBs)}</td>
                               <td className="amount">{formatBs(row.damageBs)}</td>
                               <td className="amount">{formatBs(row.settledBs)}</td>
                               <td>{formatDate(row.finalizedAt)}</td>

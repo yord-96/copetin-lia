@@ -6,6 +6,7 @@ export const DAILY_CASH_COLUMNS = [
   { key: 'reference', label: 'Referencia', width: 16 },
   { key: 'method', label: 'Método / cuenta', width: 23 },
   { key: 'contract', label: 'Contrato', width: 18, money: true },
+  { key: 'extra', label: 'Cobro extra', width: 18, money: true },
   { key: 'transport', label: 'Transporte', width: 18, money: true },
   { key: 'guarantee', label: 'Garantía recibida', width: 18, money: true },
   { key: 'refund', label: 'Devol. garantía', width: 18, money: true, tone: 'out' },
@@ -36,6 +37,7 @@ export function buildDailyCashRow(movement, labels) {
     reference: String(labels.reference ?? '-'),
     method: labels.method,
     contract: ['rental', 'deposit'].includes(key) ? amount : null,
+    extra: key === 'extra' ? amount : null,
     transport: ['transport', 'transport_expense'].includes(key) ? amount : null,
     guarantee: key === 'guarantee' ? amount : null,
     refund: key === 'guarantee_refund' ? amount : null,
@@ -88,7 +90,7 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
   sheet.columns = DAILY_CASH_COLUMNS.map(({ width }) => ({ width }));
   const moneyFormat = '"Bs" #,##0.00;[Red]-"Bs" #,##0.00;"—"';
   const banner = (row, value, size, color = 'FF15345F', background) => {
-    sheet.mergeCells(row, 1, row, 14);
+    sheet.mergeCells(row, 1, row, DAILY_CASH_COLUMNS.length);
     const cell = sheet.getCell(row, 1);
     cell.value = value;
     cell.font = { name: 'Calibri', bold: row < 3, size, color: { argb: color } };
@@ -100,7 +102,7 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
   banner(2, 'Reporte diario · Ingresos y egresos', 21);
   banner(3, `Día: ${date} · 00:00–23:59 (Bolivia) · ${rows.length} movimientos · Generado: ${generatedAt.toLocaleString('es-BO')}`, 11);
   banner(4, describeDailyCashFilters(filters), 11, 'FF64748B');
-  [['A6:D6', 'Ingresos', totals.income, 'FF15803D'], ['E6:I6', 'Egresos', totals.expense, 'FFDC2626'], ['J6:N6', 'Resultado neto', round(totals.income - totals.expense), 'FF15345F']].forEach(([range, label, amount, color]) => {
+  [['A6:E6', 'Ingresos', totals.income, 'FF15803D'], ['F6:J6', 'Egresos', totals.expense, 'FFDC2626'], ['K6:O6', 'Resultado neto', round(totals.income - totals.expense), 'FF15345F']].forEach(([range, label, amount, color]) => {
     sheet.mergeCells(range);
     const cell = sheet.getCell(range.split(':')[0]);
     cell.value = `${label.toUpperCase()}   ${bs(amount)}`;
@@ -129,7 +131,7 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
       if (column.money) cell.numFmt = moneyFormat;
     });
   });
-  sheet.autoFilter = { from: { row: 8, column: 1 }, to: { row: Math.max(8, 8 + rows.length), column: 14 } };
+  sheet.autoFilter = { from: { row: 8, column: 1 }, to: { row: Math.max(8, 8 + rows.length), column: DAILY_CASH_COLUMNS.length } };
   const total = sheet.getRow(9 + rows.length);
   sheet.mergeCells(total.number, 1, total.number, 6);
   total.getCell(1).value = 'TOTAL DE MOVIMIENTOS VISIBLES';
@@ -146,13 +148,13 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
   });
   total.height = 32;
   const note = total.number + 2;
-  sheet.mergeCells(note, 1, note, 14);
+  sheet.mergeCells(note, 1, note, DAILY_CASH_COLUMNS.length);
   sheet.getCell(note, 1).value = 'Las columnas de conceptos desglosan los movimientos: no se suman nuevamente a Ingresos / Egresos. Los totales inferiores se actualizan al filtrar en Excel; el resumen superior corresponde a la exportación.';
   sheet.getCell(note, 1).alignment = { wrapText: true };
   sheet.getCell(note, 1).font = { name: 'Calibri', size: 10, color: { argb: 'FF64748B' } };
   sheet.getRow(note).height = 30;
   sheet.headerFooter.oddFooter = '&LEl Copetín · Caja Grande&RPágina &P de &N';
-  sheet.pageSetup.printArea = `A1:N${note}`;
+  sheet.pageSetup.printArea = `A1:${sheet.getColumn(DAILY_CASH_COLUMNS.length).letter}${note}`;
   return workbook;
 }
 
@@ -163,5 +165,5 @@ export function buildDailyCashReportHtml({ rows, date, filters = {}, generatedAt
   const cells = (row) => DAILY_CASH_COLUMNS.map((column) => `<td class="${column.money ? 'money' : ''} ${column.tone || ''}">${esc(dailyCashCellText(column, row[column.key], formatMoney))}</td>`).join('');
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte diario · ${esc(date)}</title><style>
 @page{size:A3 landscape;margin:10mm}*{box-sizing:border-box}body{margin:0;color:#17233a;font:10px Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #15345f;padding-bottom:12px}.brand{color:#df4d00;font-size:11px;font-weight:bold;letter-spacing:1px}h1{font-size:25px;color:#15345f;margin:5px 0}.meta{text-align:right;line-height:1.7;color:#64748b}.filters{margin:12px 0;color:#64748b;overflow-wrap:anywhere}.summary{display:flex;gap:12px;margin:14px 0}.card{flex:1;border:1px solid #d9e1eb;border-left:4px solid #15345f;background:#f8fafc;padding:12px}.card span{display:block;font-size:10px;color:#64748b;text-transform:uppercase}.card strong{display:block;font-size:21px;margin-top:5px}.income{color:#15803d}.out{color:#dc2626}table{width:100%;table-layout:fixed;border-collapse:collapse}thead{display:table-header-group}th{background:#15345f;color:white;text-align:left;padding:10px 5px;font-size:9px}td{padding:9px 5px;border-bottom:1px solid #d9e1eb;vertical-align:middle;overflow-wrap:anywhere}tr{break-inside:avoid}tbody tr:nth-child(even){background:#f1f5f9}.money{text-align:right;white-space:nowrap;font-weight:bold;font-variant-numeric:tabular-nums}.totals td{background:#e8eff8;border-top:2px solid #15345f;font-weight:bold;padding:12px 5px}.note{margin-top:14px;color:#64748b;line-height:1.6}.toolbar{display:flex;justify-content:flex-end;padding:12px;background:#f1f5f9;margin-bottom:18px}.toolbar button{background:#15345f;color:white;border:0;border-radius:6px;padding:10px 16px;cursor:pointer}@media screen{body{padding:22px;min-width:1250px}}@media print{.toolbar{display:none}}
-</style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte diario de ingresos y egresos</h1><div>Movimientos confirmados · ${esc(date)} · 00:00–23:59 (hora Bolivia)</div></div><div class="meta">${rows.length} movimientos incluidos<br>Generado: ${esc(generatedAt.toLocaleString('es-BO'))}</div></header><div class="filters">${esc(describeDailyCashFilters(filters, formatMoney))}</div><section class="summary"><div class="card income"><span>Total ingresos</span><strong>${money(totals.income)}</strong></div><div class="card out"><span>Total egresos</span><strong>${money(totals.expense)}</strong></div><div class="card"><span>Resultado neto</span><strong>${money(round(totals.income - totals.expense))}</strong></div></section><table><colgroup>${DAILY_CASH_COLUMNS.map(({ width }) => `<col style="width:${width / DAILY_CASH_COLUMNS.reduce((sum, col) => sum + col.width, 0) * 100}%">`).join('')}</colgroup><thead><tr>${DAILY_CASH_COLUMNS.map(({ label }) => `<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${cells(row)}</tr>`).join('') || '<tr><td colspan="14">Sin movimientos para los filtros seleccionados.</td></tr>'}<tr class="totals"><td colspan="6">TOTAL DE MOVIMIENTOS VISIBLES</td>${DAILY_CASH_COLUMNS.slice(6).map((column) => `<td class="money ${column.tone || ''}">${column.money ? money(totals[column.key]) : ''}</td>`).join('')}</tr></tbody></table><div class="note">Los conceptos (contrato, transporte, garantías y daños / faltantes) desglosan cada movimiento; no se suman nuevamente a ingresos o egresos. Se excluyen movimientos anulados y saldos de apertura.<br>Este reporte conserva las columnas, el orden y los filtros de la tabla del sistema.</div></body></html>`;
+</style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte diario de ingresos y egresos</h1><div>Movimientos confirmados · ${esc(date)} · 00:00–23:59 (hora Bolivia)</div></div><div class="meta">${rows.length} movimientos incluidos<br>Generado: ${esc(generatedAt.toLocaleString('es-BO'))}</div></header><div class="filters">${esc(describeDailyCashFilters(filters, formatMoney))}</div><section class="summary"><div class="card income"><span>Total ingresos</span><strong>${money(totals.income)}</strong></div><div class="card out"><span>Total egresos</span><strong>${money(totals.expense)}</strong></div><div class="card"><span>Resultado neto</span><strong>${money(round(totals.income - totals.expense))}</strong></div></section><table><colgroup>${DAILY_CASH_COLUMNS.map(({ width }) => `<col style="width:${width / DAILY_CASH_COLUMNS.reduce((sum, col) => sum + col.width, 0) * 100}%">`).join('')}</colgroup><thead><tr>${DAILY_CASH_COLUMNS.map(({ label }) => `<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${cells(row)}</tr>`).join('') || `<tr><td colspan="${DAILY_CASH_COLUMNS.length}">Sin movimientos para los filtros seleccionados.</td></tr>`}<tr class="totals"><td colspan="6">TOTAL DE MOVIMIENTOS VISIBLES</td>${DAILY_CASH_COLUMNS.slice(6).map((column) => `<td class="money ${column.tone || ''}">${column.money ? money(totals[column.key]) : ''}</td>`).join('')}</tr></tbody></table><div class="note">Los conceptos (contrato, cobro extra, transporte, garantías y daños / faltantes) desglosan cada movimiento; no se suman nuevamente a ingresos o egresos. Se excluyen movimientos anulados y saldos de apertura.<br>Este reporte conserva las columnas, el orden y los filtros de la tabla del sistema.</div></body></html>`;
 }
