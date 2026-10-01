@@ -633,6 +633,8 @@ function AccountingSection({
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [dailyColumnFilters, setDailyColumnFilters] = useState({});
   const [fundModal, setFundModal] = useState(null);
+  const [fundHistoryOpen, setFundHistoryOpen] = useState(false);
+  const [fundHistoryView, setFundHistoryView] = useState('all');
   const [fundSubmitting, setFundSubmitting] = useState(false);
   const [fundActionError, setFundActionError] = useState('');
   const [fundApprovalBusyId, setFundApprovalBusyId] = useState('');
@@ -1372,6 +1374,26 @@ function AccountingSection({
     ))
     .filter((movement) => normalizeText(movement?.fundReportStatus || 'pending_approval') !== 'approved')
     .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements]);
+  const fundHistoryRows = useMemo(() => postedMovements
+    .filter((movement) => {
+      const tag = normalizeText(movement?.accountingTag);
+      const category = normalizeText(movement?.category);
+      return tag === 'big_cash_fund_in' || category === 'ingreso_fondos'
+        || tag === 'big_cash_fund_out' || category === 'entrega_fondos';
+    })
+    .map((movement) => ({
+      ...movement,
+      fundHistoryKind: (
+        normalizeText(movement?.accountingTag) === 'big_cash_fund_out'
+        || normalizeText(movement?.category) === 'entrega_fondos'
+      ) ? 'out' : 'in',
+    }))
+    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements]);
+  const visibleFundHistoryRows = useMemo(() => (
+    fundHistoryView === 'all'
+      ? fundHistoryRows
+      : fundHistoryRows.filter((movement) => movement.fundHistoryKind === fundHistoryView)
+  ), [fundHistoryRows, fundHistoryView]);
   const isDeveloperUser = useMemo(() => {
     const roles = [
       ...(Array.isArray(currentUser?.roleIds) ? currentUser.roleIds : []),
@@ -4058,6 +4080,19 @@ function AccountingSection({
     </body></html>`);
     popup.document.close();
   }, [formatBs, formatDateTime, getFundSnapshotForMovement, getMovementUserLabel]);
+
+  const openFundHistoryDocument = async (movement) => {
+    if (!movement) return;
+    const isDelivery = (
+      normalizeText(movement?.accountingTag) === 'big_cash_fund_out'
+      || normalizeText(movement?.category) === 'entrega_fondos'
+    );
+    if (isDelivery) {
+      printFundDeliveryReport(movement);
+      return;
+    }
+    await printCashReceipt(movement);
+  };
 
   const handleSubmitFundAction = async (event) => {
     event.preventDefault();
@@ -7807,10 +7842,65 @@ function AccountingSection({
                 formatBs={formatBs}
                 onFundIncome={() => openFundAction('in')}
                 onFundDelivery={() => openFundAction('out')}
+                onFundHistory={() => { setFundHistoryView('all'); setFundHistoryOpen(true); }}
               />
             </article>
           </section>
         ) : null}
+        {fundHistoryOpen ? (
+          <div className="bigcash-report-backdrop fund-history-backdrop" onClick={() => setFundHistoryOpen(false)}>
+            <section className="fund-history-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="fund-history-head">
+                <div>
+                  <span>CAJA GRANDE · DOCUMENTOS DE FONDO</span>
+                  <h2>Histórico de fondos</h2>
+                  <p>Consulta los ingresos y entregas registrados y vuelve a abrir el mismo documento emitido para cada movimiento.</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setFundHistoryOpen(false)} aria-label="Cerrar histórico">×</button>
+              </header>
+
+              <section className="fund-history-summary" aria-label="Resumen del histórico">
+                <article><small>Documentos</small><strong>{fundHistoryRows.length}</strong></article>
+                <article className="income"><small>Ingresos de fondos</small><strong>{fundHistoryRows.filter((movement) => movement.fundHistoryKind === 'in').length}</strong></article>
+                <article className="delivery"><small>Entregas de fondos</small><strong>{fundHistoryRows.filter((movement) => movement.fundHistoryKind === 'out').length}</strong></article>
+              </section>
+
+              <nav className="fund-history-tabs" aria-label="Tipo de documento">
+                <button type="button" className={fundHistoryView === 'all' ? 'active' : ''} onClick={() => setFundHistoryView('all')}>Todos</button>
+                <button type="button" className={fundHistoryView === 'in' ? 'active' : ''} onClick={() => setFundHistoryView('in')}>Ingresos fondos</button>
+                <button type="button" className={fundHistoryView === 'out' ? 'active' : ''} onClick={() => setFundHistoryView('out')}>Entregas fondos</button>
+              </nav>
+
+              <div className="fund-history-list">
+                {visibleFundHistoryRows.map((movement) => {
+                  const isDelivery = movement.fundHistoryKind === 'out';
+                  const status = normalizeText(movement?.fundReportStatus || (isDelivery ? 'pending_approval' : 'registered'));
+                  const approved = status === 'approved';
+                  return <article key={movement.id} className={`fund-history-document ${isDelivery ? 'delivery' : 'income'}`}>
+                    <div className="fund-history-document-main">
+                      <span className="fund-history-type">{isDelivery ? 'ENTREGA DE FONDOS' : 'INGRESO DE FONDOS'}</span>
+                      <strong>{movement.receiptCode || movement.receipt || 'Documento sin número'}</strong>
+                      <small>{formatDateTime(movement.createdAt)} · {getPaymentMethodLabel(movement)}</small>
+                    </div>
+                    <div className="fund-history-document-detail">
+                      <span>{isDelivery ? 'Recibido por' : 'Registrado por'}</span>
+                      <strong>{isDelivery ? (movement.fundRecipientName || '-') : getMovementUserLabel(movement)}</strong>
+                      {isDelivery && movement.fundRecipientDocument ? <small>CI / Doc.: {movement.fundRecipientDocument}</small> : null}
+                    </div>
+                    <div className="fund-history-document-amount">
+                      <span>Monto</span>
+                      <strong>{formatBs(Math.abs(toNumber(movement.amountBs)))}</strong>
+                      <small className={isDelivery ? (approved ? 'approved' : 'pending') : 'registered'}>{isDelivery ? (approved ? 'APROBADA' : 'PENDIENTE') : 'REGISTRADO'}</small>
+                    </div>
+                    <button type="button" className="fund-history-open-document" onClick={() => void openFundHistoryDocument(movement)}>{isDelivery ? 'Ver documento' : 'Ver recibo'}</button>
+                  </article>;
+                })}
+                {!visibleFundHistoryRows.length ? <p className="status fund-history-empty">No existen documentos de fondos para esta selección.</p> : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
         {fundModal ? (
           <div className="bigcash-report-backdrop fund-action-backdrop" onClick={() => !fundSubmitting && setFundModal(null)}>
             <section className="fund-action-modal" onClick={(event) => event.stopPropagation()}>

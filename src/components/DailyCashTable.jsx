@@ -154,7 +154,7 @@ function DailyFiltersPanel({ rows, filters, position, formatBs, onFiltersChange,
   );
 }
 
-export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery }) {
+export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery, onFundHistory }) {
   const [filtersOpen, setFiltersOpen] = useState(null);
   const triggerRef = useRef(null);
   const totals = totalDailyCashRows(rows);
@@ -184,6 +184,7 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
       <div className="daily-filter-toolbar">
         <button type="button" className="daily-fund-action income" onClick={onFundIncome}>Ingreso fondos</button>
         <button type="button" className="daily-fund-action delivery" onClick={onFundDelivery}>Entrega fondos</button>
+        <button type="button" className="daily-fund-action history" onClick={onFundHistory}>Histórico</button>
         {filterCount > 0 && <button
           type="button"
           className="daily-filter-clear-button"
