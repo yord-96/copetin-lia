@@ -74262,145 +74262,165 @@ button.inventory-loss-row-action.is-discard:hover {
 }
 
 /* ========================================================================== */
-/* REPORTE DIARIO · DESGLOSES EN TARJETAS HORIZONTALES                        */
-/* Reemplaza el formato en lista vertical de “Por origen” y                  */
-/* “Por medio / cuenta receptora” por mini-cards horizontales y compactas.   */
+/* REPORTE DIARIO · DESGLOSES COMPACTOS TIPO MATRIZ                           */
+/* Diseño pedido por el usuario: celdas continuas, sin iconos,                */
+/* poca altura y lectura horizontal clara.                                    */
 /* ========================================================================== */
 
 .accounting-bigcash-view .daily-sector-breakdowns {
   display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 12px !important;
-  padding: 12px 14px !important;
+  grid-template-columns: 1.05fr 0.95fr !important;
+  gap: 0 !important;
+  padding: 0 14px 14px !important;
   border-bottom: 1px solid #e8edf4 !important;
   background: #fff !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-block {
   min-width: 0 !important;
-  padding: 12px !important;
-  border: 1px solid #e1e7ef !important;
-  border-radius: 14px !important;
-  background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%) !important;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.82) !important;
+  padding: 0 !important;
+  border: 1px solid #d6e2f0 !important;
+  border-radius: 0 !important;
+  background: #f8fbff !important;
+  overflow: hidden !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-block + .daily-breakdown-block {
+  margin-left: 14px !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-block h4 {
-  margin: 0 0 10px !important;
-  color: #334d72 !important;
+  margin: 0 !important;
+  padding: 10px 12px 8px !important;
+  color: #143a78 !important;
   font-size: 11px !important;
+  font-weight: 900 !important;
   text-transform: uppercase !important;
-  letter-spacing: .045em !important;
+  letter-spacing: 0 !important;
+  border-bottom: 1px solid #d6e2f0 !important;
+  background: #f8fbff !important;
 }
 
-/* ahora cada item deja de ser “fila lista” y pasa a card */
 .accounting-bigcash-view .daily-breakdown-list {
   display: grid !important;
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)) !important;
-  gap: 10px !important;
-  align-content: start !important;
+  gap: 0 !important;
+  background: #ffffff !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-block:first-child .daily-breakdown-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.accounting-bigcash-view .daily-breakdown-block:last-child .daily-breakdown-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-list > div {
   min-width: 0 !important;
-  min-height: 84px !important;
+  min-height: 86px !important;
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
+  grid-template-columns: 1fr auto !important;
   grid-template-areas:
-    "title amount"
+    "title title"
     "meta amount" !important;
-  gap: 6px 10px !important;
-  align-items: start !important;
-  padding: 11px 12px !important;
-  border: 1px solid #dde6f1 !important;
-  border-radius: 12px !important;
-  background: #ffffff !important;
-  box-shadow: 0 6px 16px rgba(18, 41, 79, 0.045) !important;
+  gap: 8px 10px !important;
+  align-items: end !important;
+  padding: 12px 12px 10px !important;
+  border-right: 1px solid #d6e2f0 !important;
+  border-bottom: 1px solid #d6e2f0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+  box-shadow: none !important;
 }
 
-.accounting-bigcash-view .daily-breakdown-list > div:hover {
-  border-color: rgba(25, 83, 154, 0.22) !important;
-  box-shadow: 0 10px 24px rgba(18, 41, 79, 0.065) !important;
+.accounting-bigcash-view .daily-breakdown-block:first-child .daily-breakdown-list > div:nth-child(3n),
+.accounting-bigcash-view .daily-breakdown-block:last-child .daily-breakdown-list > div:nth-child(2n) {
+  border-right: 0 !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-list span {
   min-width: 0 !important;
-  display: grid !important;
-  grid-template-areas:
-    "title"
-    "meta" !important;
-  gap: 3px !important;
-}
-
-.accounting-bigcash-view .daily-breakdown-list strong,
-.accounting-bigcash-view .daily-breakdown-list small {
-  display: block !important;
+  display: contents !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-list strong {
   grid-area: title !important;
-  overflow: visible !important;
-  color: #183559 !important;
-  font-size: 11px !important;
-  line-height: 1.18 !important;
-  font-weight: 900 !important;
-  text-overflow: initial !important;
+  margin: 0 !important;
+  color: #123a79 !important;
+  font-size: 9px !important;
+  line-height: 1.15 !important;
+  font-weight: 800 !important;
   white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: initial !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-list small {
   grid-area: meta !important;
+  align-self: end !important;
   justify-self: start !important;
-  margin-top: 0 !important;
-  padding: 2px 8px !important;
-  border-radius: 999px !important;
-  background: #eef4fb !important;
-  color: #6e7f96 !important;
-  font-size: 9px !important;
-  font-weight: 900 !important;
-  line-height: 1.2 !important;
+  margin: 0 !important;
+  color: #677a94 !important;
+  font-size: 8px !important;
+  line-height: 1.1 !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
 }
 
 .accounting-bigcash-view .daily-breakdown-list b {
   grid-area: amount !important;
-  align-self: center !important;
+  align-self: end !important;
   justify-self: end !important;
-  padding-left: 4px !important;
-  color: #16355f !important;
-  font-size: 14px !important;
-  font-weight: 950 !important;
-  line-height: 1.1 !important;
+  margin: 0 !important;
+  color: #123a79 !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 900 !important;
   white-space: nowrap !important;
 }
 
-/* diferencia sutil entre bloques */
-.accounting-bigcash-view .daily-breakdown-block:first-child .daily-breakdown-list > div {
-  background:
-    radial-gradient(circle at top right, rgba(20, 131, 72, 0.06), transparent 42%),
-    #fff !important;
+.accounting-bigcash-view .daily-breakdown-list .status {
+  grid-column: 1 / -1 !important;
+  padding: 14px 12px !important;
+  margin: 0 !important;
 }
 
-.accounting-bigcash-view .daily-breakdown-block:last-child .daily-breakdown-list > div {
-  background:
-    radial-gradient(circle at top right, rgba(23, 83, 168, 0.06), transparent 42%),
-    #fff !important;
-}
-
-/* responsivo */
+/* Ajuste responsive */
 @media (max-width: 980px) {
   .accounting-bigcash-view .daily-sector-breakdowns {
     grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding-top: 12px !important;
+  }
+
+  .accounting-bigcash-view .daily-breakdown-block + .daily-breakdown-block {
+    margin-left: 0 !important;
   }
 }
 
 @media (max-width: 760px) {
-  .accounting-bigcash-view .daily-breakdown-list {
+  .accounting-bigcash-view .daily-breakdown-block:first-child .daily-breakdown-list,
+  .accounting-bigcash-view .daily-breakdown-block:last-child .daily-breakdown-list {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .accounting-bigcash-view .daily-breakdown-block:first-child .daily-breakdown-list > div:nth-child(3n),
+  .accounting-bigcash-view .daily-breakdown-block:last-child .daily-breakdown-list > div:nth-child(2n) {
+    border-right: 1px solid #d6e2f0 !important;
+  }
+
+  .accounting-bigcash-view .daily-breakdown-block .daily-breakdown-list > div:nth-child(2n) {
+    border-right: 0 !important;
   }
 }
 
 @media (max-width: 560px) {
-  .accounting-bigcash-view .daily-breakdown-list {
+  .accounting-bigcash-view .daily-breakdown-block:first-child .daily-breakdown-list,
+  .accounting-bigcash-view .daily-breakdown-block:last-child .daily-breakdown-list {
     grid-template-columns: 1fr !important;
+  }
+
+  .accounting-bigcash-view .daily-breakdown-block .daily-breakdown-list > div {
+    border-right: 0 !important;
   }
 }
