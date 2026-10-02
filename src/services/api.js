@@ -4110,6 +4110,23 @@ export const api = {
     updateReturnCharge: (payload) => updateRentalReturnChargeOnServer(payload),
   },
   cash: {
+    getDailyReport: async (date) => {
+      if (!shouldUseServerState()) return null;
+      const response = await fetch(getServerStateUrl(`/accounting/daily-report?date=${encodeURIComponent(date)}`), { cache: 'no-store', headers: getInternalHeaders() });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo cargar el reporte diario.');
+      return response.json();
+    },
+    getOpeningOverview: async () => {
+      if (!shouldUseServerState()) {
+        const [context, summary] = await Promise.all([api.cash.getAccountingContext(), api.cash.getFastSummary()]);
+        return { ...context, summary };
+      }
+      const response = await fetch(getServerStateUrl('/accounting/opening-overview'), { cache: 'no-store', headers: getInternalHeaders() });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo abrir Contabilidad.');
+      const result = await response.json();
+      if (result.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
+      return result;
+    },
     getPettyCategories: async () => {
       if (!shouldUseServerState()) {
         const result = await callBridge('settings', 'get', false);

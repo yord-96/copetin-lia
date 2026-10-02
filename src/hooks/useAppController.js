@@ -340,8 +340,12 @@ export const useAppController = () => {
       if (!forceCommercial && accountingCommercialLoadedRef.current) return;
       if (accountingCommercialRequestRef.current) return accountingCommercialRequestRef.current;
 
-      const request = api.sync.getAccountingBaseOverview({ includeCommercial: true })
-        .then((overview) => {
+      const request = Promise.all([api.sync.getAccountingBaseOverview({ includeCommercial: true }), api.cash.getAccountingContext()])
+        .then(([overview, context]) => {
+          setCashMovements(context.movements ?? []);
+          setCashDebts(context.debts ?? []);
+          setCashPaymentChannels(context.paymentChannels ?? []);
+          setCashReturnIssues(context.returnIssues ?? []);
           setContracts((current) => mergeProgressiveRows(current, overview?.contracts));
           setRentals((current) => mergeProgressiveRows(current, overview?.rentals));
           setClients((current) => mergeProgressiveClients(current, overview?.clients));
@@ -397,10 +401,11 @@ export const useAppController = () => {
 
     // Primer paint: solo historial contable + saldo. Son los datos que necesita
     // Caja Grande para abrir y son mucho mas livianos que contratos/alquileres.
-    const request = Promise.all([
+    const openingRequest = commercialLoaded ? Promise.all([
       api.cash.getAccountingContext(),
       api.cash.getFastSummary(),
-    ]).then(([context, summary]) => {
+    ]) : api.cash.getOpeningOverview().then(context => [context, context.summary]);
+    const request = openingRequest.then(([context, summary]) => {
       setCashSummary(summary ?? null);
       if (summary?.activeSession) setCashSessions([summary.activeSession]);
       setCashMovements(Array.isArray(context?.movements) ? context.movements : []);

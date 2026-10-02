@@ -17,7 +17,8 @@ import { getGuaranteeLedgerEvidence } from '../../src/utils/guaranteeSettlement.
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
-import { getBigCashFundMovements } from '../../src/utils/dailyCashReport.js';
+import { getBigCashFundMovements, buildBigCashFundTimeline } from '../../src/utils/dailyCashReport.js';
+import { getCashBusinessDate, getCashEffectiveDate, compareCashLedgerOrder } from '../../src/utils/cashLedgerOrder.js';
 import { buildPettyCashFundTimeline, assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
 import { addPettyExpenseCategory } from '../../src/utils/pettyExpenseCategories.js';
 import {
@@ -38,6 +39,8 @@ const accountingBackupDirectory = path.join(projectRoot, 'data', 'backups');
 // contratos/alquileres al volver a Caja Grande cuando la base no cambio.
 const accountingBaseOverviewCache = new Map();
 const accountingContextCache = new Map();
+const accountingOpeningCache = new Map();
+const accountingDailyCache = new Map();
 const rememberAccountingCache = (cache, key, payload, maxEntries = 4) => {
   cache.set(key, payload);
   while (cache.size > maxEntries) cache.delete(cache.keys().next().value);
@@ -6964,6 +6967,58 @@ router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.get('/__copetin_db/accounting/opening-overview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const cacheKey = `${snapshot.revision ?? 'empty'}:${getCashBusinessDate()}`;
+    let payload = accountingOpeningCache.get(cacheKey);
+    if (!payload) {
+      const state = snapshot.state ?? {};
+      const allMovements = (state.cashMovements ?? []).filter(row => !isArchivedAccountingRecord(row));
+      const selected = new Map();
+      allMovements.slice().sort((a,b) => Number(b.cashLedgerSequence) - Number(a.cashLedgerSequence)).slice(0,100)
+        .forEach(row => selected.set(String(row.id),row));
+      getBigCashFundMovements(allMovements).forEach(row => selected.set(String(row.id),row));
+      allMovements.filter(row => row.cashBoxType === 'PETTY_CASH').forEach(row => selected.set(String(row.id),row));
+      const movements = [...selected.values()].map(row => {
+        const result = summarizeAccountingMovement(row);
+        // Los documentos completos se consultan al imprimir, no al abrir la caja.
+        delete result.receiptDetail;
+        delete result.collectionBreakdown;
+        return result;
+      });
+      payload = { revision: snapshot.revision, updatedAt: snapshot.updatedAt,
+        movements, debts: (state.cashDebts ?? []).filter(row => !isArchivedAccountingRecord(row)),
+        summary: { ...summarizeDirectCashState(state), activeSession: getDirectCurrentCashSession(state) }, totalMovements: allMovements.length,
+        visibleMovements: movements.length, truncated: movements.length < allMovements.length };
+      rememberAccountingCache(accountingOpeningCache,cacheKey,payload);
+    }
+    await sendJsonPayload(req,res,payload);
+  } catch(error) { next(error); }
+});
+
+router.get('/__copetin_db/accounting/daily-report', async (req, res, next) => {
+  try {
+    const date = String(req.query.date ?? '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return res.status(400).json({ error: 'Fecha de reporte inválida.' });
+    const snapshot = await getStateSnapshot();
+    const today = getCashBusinessDate();
+    const key = `${snapshot.revision}:${date}:${today}`;
+    let payload = accountingDailyCache.get(key);
+    if (!payload) {
+      const movements = (snapshot.state?.cashMovements ?? []).filter(row => row.cashBoxType === 'BIG_CASH' && !isArchivedAccountingRecord(row));
+      const timeline = buildBigCashFundTimeline(movements, { asOfDate: date < today ? date : today, reportDate: date });
+      const rows = movements.filter(row => getCashEffectiveDate(row) === date && !row.deletedAt && !row.voidedAt && row.receiptStatus !== 'anulado'
+        && row.type !== 'apertura' && row.category !== 'apertura' && row.accountingTag !== 'opening_balance' && Math.abs(Number(row.amountBs)) > 0.0001)
+        .sort(compareCashLedgerOrder).map(summarizeAccountingMovement);
+      payload = { date, revision: snapshot.revision, movements: rows, openingBalance: timeline.openingBalance,
+        fundByMovementId: Object.fromEntries(rows.map(row => [String(row.id), timeline.byMovementId.get(String(row.id)) ?? null])) };
+      rememberAccountingCache(accountingDailyCache,key,payload,8);
+    }
+    await sendJsonPayload(req,res,payload);
+  } catch(error) { next(error); }
 });
 
 router.get('/__copetin_db/accounting-context', async (req, res, next) => {

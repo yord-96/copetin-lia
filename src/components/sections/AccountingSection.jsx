@@ -1643,12 +1643,29 @@ function AccountingSection({
   }, [bigCashMovementRows, bigCashWorkspaceQuery, bigCashWorkspaceRanges.voided, getMovementReference]);
 
   const dailyReportDate = bigCashWorkspaceRanges.daily?.dateFrom || getInputDate();
-  const dailyFundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements, {
+  const [serverDailyReport, setServerDailyReport] = useState(null);
+  const [serverDailyError, setServerDailyError] = useState('');
+  const [serverDailyLoading, setServerDailyLoading] = useState(false);
+  useEffect(() => {
+    if (activeModule !== 'contabilidad_caja_grande' || bigCashWorkspaceTab !== 'daily') return;
+    let cancelled = false;
+    setServerDailyLoading(true); setServerDailyError('');
+    api.cash.getDailyReport(dailyReportDate).then(result => {
+      if (!cancelled) setServerDailyReport(result);
+    }).catch(error => { if (!cancelled) setServerDailyError(error.message); })
+      .finally(() => { if (!cancelled) setServerDailyLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeModule, bigCashWorkspaceTab, dailyReportDate, cashMovements]);
+  const activeDailyReport = serverDailyReport?.date === dailyReportDate ? serverDailyReport : null;
+  const dailyFundTimeline = useMemo(() => activeDailyReport ? {
+    openingBalance: activeDailyReport.openingBalance,
+    byMovementId: new Map(Object.entries(activeDailyReport.fundByMovementId)),
+  } : buildBigCashFundTimeline(sortedMovements, {
     asOfDate: dailyReportDate < getCashBusinessDate() ? dailyReportDate : getCashBusinessDate(),
     reportDate: dailyReportDate,
-  }), [sortedMovements, dailyReportDate]);
+  }), [activeDailyReport, sortedMovements, dailyReportDate]);
   const dailyReportRows = useMemo(() => (
-    bigCashMovementRows
+    (activeDailyReport?.movements ?? bigCashMovementRows)
       .filter((movement) => (
         !isVoidedCashMovement(movement)
         && !isOpeningCashMovement(movement)
@@ -1656,7 +1673,7 @@ function AccountingSection({
         && Math.abs(toNumber(movement.amountBs)) > 0.0001
       ))
       .sort(compareCashLedgerOrder)
-  ), [bigCashMovementRows, dailyReportDate]);
+  ), [activeDailyReport, bigCashMovementRows, dailyReportDate]);
 
   const getDailyMovementNature = useCallback((movement) => {
     const amount = toNumber(movement?.amountBs);
@@ -6149,10 +6166,10 @@ function AccountingSection({
 
   const renderAccountingReportActions = (scope, section, { compact = false } = {}) => (
     <div className={`accounting-report-actions ${compact ? 'compact' : ''}`}>
-      <button type="button" className="accounting-report-button pdf" onClick={() => void printAccountingSectionPdf(scope, section)} disabled={Boolean(accountingSectionReportBusy)}>
+      <button type="button" className="accounting-report-button pdf" onClick={() => void printAccountingSectionPdf(scope, section)} disabled={Boolean(accountingSectionReportBusy) || (scope === 'big' && section === 'daily' && (serverDailyLoading || Boolean(serverDailyError)))}>
         {accountingSectionReportBusy === `${scope}-${section}-pdf` ? 'Generando PDF...' : 'Reporte PDF'}
       </button>
-      <button type="button" className="accounting-report-button excel" onClick={() => void exportAccountingSectionExcel(scope, section)} disabled={Boolean(accountingSectionReportBusy)}>
+      <button type="button" className="accounting-report-button excel" onClick={() => void exportAccountingSectionExcel(scope, section)} disabled={Boolean(accountingSectionReportBusy) || (scope === 'big' && section === 'daily' && (serverDailyLoading || Boolean(serverDailyError)))}>
         {accountingSectionReportBusy === `${scope}-${section}-excel` ? 'Generando Excel...' : 'Exportar Excel'}
       </button>
     </div>
@@ -8098,6 +8115,8 @@ function AccountingSection({
                 </div>
               </div>
 
+              {serverDailyLoading ? <p className="status">Actualizando reporte desde el servidor...</p> : null}
+              {serverDailyError ? <p className="status error">{serverDailyError}</p> : null}
               <DailyCashTable
                 key={dailyReportDate}
                 allRows={dailyTableRows}
