@@ -1,5 +1,6 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
 import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
+import { addPettyExpenseCategory } from '../utils/pettyExpenseCategories.js';
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge.js';
 import { buildContractCollectionGroups } from '../utils/contractCollectionGroups.js';
 import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex.js';
@@ -4109,6 +4110,28 @@ export const api = {
     updateReturnCharge: (payload) => updateRentalReturnChargeOnServer(payload),
   },
   cash: {
+    getPettyCategories: async () => {
+      if (!shouldUseServerState()) {
+        const result = await callBridge('settings', 'get', false);
+        return { categories: result.settings?.accounting?.pettyExpenseCategories ?? [] };
+      }
+      const response = await fetch(getServerStateUrl('/cash/petty-categories'), { cache: 'no-store', headers: getInternalHeaders() });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudieron cargar las categorías.');
+      return response.json();
+    },
+    createPettyCategory: async (label) => {
+      if (!shouldUseServerState()) {
+        const { settings } = await callBridge('settings', 'get', false);
+        const result = addPettyExpenseCategory(settings?.accounting?.pettyExpenseCategories, label);
+        await callBridge('settings', 'update', true, { accounting: { ...settings?.accounting, pettyExpenseCategories: result.categories } });
+        return result;
+      }
+      const response = await fetch(getServerStateUrl('/cash/petty-categories'), { method: 'POST', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ label }) });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo guardar la categoría.');
+      const result = await response.json();
+      if (result.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
+      return result;
+    },
     getFastSummary: fetchFastAccountingSummary,
     getSummary: async () => {
       const localSummary = await callBridge('cash', 'getSummary', false);

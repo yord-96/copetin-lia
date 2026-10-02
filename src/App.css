@@ -66932,6 +66932,8 @@ body:has(.accounting-bigcash-view) .workspace {
   color: #173a70;
   border-left: 2px solid #dbe4ef;
 }
+.petty-category-create { display: grid; gap: 0.6rem; margin-top: 0.6rem; }
+.petty-category-create-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 .accounting-pettycash-view .petty-table td:nth-last-child(1),
 .accounting-pettycash-view .petty-table th:nth-last-child(1) {

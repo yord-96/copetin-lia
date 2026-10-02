@@ -19,6 +19,7 @@ import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
 import { getBigCashFundMovements } from '../../src/utils/dailyCashReport.js';
 import { buildPettyCashFundTimeline, assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
+import { addPettyExpenseCategory } from '../../src/utils/pettyExpenseCategories.js';
 import {
   buildInventoryKardexRows,
   filterInventoryKardexMovements,
@@ -7170,6 +7171,28 @@ router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
   }
 });
 
+router.get('/__copetin_db/cash/petty-categories', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    res.json({ categories: snapshot.state?.settings?.accounting?.pettyExpenseCategories ?? [] });
+  } catch (error) { next(error); }
+});
+
+router.post('/__copetin_db/cash/petty-categories', async (req, res, next) => {
+  try {
+    let response;
+    const result = await updateStateSnapshot(state => {
+      response = addPettyExpenseCategory(state.settings?.accounting?.pettyExpenseCategories, req.body?.label);
+      state.settings = { ...state.settings, accounting: { ...state.settings?.accounting, pettyExpenseCategories: response.categories } };
+      return state;
+    });
+    res.json({ ...response, revision: result.revision });
+  } catch (error) {
+    if (error.message.startsWith('Escribe una categoría')) return res.status(400).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
@@ -7209,9 +7232,13 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
     const isAdvance = (movement) => {
       const category = normalizeValue(movement?.category);
       const tag = normalizeValue(movement?.accountingTag);
+      if (tag === 'personnel_advance') return true;
+      if ((state.settings?.accounting?.pettyExpenseCategories ?? []).some(row => row.id === movement.category)) return false;
       return category.includes('adelanto') || tag === 'personnel_advance';
     };
     const expenseCategory = (movement) => {
+      const custom = (state.settings?.accounting?.pettyExpenseCategories ?? []).find(row => row.id === movement.category);
+      if (custom) return custom.id;
       const text = `${normalizeValue(movement?.category)} ${normalizeValue(movement?.description)}`;
       if (text.includes('servicio') || text.includes('luz') || text.includes('agua') || text.includes('internet')) return 'services';
       if (text.includes('aliment') || text.includes('almuerzo') || text.includes('comida') || text.includes('refrigerio')) return 'food';

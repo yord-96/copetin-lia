@@ -52,10 +52,24 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(rows.body.rows.find(row=>row.id===expense.body.movement.id).fundBalanceBs,220);
     const suppliers=await request('/accounting/petty-sector?sector=suppliers');
     assert.equal(suppliers.body.total,0);
+    const category = await request('/cash/petty-categories', {label:'Reparación de equipos'});
+    assert.equal(category.status,200);
+    const duplicateCategory = await request('/cash/petty-categories', {label:'REPARACION DE EQUIPOS'});
+    assert.equal(duplicateCategory.body.category.id,category.body.category.id);
+    const savedCategories = await request('/cash/petty-categories');
+    assert.equal(savedCategories.body.categories.length,1);
+    const invalidCategory = await request('/cash/petty-categories', {label:''});
+    assert.equal(invalidCategory.status,400);
+    const categorizedExpense = await request('/cash/movement', {...payload,type:'egreso',amountBs:20,category:category.body.category.id});
+    assert.equal(categorizedExpense.status,200);
+    const filteredExpenses = await request(`/accounting/petty-sector?sector=expenses&category=${category.body.category.id}`);
+    assert.equal(filteredExpenses.body.total,1);
+    assert.equal(filteredExpenses.body.rows[0].fundBalanceBs,200);
     await runPettyCashSeparation();
     snapshot=await store.getStateSnapshot();
     assert.equal(snapshot.state.resetLogs.length,1);
-    assert.equal(snapshot.state.cashMovements.filter(row=>row.accountingPeriodStatus!=='archived'&&row.cashBoxType==='PETTY_CASH').length,2);
+    assert.equal(snapshot.state.cashMovements.filter(row=>row.accountingPeriodStatus!=='archived'&&row.cashBoxType==='PETTY_CASH').length,3);
+    assert.equal(snapshot.state.settings.accounting.pettyExpenseCategories.length,1);
   } finally {
     if(server) await new Promise(resolve=>server.close(resolve));
     await fs.rm(directory,{recursive:true,force:true});

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { buildPettyCashFundTimeline } from '../../utils/pettyCashFund';
+import { PETTY_EXPENSE_CATEGORIES } from '../../utils/pettyExpenseCategories';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
 import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate } from '../../utils/cashLedgerOrder';
@@ -383,20 +384,6 @@ const PAYMENT_METHOD_META = {
 };
 const QR_ACCOUNT_OPTIONS = ['CIDRE', 'BCP', 'MERCANTIL', 'BNB', 'BANCO FIE'];
 
-const PETTY_EXPENSE_CATEGORIES = [
-  { id: 'varios', label: 'Varios', className: 'misc', aliases: ['varios', 'otro', 'otros', 'misc'] },
-  { id: 'servicios_basicos', label: 'Servicios Basicos', className: 'services', aliases: ['servicio', 'luz', 'agua', 'internet'] },
-  { id: 'alimentacion', label: 'Alimentacion', className: 'food', aliases: ['almuerzo', 'comida', 'refrigerio'] },
-  { id: 'taxis_pasajes', label: 'Taxis/Pasajes', className: 'mobility', aliases: ['taxi', 'pasaje', 'movilidad', 'transporte'] },
-  { id: 'mante_camiones', label: 'Mante. Camiones', className: 'maintenance', aliases: ['mante', 'camion', 'reparacion', 'mantenimiento'] },
-  { id: 'compras', label: 'Compras', className: 'purchase', aliases: ['compra'] },
-  { id: 'anticipo_sueldos', label: 'Anticipo Sueldos', className: 'advance', aliases: ['adelanto', 'anticipo'] },
-  { id: 'mate_limpieza', label: 'Mate. Limpieza', className: 'cleaning', aliases: ['limpieza', 'detergente'] },
-  { id: 'intereses', label: 'Intereses', className: 'interest', aliases: ['interes'] },
-  { id: 'eess_s_monica', label: 'EESS S. MONICA', className: 'fuel', aliases: ['eess', 'monica', 'combustible', 'gasolina'] },
-  { id: 'sueldos', label: 'Sueldos', className: 'payroll', aliases: ['sueldo', 'salario'] },
-];
-
 const PETTY_DEBT_TYPES = {
   payable: {
     label: 'Deuda por pagar',
@@ -638,6 +625,31 @@ function AccountingSection({
   const [dailyColumnFilters, setDailyColumnFilters] = useState({});
   const [fundBoxType, setFundBoxType] = useState('BIG_CASH');
   const [fundModal, setFundModal] = useState(null);
+  const [customPettyCategories, setCustomPettyCategories] = useState([]);
+  const [newPettyCategoryOpen, setNewPettyCategoryOpen] = useState(false);
+  const [newPettyCategoryName, setNewPettyCategoryName] = useState('');
+  const [pettyCategoryBusy, setPettyCategoryBusy] = useState(false);
+  const [pettyCategoryError, setPettyCategoryError] = useState('');
+  const pettyExpenseCategories = useMemo(() => [...PETTY_EXPENSE_CATEGORIES, ...customPettyCategories], [customPettyCategories]);
+  useEffect(() => {
+    if (activeModule !== 'contabilidad_caja_chica') return;
+    let cancelled = false;
+    api.cash.getPettyCategories().then(result => {
+      if (!cancelled) { setCustomPettyCategories(result.categories ?? []); setPettyCategoryError(''); }
+    }).catch(error => { if (!cancelled) setPettyCategoryError(error.message); });
+    return () => { cancelled = true; };
+  }, [activeModule]);
+  const savePettyCategory = async () => {
+    if (pettyCategoryBusy) return;
+    setPettyCategoryBusy(true); setPettyCategoryError('');
+    try {
+      const result = await api.cash.createPettyCategory(newPettyCategoryName);
+      setCustomPettyCategories(result.categories ?? []);
+      setCashForm(current => ({ ...current, category: result.category.id }));
+      setNewPettyCategoryName(''); setNewPettyCategoryOpen(false);
+    } catch (error) { setPettyCategoryError(error.message); }
+    finally { setPettyCategoryBusy(false); }
+  };
   const [fundHistoryOpen, setFundHistoryOpen] = useState(false);
   const [fundHistoryView, setFundHistoryView] = useState('all');
   const [fundSubmitting, setFundSubmitting] = useState(false);
@@ -1413,21 +1425,21 @@ function AccountingSection({
   const fundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements), [sortedMovements]);
   const currentFundSummary = fundTimeline;
   const fundHistoryRows = useMemo(() => postedMovements
-    .filter(isBigCash)
+    .filter(movement => activeModule === 'contabilidad_caja_chica' ? isPettyCash(movement) : isBigCash(movement))
     .filter((movement) => {
       const tag = normalizeText(movement?.accountingTag);
       const category = normalizeText(movement?.category);
-      return tag === 'big_cash_fund_in' || category === 'ingreso_fondos'
-        || tag === 'big_cash_fund_out' || category === 'entrega_fondos';
+      return ['big_cash_fund_in', 'petty_cash_fund_in', 'big_cash_fund_out', 'petty_cash_fund_out'].includes(tag)
+        || category === 'ingreso_fondos' || category === 'entrega_fondos';
     })
     .map((movement) => ({
       ...movement,
       fundHistoryKind: (
-        normalizeText(movement?.accountingTag) === 'big_cash_fund_out'
+        ['big_cash_fund_out', 'petty_cash_fund_out'].includes(normalizeText(movement?.accountingTag))
         || normalizeText(movement?.category) === 'entrega_fondos'
       ) ? 'out' : 'in',
     }))
-    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements]);
+    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements, activeModule]);
   const visibleFundHistoryRows = useMemo(() => (
     fundHistoryView === 'all'
       ? fundHistoryRows
@@ -1851,20 +1863,22 @@ function AccountingSection({
     const raw = String(movement?.category ?? '').trim();
     const description = normalizeText(movement?.description);
     const normalized = normalizeText(raw).replace(/\s+/g, '_');
-    const found = PETTY_EXPENSE_CATEGORIES.find((category) =>
+    const exact = pettyExpenseCategories.find(category => category.id === raw);
+    if (exact) return exact;
+    const found = pettyExpenseCategories.find((category) =>
       normalized === category.id
       || normalized.includes(category.id)
       || category.aliases.some((alias) => normalized.includes(normalizeText(alias)) || description.includes(normalizeText(alias)))
     );
     if (found) return found;
     if (normalized.includes('adelanto') || normalized.includes('personal_advance') || description.includes('adelanto')) {
-      return PETTY_EXPENSE_CATEGORIES.find((category) => category.id === 'anticipo_sueldos') ?? { label: 'Anticipo Sueldos', className: 'advance' };
+      return pettyExpenseCategories.find((category) => category.id === 'anticipo_sueldos') ?? { label: 'Anticipo Sueldos', className: 'advance' };
     }
     if (normalized.includes('proveedor') || normalized.includes('supplier') || description.includes('proveedor')) {
       return { label: 'Proveedor', className: 'supplier' };
     }
     return { label: raw || 'Varios', className: 'other' };
-  }, []);
+  }, [pettyExpenseCategories]);
 
   const personnelAdvanceRows = useMemo(
     () => visiblePettyExpenseRows
@@ -1872,7 +1886,7 @@ function AccountingSection({
       .filter((movement) => {
         const category = normalizeText(movement?.category);
         const tag = normalizeText(movement?.accountingTag);
-        return category.includes('adelanto') || tag === 'personnel_advance';
+        return (!category.startsWith('petty_custom_') && category.includes('adelanto')) || tag === 'personnel_advance';
       })
       .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0)),
     [visiblePettyExpenseRows],
@@ -5085,7 +5099,7 @@ function AccountingSection({
                 onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, category: event.target.value }))}
               >
                 <option value="all">Todos</option>
-                {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                {pettyExpenseCategories.map((category) => (
                   <option key={category.id} value={category.className}>{category.label}</option>
                 ))}
                 <option value="supplier">Proveedor</option>
@@ -5618,7 +5632,7 @@ function AccountingSection({
                     <select value={cashForm.category} onChange={(event) => setCashForm((current) => ({ ...current, category: event.target.value }))}>
                       {cashModal === 'expense' ? (
                         <>
-                          {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                          {pettyExpenseCategories.map((category) => (
                             <option key={category.id} value={category.id}>{category.label}</option>
                           ))}
                         </>
@@ -5626,7 +5640,7 @@ function AccountingSection({
                         <>
                           <option value="deuda_por_pagar">Deuda por pagar</option>
                           <option value="reembolso_sra_lia">Reembolso Sra. Lia</option>
-                          {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                          {pettyExpenseCategories.map((category) => (
                             <option key={category.id} value={category.id}>{category.label}</option>
                           ))}
                         </>
@@ -5648,6 +5662,16 @@ function AccountingSection({
                         </>
                       )}
                     </select>
+                    {cashModal === 'expense' ? <div className="petty-category-create">
+                      {!newPettyCategoryOpen ? <button type="button" className="ghost-button" onClick={() => { setNewPettyCategoryOpen(true); setPettyCategoryError(''); }}>+ Crear categoría</button> : <>
+                        <input aria-label="Nombre de la nueva categoría" maxLength={80} value={newPettyCategoryName} onChange={event => setNewPettyCategoryName(event.target.value)} placeholder="Nombre de la categoría" disabled={pettyCategoryBusy} />
+                        <div className="petty-category-create-actions">
+                          <button type="button" className="primary-button" disabled={pettyCategoryBusy || !newPettyCategoryName.trim()} onClick={() => void savePettyCategory()}>{pettyCategoryBusy ? 'Guardando...' : 'Guardar categoría'}</button>
+                          <button type="button" className="ghost-button" disabled={pettyCategoryBusy} onClick={() => setNewPettyCategoryOpen(false)}>Cancelar</button>
+                        </div>
+                      </>}
+                      {pettyCategoryError ? <span className="status error" role="alert">{pettyCategoryError}</span> : null}
+                    </div> : null}
                   </label>
                   <label>
                     {cashModal === 'debt'
@@ -6207,6 +6231,62 @@ function AccountingSection({
       </div>
     );
   };
+
+  const renderFundHistoryModal = () => (
+    fundHistoryOpen ? (
+          <div className="bigcash-report-backdrop fund-history-backdrop" onClick={() => setFundHistoryOpen(false)}>
+            <section className="fund-history-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="fund-history-head">
+                <div>
+                  <span>{activeModule === 'contabilidad_caja_chica' ? 'CAJA CHICA' : 'CAJA GRANDE'} · DOCUMENTOS DE FONDO</span>
+                  <h2>Histórico de fondos</h2>
+                  <p>Consulta los ingresos y entregas registrados y vuelve a abrir el mismo documento emitido para cada movimiento.</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setFundHistoryOpen(false)} aria-label="Cerrar histórico">×</button>
+              </header>
+
+              <section className="fund-history-summary" aria-label="Resumen del histórico">
+                <article><small>Documentos</small><strong>{fundHistoryRows.length}</strong></article>
+                <article className="income"><small>Ingresos de fondos</small><strong>{fundHistoryRows.filter((movement) => movement.fundHistoryKind === 'in').length}</strong></article>
+                <article className="delivery"><small>Rendiciones de fondos</small><strong>{fundHistoryRows.filter((movement) => movement.fundHistoryKind === 'out').length}</strong></article>
+              </section>
+
+              <nav className="fund-history-tabs" aria-label="Tipo de documento">
+                <button type="button" className={fundHistoryView === 'all' ? 'active' : ''} onClick={() => setFundHistoryView('all')}>Todos</button>
+                <button type="button" className={fundHistoryView === 'in' ? 'active' : ''} onClick={() => setFundHistoryView('in')}>Ingresos fondos</button>
+                <button type="button" className={fundHistoryView === 'out' ? 'active' : ''} onClick={() => setFundHistoryView('out')}>Rendiciones de cuentas</button>
+              </nav>
+
+              <div className="fund-history-list">
+                {visibleFundHistoryRows.map((movement) => {
+                  const isDelivery = movement.fundHistoryKind === 'out';
+                  const status = normalizeText(movement?.fundReportStatus || (isDelivery ? 'pending_approval' : 'registered'));
+                  const approved = status === 'approved';
+                  return <article key={movement.id} className={`fund-history-document ${isDelivery ? 'delivery' : 'income'}`}>
+                    <div className="fund-history-document-main">
+                      <span className="fund-history-type">{isDelivery ? 'RENDICIÓN DE CUENTAS' : 'INGRESO DE FONDOS'}</span>
+                      <strong>{movement.receiptCode || movement.receipt || 'Documento sin número'}</strong>
+                      <small>{formatDateTime(movement.createdAt)} · {getPaymentMethodLabel(movement)}</small>
+                    </div>
+                    <div className="fund-history-document-detail">
+                      <span>{isDelivery ? 'Recibido por' : 'Registrado por'}</span>
+                      <strong>{isDelivery ? (movement.fundRecipientName || '-') : getMovementUserLabel(movement)}</strong>
+                      {isDelivery && movement.fundRecipientDocument ? <small>CI / Doc.: {movement.fundRecipientDocument}</small> : null}
+                    </div>
+                    <div className="fund-history-document-amount">
+                      <span>Monto</span>
+                      <strong>{formatBs(Math.abs(toNumber(movement.amountBs)))}</strong>
+                      <small className={isDelivery ? (approved ? 'approved' : 'pending') : 'registered'}>{isDelivery ? (approved ? 'APROBADA' : 'PENDIENTE') : 'REGISTRADO'}</small>
+                    </div>
+                    <button type="button" className="fund-history-open-document" onClick={() => void openFundHistoryDocument(movement)}>{isDelivery ? 'Ver documento' : 'Ver recibo'}</button>
+                  </article>;
+                })}
+                {!visibleFundHistoryRows.length ? <p className="status fund-history-empty">No existen documentos de fondos para esta selección.</p> : null}
+              </div>
+            </section>
+          </div>
+        ) : null
+  );
 
   const renderFundActionModal = () => (
     fundModal ? (
@@ -8031,59 +8111,7 @@ function AccountingSection({
             </article>
           </section>
         ) : null}
-        {fundHistoryOpen ? (
-          <div className="bigcash-report-backdrop fund-history-backdrop" onClick={() => setFundHistoryOpen(false)}>
-            <section className="fund-history-modal" onClick={(event) => event.stopPropagation()}>
-              <header className="fund-history-head">
-                <div>
-                  <span>CAJA GRANDE · DOCUMENTOS DE FONDO</span>
-                  <h2>Histórico de fondos</h2>
-                  <p>Consulta los ingresos y entregas registrados y vuelve a abrir el mismo documento emitido para cada movimiento.</p>
-                </div>
-                <button type="button" className="bigcash-report-close" onClick={() => setFundHistoryOpen(false)} aria-label="Cerrar histórico">×</button>
-              </header>
-
-              <section className="fund-history-summary" aria-label="Resumen del histórico">
-                <article><small>Documentos</small><strong>{fundHistoryRows.length}</strong></article>
-                <article className="income"><small>Ingresos de fondos</small><strong>{fundHistoryRows.filter((movement) => movement.fundHistoryKind === 'in').length}</strong></article>
-                <article className="delivery"><small>Entregas de fondos</small><strong>{fundHistoryRows.filter((movement) => movement.fundHistoryKind === 'out').length}</strong></article>
-              </section>
-
-              <nav className="fund-history-tabs" aria-label="Tipo de documento">
-                <button type="button" className={fundHistoryView === 'all' ? 'active' : ''} onClick={() => setFundHistoryView('all')}>Todos</button>
-                <button type="button" className={fundHistoryView === 'in' ? 'active' : ''} onClick={() => setFundHistoryView('in')}>Ingresos fondos</button>
-                <button type="button" className={fundHistoryView === 'out' ? 'active' : ''} onClick={() => setFundHistoryView('out')}>Entregas fondos</button>
-              </nav>
-
-              <div className="fund-history-list">
-                {visibleFundHistoryRows.map((movement) => {
-                  const isDelivery = movement.fundHistoryKind === 'out';
-                  const status = normalizeText(movement?.fundReportStatus || (isDelivery ? 'pending_approval' : 'registered'));
-                  const approved = status === 'approved';
-                  return <article key={movement.id} className={`fund-history-document ${isDelivery ? 'delivery' : 'income'}`}>
-                    <div className="fund-history-document-main">
-                      <span className="fund-history-type">{isDelivery ? 'ENTREGA DE FONDOS' : 'INGRESO DE FONDOS'}</span>
-                      <strong>{movement.receiptCode || movement.receipt || 'Documento sin número'}</strong>
-                      <small>{formatDateTime(movement.createdAt)} · {getPaymentMethodLabel(movement)}</small>
-                    </div>
-                    <div className="fund-history-document-detail">
-                      <span>{isDelivery ? 'Recibido por' : 'Registrado por'}</span>
-                      <strong>{isDelivery ? (movement.fundRecipientName || '-') : getMovementUserLabel(movement)}</strong>
-                      {isDelivery && movement.fundRecipientDocument ? <small>CI / Doc.: {movement.fundRecipientDocument}</small> : null}
-                    </div>
-                    <div className="fund-history-document-amount">
-                      <span>Monto</span>
-                      <strong>{formatBs(Math.abs(toNumber(movement.amountBs)))}</strong>
-                      <small className={isDelivery ? (approved ? 'approved' : 'pending') : 'registered'}>{isDelivery ? (approved ? 'APROBADA' : 'PENDIENTE') : 'REGISTRADO'}</small>
-                    </div>
-                    <button type="button" className="fund-history-open-document" onClick={() => void openFundHistoryDocument(movement)}>{isDelivery ? 'Ver documento' : 'Ver recibo'}</button>
-                  </article>;
-                })}
-                {!visibleFundHistoryRows.length ? <p className="status fund-history-empty">No existen documentos de fondos para esta selección.</p> : null}
-              </div>
-            </section>
-          </div>
-        ) : null}
+        {renderFundHistoryModal()}
 
         {renderFundActionModal()}
 
@@ -8377,6 +8405,7 @@ function AccountingSection({
           <div className="accounting-overview-actions">
             <button type="button" className="accounting-overview-primary" onClick={() => openFundAction('in', 'PETTY_CASH')}>Ingreso de fondos</button>
             <button type="button" className="accounting-overview-secondary danger" onClick={() => openFundAction('out', 'PETTY_CASH')}>Egreso de fondos</button>
+            <button type="button" className="accounting-overview-secondary" onClick={() => { setFundHistoryView('all'); setFundHistoryOpen(true); }}>Históricos</button>
             <label className="accounting-date-control petty-date-control">
               <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
               <span className="date-icon"><MiniIcon kind="calendar" /></span>
@@ -8497,7 +8526,7 @@ function AccountingSection({
               <label>
                 <select value={pettyCashTypeFilter} onChange={(event) => setPettyCashTypeFilter(event.target.value)}>
                   <option value="all">Todos los tipos</option>
-                  {PETTY_EXPENSE_CATEGORIES.map((category) => (
+                  {pettyExpenseCategories.map((category) => (
                     <option key={category.id} value={category.className}>{category.label}</option>
                   ))}
                   <option value="supplier">Proveedor</option>
@@ -8533,7 +8562,7 @@ function AccountingSection({
                     const category = getPettyExpenseCategory(movement);
                     const isPersonnelAdvanceMovement =
                       normalizeText(movement?.accountingTag) === 'personnel_advance'
-                      || normalizeText(movement?.category).includes('adelanto');
+                      || (!normalizeText(movement?.category).startsWith('petty_custom_') && normalizeText(movement?.category).includes('adelanto'));
                     const registeredBy = isPersonnelAdvanceMovement
                       ? getPersonnelAdvanceRegisteredBy(movement)
                       : movement.createdBy || movement.responsible || '-';
@@ -8895,6 +8924,7 @@ function AccountingSection({
             </article>
           </aside>
         </section>
+        {renderFundHistoryModal()}
         {renderFundActionModal()}
         {renderCashModals()}
       </section>
