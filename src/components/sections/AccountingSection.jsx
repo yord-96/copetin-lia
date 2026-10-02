@@ -4,7 +4,7 @@ import { buildPettyCashFundTimeline } from '../../utils/pettyCashFund';
 import { PETTY_EXPENSE_CATEGORIES } from '../../utils/pettyExpenseCategories';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
-import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate } from '../../utils/cashLedgerOrder';
+import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate, getCashEffectiveDate } from '../../utils/cashLedgerOrder';
 import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
@@ -1645,13 +1645,14 @@ function AccountingSection({
   const dailyReportDate = bigCashWorkspaceRanges.daily?.dateFrom || getInputDate();
   const dailyFundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements, {
     asOfDate: dailyReportDate < getCashBusinessDate() ? dailyReportDate : getCashBusinessDate(),
+    reportDate: dailyReportDate,
   }), [sortedMovements, dailyReportDate]);
   const dailyReportRows = useMemo(() => (
     bigCashMovementRows
       .filter((movement) => (
         !isVoidedCashMovement(movement)
         && !isOpeningCashMovement(movement)
-        && getDateKey(resolveCashMovementTimestamp(movement)) === dailyReportDate
+        && getCashEffectiveDate(movement) === dailyReportDate
         && Math.abs(toNumber(movement.amountBs)) > 0.0001
       ))
       .sort(compareCashLedgerOrder)
@@ -6020,7 +6021,7 @@ function AccountingSection({
     if (section === 'prepaid') return { title: 'Prepago VIP', subtitle: 'Movimientos de crédito prepago del período.', rows: visiblePrepaidRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Cliente', (r) => r.customerName || '-'], ['Movimiento', (r) => r.description || '-'], ['Contrato / Orden', (r) => r.reference || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Saldo', (r) => toNumber(r.balanceAfterBs)]], range: bigCashWorkspaceRanges.prepaid };
     if (section === 'daily') return { title: 'Reporte diario de Caja Grande', subtitle: `Movimientos confirmados del ${formatDate(dailyReportDate)} entre 00:00 y 23:59 (hora Bolivia).`, rows: visibleDailyTableRows,
-      columns: DAILY_CASH_COLUMNS.map((column) => [column.label, (row) => row[column.key]]), date: dailyReportDate, filters: dailyColumnFilters, range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
+      columns: DAILY_CASH_COLUMNS.map((column) => [column.label, (row) => row[column.key]]), date: dailyReportDate, filters: dailyColumnFilters, openingBalance: dailyFundTimeline.openingBalance, range: { dateFrom: dailyReportDate, dateTo: dailyReportDate } };
     if (section === 'voided') return { title: 'Movimientos anulados de Caja Grande', subtitle: 'Historial separado de movimientos anulados.', rows: voidedBigCashRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Referencia', (r) => getMovementReference(r)], ['Medio', (r) => getPaymentMethodMeta(r.paymentMethod).label], ['Responsable', (r) => r.responsible || r.createdBy || '-'], ['Recibo', (r) => r.receiptCode || r.receipt || '-'], ['Monto original', (r) => Math.abs(toNumber(r.amountBs))], ['Motivo anulación', (r) => r.voidReason || '-']], range: bigCashWorkspaceRanges.voided };
     return { title: 'Movimientos de Caja Grande', subtitle: 'Libro de movimientos según filtros actuales.', rows: filteredBigCashRows,
@@ -8100,6 +8101,7 @@ function AccountingSection({
               <DailyCashTable
                 key={dailyReportDate}
                 allRows={dailyTableRows}
+                openingBalance={dailyFundTimeline.openingBalance}
                 rows={visibleDailyTableRows}
                 filters={dailyColumnFilters}
                 onFiltersChange={setDailyColumnFilters}

@@ -1,6 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, getDailyCashFilterOptions, createDailyCashWorkbook, buildDailyCashReportHtml } from './dailyCashReport.js';
+
+test('el día siguiente arrastra el cierre completo aunque una devolución retroactiva se registre después', async () => {
+  const make = (id, amountBs, cashEffectiveDate, cashLedgerSequence, paymentMethod = 'efectivo') => ({
+    id, amountBs, cashEffectiveDate, cashLedgerSequence, paymentMethod, cashBoxType: 'BIG_CASH',
+  });
+  const movements = [
+    { ...make('fund',5000,'2026-10-01',3278), accountingTag:'big_cash_fund_in' },
+    make('previous-net',-478,'2026-10-01',3306),
+    make('previous-digital',1869,'2026-10-01',3292,'qr'),
+    make('RC-13511',18,'2026-10-02',3307,'qr'),
+    make('RC-1703',-200,'2026-10-01',3309),
+    make('RC-13517',200,'2026-10-02',3312),
+  ];
+  const day1 = buildBigCashFundTimeline(movements,{asOfDate:'2026-10-01',reportDate:'2026-10-01'});
+  const day2 = buildBigCashFundTimeline(movements,{asOfDate:'2026-10-02',reportDate:'2026-10-02'});
+  assert.equal(day1.cashBs,4322);
+  assert.equal(day2.openingBalance.cashBs,day1.cashBs);
+  assert.equal(day2.openingBalance.digitalBs,day1.digitalBs);
+  assert.equal(day2.byMovementId.get('RC-13511').cashBs,4322);
+  assert.equal(day2.byMovementId.get('RC-13511').digitalBs,1887);
+  assert.equal(day2.byMovementId.get('RC-13517').cashBs,4522);
+  // El documento individual conserva el orden real de registro.
+  assert.equal(buildBigCashFundTimeline(movements,{asOfDate:'2026-10-02'}).byMovementId.get('RC-13511').cashBs,4522);
+  const labels = {hour:'01:37',customer:'Cliente',nature:{key:'damage',label:'Daños'},reference:'2741',method:'QR',user:'Usuario'};
+  const rows = [buildDailyCashRow(movements.find(row=>row.id==='RC-13511'),labels,day2.byMovementId.get('RC-13511'))];
+  const workbook = await createDailyCashWorkbook({rows,date:'2026-10-02',openingBalance:day2.openingBalance});
+  const sheet = workbook.getWorksheet('Reporte diario');
+  assert.equal(sheet.getCell('P7').value,4322);
+  assert.equal(sheet.getCell('Q7').value,1869);
+  assert.equal(sheet.getCell('P9').value,4322);
+  assert.equal(sheet.getCell('Q9').value,1887);
+  assert.match(buildDailyCashReportHtml({rows,date:'2026-10-02',openingBalance:day2.openingBalance}),/SALDO ANTERIOR/);
+  const emptyBook = await createDailyCashWorkbook({rows:[],date:'2026-10-03',openingBalance:day2});
+  assert.equal(emptyBook.getWorksheet('Reporte diario').getCell('P9').value,4522);
+  assert.equal(emptyBook.getWorksheet('Reporte diario').getCell('Q9').value,1887);
+});
 import { preserveCashLedgerOrder } from './cashLedgerOrder.js';
 
 const row = (id, amountBs, key, extra = {}) => buildDailyCashRow({ id, amountBs, receiptCode: `RC-${id}` }, {

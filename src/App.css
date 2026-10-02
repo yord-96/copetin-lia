@@ -66934,6 +66934,16 @@ body:has(.accounting-bigcash-view) .workspace {
 }
 .petty-category-create { display: grid; gap: 0.6rem; margin-top: 0.6rem; }
 .petty-category-create-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.daily-report-table .daily-opening-balance th,
+.daily-report-table .daily-opening-balance td {
+  background: #eaf1f8;
+  color: #173a70;
+  font-weight: 800;
+  padding: 0.8rem;
+  border-bottom: 2px solid #cad8e8;
+}
+.daily-report-table .daily-opening-balance th { text-align: left; }
+.daily-report-table .daily-opening-balance small { display: block; margin-top: 0.3rem; font-weight: 400; }
 
 .accounting-pettycash-view .petty-table td:nth-last-child(1),
 .accounting-pettycash-view .petty-table th:nth-last-child(1) {

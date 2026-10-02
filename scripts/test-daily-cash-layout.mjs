@@ -28,6 +28,7 @@ createRoot(document.getElementById('root')).render(<main className="app-main">
       <div className="bigcash-daily-report"><div style={{ height: 300 }}>Reporte diario</div>
         <article className="bigcash-card daily-sector income-sector">
           <DailyCashTable allRows={rows} rows={rows} filters={{}} onFiltersChange={() => {}}
+            openingBalance={{cashBs:4322,digitalBs:1869}}
             formatBs={value => 'Bs ' + value.toLocaleString('es-BO', { minimumFractionDigits: 2 })} />
         </article>
       </div>
@@ -66,7 +67,8 @@ try {
         height: wrapper.clientHeight, contentHeight: wrapper.scrollHeight,
         clipped: cells.filter(cell => cell.scrollWidth > cell.clientWidth + 1).map(cell => [cell.className,cell.textContent,getComputedStyle(cell).whiteSpace,getComputedStyle(cell).overflowWrap,cell.clientWidth,cell.scrollWidth]) };
     });
-    assert.equal(layout.rows, 30);
+    assert.equal(layout.rows, 31);
+    assert.match(await page.$eval('.daily-opening-balance', row => row.textContent), /SALDO ANTERIOR/);
     assert.equal(layout.overflow, 'visible');
     assert.ok(layout.contentHeight <= layout.height + 2, 'Todas las filas se muestran sin scroll interno');
     assert.deepEqual(layout.clipped, [], `Celdas cortadas a ${width}px`);
@@ -77,7 +79,7 @@ try {
     }));
     assert.ok(Math.abs(sticky.header - sticky.topbar) < 2, `Encabezado visible a ${width}px: ${JSON.stringify(sticky)}`);
     if (process.env.DAILY_LAYOUT_SCREENSHOT) await page.screenshot({ path: `${process.env.DAILY_LAYOUT_SCREENSHOT}-${width}.png` });
-    console.log(`Reporte diario ${width}px: 30 filas completas, sin celdas cortadas y encabezado fijo.`);
+    console.log(`Reporte diario ${width}px: saldo anterior y 30 filas completas, sin celdas cortadas y encabezado fijo.`);
   }
 } finally {
   await browser?.close();

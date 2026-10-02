@@ -154,7 +154,7 @@ function DailyFiltersPanel({ rows, filters, position, formatBs, onFiltersChange,
   );
 }
 
-export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery, onFundHistory }) {
+export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery, onFundHistory, openingBalance }) {
   const [filtersOpen, setFiltersOpen] = useState(null);
   const triggerRef = useRef(null);
   const tableWrapRef = useRef(null);
@@ -230,13 +230,14 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
           <span className="daily-header-label">{column.label}</span>
         </th>)}</tr></thead>
         <tbody>
+          {openingBalance && <tr className="daily-opening-balance"><th scope="row" colSpan={15}>SALDO ANTERIOR <small>Cierre de los días anteriores. No es un ingreso del día.</small></th><td className="daily-col-fundCash daily-money-cell">{formatBs(openingBalance.cashBs)}</td><td className="daily-col-fundDigital daily-money-cell">{formatBs(openingBalance.digitalBs)}</td></tr>}
           {rows.map((row, index) => <tr key={row.id ?? index}>{DAILY_CASH_COLUMNS.map((column) => <td key={column.key} className={`daily-col-${column.key} ${(column.money || column.balance) ? 'daily-money-cell' : ''} ${column.tone === 'out' && row[column.key] != null ? 'daily-expense-cell' : ''} ${column.tone === 'income' ? 'daily-revenue-cell' : ''} ${column.key === 'nature' && row.expense != null ? 'daily-expense-text' : column.key === 'nature' && row.income != null ? 'daily-revenue-text' : ''}`}>
             {column.key === 'receipt' && row.ledgerSequence != null ? <span className="daily-receipt-order" title={row.registeredAt ? `Registrado en caja: ${new Date(row.registeredAt).toLocaleString('es-BO', { timeZone: 'America/La_Paz' })}` : 'Orden histórico guardado en caja'}><span>{row.receipt}</span><small>Caja #{row.ledgerSequence}</small></span> : column.balance && row[column.key] != null ? <span className="daily-fund-cell"><strong>{formatBs(row[column.key])}</strong><small className={row[`${column.key}Change`] < 0 ? 'daily-expense-text' : row[`${column.key}Change`] > 0 ? 'daily-revenue-text' : ''}>{row[`${column.key}Change`] ? `${row[`${column.key}Change`] > 0 ? '+' : '−'} ${formatBs(Math.abs(row[`${column.key}Change`]))}` : 'Sin cambio'}</small></span> : dailyCashCellText(column, row[column.key], formatBs)}
           </td>)}</tr>)}
           {!rows.length && <tr><td colSpan={DAILY_CASH_COLUMNS.length}><p className="status">{allRows.length ? 'No hay movimientos que coincidan con los filtros.' : 'No hay movimientos confirmados para este día.'}</p></td></tr>}
         </tbody>
         <tfoot><tr><th scope="row" colSpan={6}>TOTAL {filterCount ? 'FILTRADO' : 'DEL DÍA'}</th>{DAILY_CASH_COLUMNS.slice(6).map((column) => <td key={column.key} className={`daily-col-${column.key} daily-money-cell ${column.tone === 'out' ? 'daily-expense-cell' : column.tone === 'income' ? 'daily-revenue-cell' : ''}`}>
-          {column.money ? formatBs(totals[column.key]) : column.balance ? formatBs(getDailyCashClosingBalance(rows, column.key)) : ''}
+          {column.money ? formatBs(totals[column.key]) : column.balance ? formatBs(getDailyCashClosingBalance(rows, column.key, openingBalance)) : ''}
         </td>)}</tr></tfoot>
       </table>
     </div>
