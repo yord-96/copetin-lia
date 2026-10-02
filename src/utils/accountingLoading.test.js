@@ -34,6 +34,12 @@ test('apertura compacta conserva todo el fondo y el servidor entrega días compl
     assert.ok(opening.movements.every(row=>row.receiptDetail===undefined));
     assert.ok(JSON.stringify(opening).length<50000);
     assert.equal(opening.truncated,true);
+    const receiptContext = await get('/accounting/receipt-context/fund');
+    assert.equal(receiptContext.cashMovements.length, 1);
+    assert.equal(receiptContext.cashMovements[0].id, 'fund');
+    assert.equal(receiptContext.cashMovements[0].receiptDetail.length, 10000);
+    assert.deepEqual(receiptContext.rentals, []);
+    assert.deepEqual(receiptContext.contracts, []);
     const cached=await get('/accounting/opening-overview');
     assert.deepEqual(cached,opening);
     const historical=await get('/accounting/daily-report?date=2026-09-01');

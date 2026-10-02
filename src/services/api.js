@@ -4518,7 +4518,19 @@ export const api = {
   printer: {
     printRentalReceipt: (payload) => callBridge('printer', 'printRentalReceipt', false, payload),
     printReturnReceipt: (payload) => callBridge('printer', 'printReturnReceipt', false, payload),
-    printCashMovementReceipt: (payload) => callBridge('printer', 'printCashMovementReceipt', false, payload),
+    printCashMovementReceipt: async (payload) => {
+      if (!shouldUseServerState() || payload?.movement?.accountingTag === 'guarantee_damage_application') {
+        return callBridge('printer', 'printCashMovementReceipt', false, payload);
+      }
+      const movementId = String(payload?.movementId ?? payload?.id ?? '').trim();
+      if (!movementId) throw new Error('Debes indicar el movimiento de caja para imprimir.');
+      const response = await fetch(getServerStateUrl(`/accounting/receipt-context/${encodeURIComponent(movementId)}`), {
+        cache: 'no-store', headers: getInternalHeaders(),
+      });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo consultar el recibo.');
+      const receiptContext = await response.json();
+      return getBridge().printer.printCashMovementReceipt({ ...payload, receiptContext });
+    },
     printContract: (payload) => callBridge('printer', 'printContract', false, payload),
     printInventoryOrder: (payload) => callBridge('printer', 'printInventoryOrder', false, payload),
     printInventoryWeek: (payload) => callBridge('printer', 'printInventoryWeek', false, payload),

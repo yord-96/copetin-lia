@@ -9191,6 +9191,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         result = await api.printer.printCashMovementReceipt(receiptPayload);
       }
       if (!result?.html) throw new Error('No se pudo generar el contenido del recibo.');
+      if (!printWindow || printWindow.closed) return;
       printWindow.document.open();
       printWindow.document.write(result.html);
       printWindow.document.close();
@@ -12871,24 +12872,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
       {contractEconomicsData ? (
         <div className="orders-modal-backdrop contract-economics-backdrop" onClick={handleContractEconomicsBackdropClick}>
-          {generatingDepositReceiptId ? (
-            <div
-              className="contract-economics-receipt-loading"
-              role="status"
-              aria-live="polite"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="contract-economics-receipt-loading-card">
-                <img src="/imagenes/recibo-loading.gif" alt="" width="498" height="359" />
-                <strong>Generando recibo...</strong>
-                <span>Estamos preparando el comprobante. Espera un momento.</span>
-              </div>
-            </div>
-          ) : null}
           <section
             className="orders-modal contract-economics-modal"
-            inert={Boolean(generatingDepositReceiptId)}
-            aria-busy={Boolean(generatingDepositReceiptId)}
             onClick={(event) => event.stopPropagation()}
             onWheel={(event) => event.stopPropagation()}
           >

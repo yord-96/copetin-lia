@@ -19933,7 +19933,7 @@ const createWebBridge = () => ({
 
       // Imprimir es una operación de solo lectura. Evitamos deepClone de toda la base
       // porque el estado puede pesar decenas de MB y hacía que abrir un recibo demorara varios segundos.
-      const state = readQueryState();
+      const state = payload?.receiptContext ?? readQueryState();
       const payloadMovement = payload?.movement && typeof payload.movement === 'object'
         ? payload.movement
         : null;

@@ -6969,6 +6969,25 @@ router.get('/__copetin_db/accounting/comprobantes', async (req, res, next) => {
   }
 });
 
+router.get('/__copetin_db/accounting/receipt-context/:movementId', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot.state ?? {};
+    const movement = (state.cashMovements ?? []).find(row => String(row.id) === String(req.params.movementId));
+    if (!movement || movement.deletedAt || movement.accountingArchivedAt) return res.status(404).json({ error: 'No se encontro el recibo.' });
+    const rentalId = String(movement.linkedRentalId || movement.rentalId || (movement.sourceType === 'rental' ? movement.sourceId : '') || '');
+    const orderCode = String(movement.linkedOrderCode || movement.orderCode || '');
+    const rental = (state.rentals ?? []).find(row => rentalId && String(row.id) === rentalId)
+      ?? (state.rentals ?? []).find(row => orderCode && String(row.orderCode) === orderCode);
+    const contractId = String(movement.linkedContractId || movement.contractId || rental?.contractId || '');
+    const contract = (state.contracts ?? []).find(row => contractId && String(row.id) === contractId)
+      ?? (state.contracts ?? []).find(row => rental && String(row.rentalId) === String(rental.id))
+      ?? (state.contracts ?? []).find(row => orderCode && String(row.orderCode) === orderCode);
+    await sendJsonPayload(req, res, { settings: state.settings ?? {}, cashMovements: [movement],
+      rentals: rental ? [rental] : [], contracts: contract ? [contract] : [] });
+  } catch (error) { next(error); }
+});
+
 router.get('/__copetin_db/accounting/opening-overview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
