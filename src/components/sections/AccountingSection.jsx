@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
+import { buildPettyCashFundTimeline } from '../../utils/pettyCashFund';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
 import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate } from '../../utils/cashLedgerOrder';
@@ -635,6 +636,7 @@ function AccountingSection({
   const [bigCashQuery, setBigCashQuery] = useState('');
   const [bigCashWorkspaceTab, setBigCashWorkspaceTab] = useState('summary');
   const [dailyColumnFilters, setDailyColumnFilters] = useState({});
+  const [fundBoxType, setFundBoxType] = useState('BIG_CASH');
   const [fundModal, setFundModal] = useState(null);
   const [fundHistoryOpen, setFundHistoryOpen] = useState(false);
   const [fundHistoryView, setFundHistoryView] = useState('all');
@@ -1277,8 +1279,8 @@ function AccountingSection({
   );
 
   const pendingSupplierLoanRows = useMemo(
-    () => supplierLoanRows.filter((loan) => !loan.isPaid && loan.totalBs > 0),
-    [supplierLoanRows],
+    () => pagedSupplierLoanRows.filter((loan) => !loan.isPaid && loan.totalBs > 0),
+    [pagedSupplierLoanRows],
   );
 
   const openSupplierLinkedContract = useCallback(async (loan) => {
@@ -1315,7 +1317,7 @@ function AccountingSection({
   );
 
   const pettyTransfersRows = useMemo(
-    () => postedMovements.filter((movement) => isPettyCash(movement) && movement.isInternalTransfer && toNumber(movement.amountBs) > 0),
+    () => postedMovements.filter((movement) => isPettyCash(movement) && toNumber(movement.amountBs) > 0),
     [postedMovements],
   );
 
@@ -1410,14 +1412,8 @@ function AccountingSection({
   const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
   const fundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements), [sortedMovements]);
   const currentFundSummary = fundTimeline;
-  const pendingFundDeliveries = useMemo(() => postedMovements
-    .filter((movement) => (
-      normalizeText(movement?.accountingTag) === 'big_cash_fund_out'
-      || normalizeText(movement?.category) === 'entrega_fondos'
-    ))
-    .filter((movement) => normalizeText(movement?.fundReportStatus || 'pending_approval') !== 'approved')
-    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements]);
   const fundHistoryRows = useMemo(() => postedMovements
+    .filter(isBigCash)
     .filter((movement) => {
       const tag = normalizeText(movement?.accountingTag);
       const category = normalizeText(movement?.category);
@@ -1953,16 +1949,16 @@ function AccountingSection({
       const amount = toNumber(movement.amountBs);
       const type = String(movement.type ?? '').toLowerCase();
       const isOpening = type === 'apertura' && amount > 0;
-      const isReposition = movement.isInternalTransfer && amount > 0;
+      const isReposition = amount > 0;
       const isExpense = !movement.isInternalTransfer && amount < 0;
 
       if (!isOpening && !isReposition && !isExpense) return;
 
-      const category = isExpense ? getPettyExpenseCategory(movement) : { label: isOpening ? 'Apertura' : 'Reposicion', className: 'reposition' };
+      const category = isExpense ? getPettyExpenseCategory(movement) : { label: isOpening ? 'Apertura' : 'Ingreso de fondos', className: 'reposition' };
       rows.push({
         ...movement,
         historyKind: isExpense ? 'expense' : 'reposition',
-        historyLabel: isExpense ? 'Gasto' : isOpening ? 'Apertura' : 'Reposicion',
+        historyLabel: isExpense ? 'Gasto' : isOpening ? 'Apertura' : 'Ingreso de fondos',
         historyAmountBs: Math.abs(amount),
         historySignedBs: isExpense ? -Math.abs(amount) : Math.abs(amount),
         historyCategory: category,
@@ -4118,7 +4114,14 @@ function AccountingSection({
     }
   };
 
-  const openFundAction = (kind) => {
+  const pettyFundTimeline = useMemo(() => buildPettyCashFundTimeline(sortedMovements), [sortedMovements]);
+  const selectedFundSummary = fundBoxType === 'PETTY_CASH' ? pettyFundTimeline : currentFundSummary;
+  const fundBoxLabel = fundBoxType === 'PETTY_CASH' ? 'Caja Chica' : 'Caja Grande';
+  const modalPendingFundDeliveries = postedMovements.filter(row => row.cashBoxType === fundBoxType
+    && row.category === 'entrega_fondos' && row.fundReportStatus !== 'approved');
+  const renderPettyFund = (row) => row?.fundBalanceBs == null ? '—' : formatBs(row.fundBalanceBs);
+  const openFundAction = (kind, box = 'BIG_CASH') => {
+    setFundBoxType(box);
     setFundActionError('');
     setFundModal(kind);
     const now = new Date();
@@ -4127,7 +4130,7 @@ function AccountingSection({
       amountBs: '',
       paymentMethod: 'efectivo',
       paymentAccount: '',
-      description: kind === 'in' ? 'Ingreso de fondos a Caja Grande' : 'Entrega de fondos de Caja Grande',
+      description: `${kind === 'in' ? 'Ingreso' : 'Entrega'} de fondos ${box === 'PETTY_CASH' ? 'de Caja Chica' : 'de Caja Grande'}`,
       createdAt: now.toISOString().slice(0, 16),
       recipientName: '',
       recipientDocument: '',
@@ -4136,7 +4139,8 @@ function AccountingSection({
   };
 
   const getFundSnapshotForMovement = useCallback((movement) => {
-    const after = fundTimeline.byMovementId.get(String(movement?.id ?? '')) ?? null;
+    const timeline = movement?.cashBoxType === 'PETTY_CASH' ? pettyFundTimeline : fundTimeline;
+    const after = timeline.byMovementId.get(String(movement?.id ?? '')) ?? null;
     if (!after) return null;
     const amountBs = toNumber(movement?.amountBs);
     const isCash = normalizePaymentMethod(movement?.paymentMethod) === 'efectivo';
@@ -4148,7 +4152,7 @@ function AccountingSection({
       },
       after,
     };
-  }, [fundTimeline]);
+  }, [fundTimeline, pettyFundTimeline]);
 
   const printFundDeliveryReport = useCallback((movement, explicitSnapshot = null) => {
     if (!movement) return;
@@ -4170,7 +4174,7 @@ function AccountingSection({
     popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Entrega de fondos ${esc(movement?.receiptCode ?? '')}</title><style>
       @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.head{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid #173a70;padding-bottom:12px}.brand{color:#173a70;font-weight:900;letter-spacing:.08em}.head h1{margin:5px 0 2px;font-size:24px}.meta{text-align:right;line-height:1.6}.status{display:inline-block;border:1px solid ${approved?'#7ac598':'#f0b76b'};background:${approved?'#edf9f1':'#fff8ea'};color:${approved?'#14733b':'#9a5a00'};padding:5px 9px;border-radius:999px;font-weight:800}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.summary article{border:1px solid #d7e0eb;border-radius:8px;padding:11px}.summary small{display:block;color:#64748b;text-transform:uppercase;font-weight:700}.summary strong{display:block;margin-top:5px;font-size:19px;color:#173a70}.summary .delivery strong{color:#d84a16}.detail{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.detail div{border:1px solid #dfe6ef;padding:9px}.detail span{display:block;color:#64748b;font-size:9px;text-transform:uppercase;font-weight:700}.detail strong{display:block;margin-top:4px}.composition{margin-top:16px}.composition h2{font-size:14px;color:#173a70;margin:0 0 7px}.composition table{width:100%;border-collapse:collapse}.composition td{border:1px solid #dbe3ed;padding:7px}.money{text-align:right;font-weight:800}.signatures{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:62px}.signature{text-align:center;border-top:1px solid #475569;padding-top:7px;min-height:70px}.signature strong{display:block}.signature small{color:#64748b}.note{margin-top:16px;border:1px solid #dbe3ed;background:#f8fafc;padding:10px;min-height:55px}.toolbar{text-align:right;margin:12px 0}.toolbar button{border:0;border-radius:7px;background:#173a70;color:#fff;padding:9px 14px;font-weight:800}@media print{.toolbar{display:none}}</style></head><body>
       <div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
-      <header class="head"><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Entrega / rendición de fondos</h1><div>${esc(movement?.receiptCode ?? movement?.receipt ?? 'Sin número')}</div></div><div class="meta"><span class="status">${approved?'APROBADA':'PENDIENTE DE APROBACIÓN'}</span><br>${esc(formatDateTime(movement?.createdAt))}</div></header>
+      <header class="head"><div><div class="brand">EL COPETÍN · ${movement?.cashBoxType === 'PETTY_CASH' ? 'CAJA CHICA' : 'CAJA GRANDE'}</div><h1>Entrega / rendición de fondos</h1><div>${esc(movement?.receiptCode ?? movement?.receipt ?? 'Sin número')}</div></div><div class="meta"><span class="status">${approved?'APROBADA':'PENDIENTE DE APROBACIÓN'}</span><br>${esc(formatDateTime(movement?.createdAt))}</div></header>
       <section class="summary"><article><small>Fondo antes</small><strong>${esc(formatBs(before.totalBs))}</strong></article><article class="delivery"><small>Total entregado</small><strong>${esc(formatBs(amountBs))}</strong></article><article><small>Fondo restante</small><strong>${esc(formatBs(after.totalBs))}</strong></article></section>
       <section class="detail"><div><span>Medio entregado</span><strong>${esc(method)}</strong></div><div><span>Entregado a</span><strong>${esc(movement?.fundRecipientName || '-')}</strong></div><div><span>Documento / CI</span><strong>${esc(movement?.fundRecipientDocument || '-')}</strong></div><div><span>Registrado por</span><strong>${esc(getMovementUserLabel(movement))}</strong></div><div><span>Efectivo restante</span><strong>${esc(formatBs(after.cashBs))}</strong></div><div><span>Digital restante</span><strong>${esc(formatBs(after.digitalBs))}</strong></div></section>
       <section class="composition"><h2>Composición del fondo restante</h2><table><tbody>${accountRows || '<tr><td>Sin saldo restante</td><td class="money">Bs 0,00</td></tr>'}</tbody></table></section>
@@ -4204,17 +4208,17 @@ function AccountingSection({
     setFundActionError('');
     try {
       const before = {
-        totalBs: currentFundSummary.totalBs,
-        cashBs: currentFundSummary.cashBs,
-        digitalBs: currentFundSummary.digitalBs,
+        totalBs: selectedFundSummary.totalBs,
+        cashBs: selectedFundSummary.cashBs,
+        digitalBs: selectedFundSummary.digitalBs,
       };
       const created = await onCreateCashMovement?.({
         type: fundModal === 'in' ? 'ingreso' : 'egreso',
-        cashBoxType: 'BIG_CASH',
+        cashBoxType: fundBoxType,
         amountBs,
-        description: fundForm.description || (fundModal === 'in' ? 'Ingreso de fondos a Caja Grande' : 'Entrega de fondos de Caja Grande'),
+        description: fundForm.description || `${fundModal === 'in' ? 'Ingreso' : 'Entrega'} de fondos de ${fundBoxLabel}`,
         category: fundModal === 'in' ? 'ingreso_fondos' : 'entrega_fondos',
-        accountingTag: fundModal === 'in' ? 'big_cash_fund_in' : 'big_cash_fund_out',
+        accountingTag: `${fundBoxType === 'PETTY_CASH' ? 'petty_cash' : 'big_cash'}_fund_${fundModal}`,
         paymentMethod: fundForm.paymentMethod,
         paymentAccount: fundForm.paymentMethod === 'qr' ? fundForm.paymentAccount : '',
         responsible: currentUserName,
@@ -4228,7 +4232,7 @@ function AccountingSection({
       });
       const movement = created?.movement ?? (Array.isArray(created?.movements) ? created.movements[0] : null);
       if (fundModal === 'out' && movement) {
-        const timeline = buildBigCashFundTimeline([...sortedMovements, movement]);
+        const timeline = (fundBoxType === 'PETTY_CASH' ? buildPettyCashFundTimeline : buildBigCashFundTimeline)([...sortedMovements.filter(row => row.id !== movement.id), movement]);
         const after = timeline.byMovementId.get(String(movement.id));
         const signed = toNumber(movement.amountBs);
         const isCash = normalizePaymentMethod(movement.paymentMethod) === 'efectivo';
@@ -4237,9 +4241,9 @@ function AccountingSection({
           cashBs: Number((after.cashBs - (isCash ? signed : 0)).toFixed(2)),
           digitalBs: Number((after.digitalBs - (!isCash ? signed : 0)).toFixed(2)),
         } : before;
-        printFundDeliveryReport(movement, { before: movementBefore, after: after ?? currentFundSummary });
+        printFundDeliveryReport(movement, { before: movementBefore, after: after ?? selectedFundSummary });
       } else if (movement) {
-        await printCashReceipt(resolvePrintableCashMovementId(created, 'BIG_CASH'));
+        await printCashReceipt(resolvePrintableCashMovementId(created, fundBoxType));
       }
       setFundModal(null);
       setCashActionFeedback(fundModal === 'in' ? 'Ingreso de fondos registrado.' : 'Entrega registrada y reporte generado para firma y aprobación.');
@@ -5017,14 +5021,14 @@ function AccountingSection({
           <header>
             <div>
               <h3>Historial completo de Caja Chica</h3>
-              <small>Reposiciones, gastos, recibos anulados y movimientos vinculados.</small>
+              <small>Ingresos de fondos, gastos, recibos anulados y movimientos vinculados.</small>
             </div>
             <button type="button" className="orders-modal-close" onClick={() => setIsPettyHistoryOpen(false)}>x</button>
           </header>
 
           <div className="petty-history-summary-strip">
             <article>
-              <small>Reposiciones validas</small>
+              <small>Ingresos de fondos validas</small>
               <strong className="value-green">{formatBs(pettyHistorySummary.repositionsBs)}</strong>
             </article>
             <article>
@@ -5068,7 +5072,7 @@ function AccountingSection({
                 onChange={(event) => setPettyHistoryFilters((current) => ({ ...current, movement: event.target.value }))}
               >
                 <option value="all">Todos</option>
-                <option value="reposition">Reposiciones</option>
+                <option value="reposition">Ingresos de fondos</option>
                 <option value="expense">Gastos</option>
                 <option value="transport">Gastos de transporte</option>
                 <option value="voided">Anulados</option>
@@ -5138,7 +5142,7 @@ function AccountingSection({
                   <th>Tipo</th>
                   <th>Referencia</th>
                   <th>Monto</th>
-                  <th>Recibo</th>
+                  <th>Recibo</th><th>Fondo</th>
                 </tr>
               </thead>
               <tbody>
@@ -5168,12 +5172,12 @@ function AccountingSection({
                           {formatBs(movement.historyAmountBs)}
                         </b>
                       </td>
-                      <td>{renderReceiptActions(movement)}</td>
+                      <td>{renderReceiptActions(movement)}</td><td className="petty-fund-cell">{renderPettyFund(movement)}</td>
                     </tr>
                   );
                 }) : null}
                 {!pettyHistoryLoading && !pettyHistoryError && filteredPettyHistoryRows.length === 0 ? (
-                  <tr><td colSpan={8}><p className="status">No hay movimientos con esos filtros.</p></td></tr>
+                  <tr><td colSpan={9}><p className="status">No hay movimientos con esos filtros.</p></td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -6002,17 +6006,17 @@ function AccountingSection({
   const getPettyReportDefinition = async (section) => {
     const rawRows = await fetchAllPettySectionRows(section);
     const range = pettyWorkspaceRanges[section] ?? {};
-    if (section === 'expenses') return { title: 'Gastos de Caja Chica', subtitle: 'Gastos registrados según filtros actuales.', rows: rawRows,
-      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Proveedor / Destino', (r) => r.responsible || r.createdBy || '-'], ['Categoría', (r) => getPettyExpenseCategory(r).label], ['Comprobante', (r) => r.receipt || '-'], ['Registrado por', (r) => r.createdBy || r.responsible || '-'], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range };
+    if (section === 'expenses') return { title: 'Movimientos de Caja Chica', subtitle: 'Ingresos y egresos propios según filtros actuales.', rows: rawRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Proveedor / Destino', (r) => r.responsible || r.createdBy || '-'], ['Categoría', (r) => getPettyExpenseCategory(r).label], ['Comprobante', (r) => r.receipt || '-'], ['Registrado por', (r) => r.createdBy || r.responsible || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
     if (section === 'advances') return { title: 'Adelantos al personal', subtitle: 'Adelantos pagados desde Caja Chica.', rows: rawRows,
-      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Trabajador', (r) => r.responsible || '-'], ['CI', (r) => String(r.receipt || '').replace(/^CI\s*/i, '').trim() || '-'], ['Concepto', (r) => r.description || '-'], ['Registrado por', (r) => getPersonnelAdvanceRegisteredBy(r)], ['Monto', (r) => Math.abs(toNumber(r.amountBs))]], range };
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Trabajador', (r) => r.responsible || '-'], ['CI', (r) => String(r.receipt || '').replace(/^CI\s*/i, '').trim() || '-'], ['Concepto', (r) => r.description || '-'], ['Registrado por', (r) => getPersonnelAdvanceRegisteredBy(r)], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
     if (section === 'suppliers') {
       const rows = rawRows.map(normalizeSupplierLoanRow);
       return { title: 'Préstamos de proveedores', subtitle: 'Material cubierto por proveedor y control de pagos.', rows,
-        columns: [['Préstamo', (r) => r.loanCode || '-'], ['Fecha', (r) => formatDate(r.requestDate)], ['Proveedor', (r) => r.supplierName || '-'], ['Contrato', (r) => r.reference || '-'], ['Cliente', (r) => r.customerName || '-'], ['Ítems', (r) => r.itemSummary || '-'], ['Costo', (r) => toNumber(r.totalBs)], ['Estado', (r) => r.isPaid ? 'Liquidado' : 'Pendiente']], range };
+        columns: [['Préstamo', (r) => r.loanCode || '-'], ['Fecha', (r) => formatDate(r.requestDate)], ['Proveedor', (r) => r.supplierName || '-'], ['Contrato', (r) => r.reference || '-'], ['Cliente', (r) => r.customerName || '-'], ['Ítems', (r) => r.itemSummary || '-'], ['Costo', (r) => toNumber(r.totalBs)], ['Estado', (r) => r.isPaid ? 'Liquidado' : 'Pendiente'], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
     }
     return { title: 'Deudas de Caja Chica', subtitle: 'Deudas por pagar y reembolsos registrados.', rows: rawRows,
-      columns: [['Código', (r) => r.code || '-'], ['Fecha', (r) => formatDate(r.debtDate || r.createdAt)], ['Tipo', (r) => getCashDebtMeta(r).shortLabel], ['Detalle', (r) => r.description || '-'], ['Responsable', (r) => r.personName || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Pagado', (r) => toNumber(r.paidBs)], ['Saldo', (r) => toNumber(r.balanceBs ?? r.amountBs)], ['Estado', (r) => toNumber(r.balanceBs ?? r.amountBs) <= 0 ? 'Pagada' : 'Pendiente']], range };
+      columns: [['Código', (r) => r.code || '-'], ['Fecha', (r) => formatDate(r.debtDate || r.createdAt)], ['Tipo', (r) => getCashDebtMeta(r).shortLabel], ['Detalle', (r) => r.description || '-'], ['Responsable', (r) => r.personName || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Pagado', (r) => toNumber(r.paidBs)], ['Saldo', (r) => toNumber(r.balanceBs ?? r.amountBs)], ['Estado', (r) => toNumber(r.balanceBs ?? r.amountBs) <= 0 ? 'Pagada' : 'Pendiente'], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
   };
 
   const buildReportMatrix = (definition) => {
@@ -6203,6 +6207,91 @@ function AccountingSection({
       </div>
     );
   };
+
+  const renderFundActionModal = () => (
+    fundModal ? (
+          <div className="bigcash-report-backdrop fund-action-backdrop" onClick={() => !fundSubmitting && setFundModal(null)}>
+            <section className="fund-action-modal" onClick={(event) => event.stopPropagation()}>
+              <header className="fund-action-modal-head">
+                <div>
+                  <span>{fundBoxLabel.toUpperCase()} · FONDO OPERATIVO</span>
+                  <h2>{fundModal === 'in' ? 'Ingreso de fondos' : 'Entrega de fondos'}</h2>
+                  <p>{fundModal === 'in'
+                    ? 'Registra dinero que ingresa al fondo y conserva si fue recibido en efectivo o por una cuenta digital.'
+                    : 'Registra la salida real del fondo. Se generará un reporte para firma y aprobación.'}</p>
+                </div>
+                <button type="button" className="bigcash-report-close" onClick={() => setFundModal(null)} disabled={fundSubmitting}>×</button>
+              </header>
+
+              <div className="fund-current-summary">
+                <article><small>Fondo total</small><strong>{formatBs(selectedFundSummary.totalBs)}</strong></article>
+                <article><small>Efectivo</small><strong>{formatBs(selectedFundSummary.cashBs)}</strong></article>
+                <article><small>Digital</small><strong>{formatBs(selectedFundSummary.digitalBs)}</strong></article>
+              </div>
+
+              <form className="fund-action-form" onSubmit={handleSubmitFundAction}>
+                <label>
+                  <span>Monto (Bs)</span>
+                  <input type="number" min="0.01" step="0.01" value={fundForm.amountBs} onChange={(event) => setFundForm((current) => ({ ...current, amountBs: event.target.value }))} required />
+                </label>
+                <label>
+                  <span>Fecha y hora</span>
+                  <input type="datetime-local" value={fundForm.createdAt} onChange={(event) => setFundForm((current) => ({ ...current, createdAt: event.target.value }))} required />
+                </label>
+                <label>
+                  <span>Medio</span>
+                  <select value={fundForm.paymentMethod} onChange={(event) => setFundForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="qr">QR / digital</option>
+                  </select>
+                </label>
+                {fundForm.paymentMethod === 'qr' ? <label>
+                  <span>Cuenta digital</span>
+                  <select value={fundForm.paymentAccount} onChange={(event) => setFundForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
+                    <option value="">Seleccionar cuenta</option>
+                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                  </select>
+                </label> : null}
+                <label className="fund-form-wide">
+                  <span>Concepto</span>
+                  <input value={fundForm.description} onChange={(event) => setFundForm((current) => ({ ...current, description: event.target.value }))} required />
+                </label>
+                {fundModal === 'out' ? <>
+                  <label>
+                    <span>Recibido por</span>
+                    <input value={fundForm.recipientName} onChange={(event) => setFundForm((current) => ({ ...current, recipientName: event.target.value }))} placeholder="Nombre completo" required />
+                  </label>
+                  <label>
+                    <span>CI / documento</span>
+                    <input value={fundForm.recipientDocument} onChange={(event) => setFundForm((current) => ({ ...current, recipientDocument: event.target.value }))} placeholder="Opcional" />
+                  </label>
+                </> : null}
+                <label className="fund-form-wide">
+                  <span>Observación</span>
+                  <textarea rows={3} value={fundForm.notes} onChange={(event) => setFundForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Detalle adicional del movimiento" />
+                </label>
+                {fundActionError ? <p className="fund-action-error">{fundActionError}</p> : null}
+                <footer className="fund-action-form-actions">
+                  <button type="button" className="ghost-button" onClick={() => setFundModal(null)} disabled={fundSubmitting}>Cancelar</button>
+                  <button type="submit" className={`fund-submit-button ${fundModal === 'in' ? 'income' : 'delivery'}`} disabled={fundSubmitting}>{fundSubmitting ? 'Registrando...' : fundModal === 'in' ? 'Registrar ingreso' : 'Registrar entrega y generar reporte'}</button>
+                </footer>
+              </form>
+
+              {fundModal === 'out' && modalPendingFundDeliveries.length > 0 ? <section className="fund-pending-deliveries">
+                <header><div><span>CONTROL</span><h3>Entregas pendientes de aprobación</h3></div><b>{modalPendingFundDeliveries.length}</b></header>
+                <div>
+                  {modalPendingFundDeliveries.slice(0, 6).map((movement) => <article key={movement.id}>
+                    <span><strong>{movement.receiptCode || movement.receipt || 'Entrega'}</strong><small>{formatDateTime(movement.createdAt)} · {getPaymentMethodLabel(movement)}</small></span>
+                    <b>{formatBs(Math.abs(toNumber(movement.amountBs)))}</b>
+                    <button type="button" onClick={() => printFundDeliveryReport(movement)}>Imprimir</button>
+                    <button type="button" className="approve" onClick={() => void handleApproveFundDelivery(movement)} disabled={fundApprovalBusyId === String(movement.id)}>{fundApprovalBusyId === String(movement.id) ? 'Aprobando...' : 'Aprobar'}</button>
+                  </article>)}
+                </div>
+              </section> : null}
+            </section>
+          </div>
+        ) : null
+  );
 
   if (activeModule === 'contabilidad_caja_grande') {
     return (
@@ -6722,14 +6811,10 @@ function AccountingSection({
               <button
                 type="button"
                 className="accounting-overview-secondary danger"
-                onClick={() => openCashAction('transfer', {
-                  description: 'Reposicion a caja chica',
-                  category: 'reposicion_caja_chica',
-                  responsible: currentUserName,
-                })}
+                onClick={() => openFundAction('out')}
               >
                 <MiniIcon kind="down" />
-                <span>Egreso a caja chica</span>
+                <span>Egreso de fondos</span>
               </button>
             </div>
           </div>
@@ -8000,88 +8085,7 @@ function AccountingSection({
           </div>
         ) : null}
 
-        {fundModal ? (
-          <div className="bigcash-report-backdrop fund-action-backdrop" onClick={() => !fundSubmitting && setFundModal(null)}>
-            <section className="fund-action-modal" onClick={(event) => event.stopPropagation()}>
-              <header className="fund-action-modal-head">
-                <div>
-                  <span>CAJA GRANDE · FONDO OPERATIVO</span>
-                  <h2>{fundModal === 'in' ? 'Ingreso de fondos' : 'Entrega de fondos'}</h2>
-                  <p>{fundModal === 'in'
-                    ? 'Registra dinero que ingresa al fondo y conserva si fue recibido en efectivo o por una cuenta digital.'
-                    : 'Registra la salida real del fondo. Se generará un reporte para firma y aprobación.'}</p>
-                </div>
-                <button type="button" className="bigcash-report-close" onClick={() => setFundModal(null)} disabled={fundSubmitting}>×</button>
-              </header>
-
-              <div className="fund-current-summary">
-                <article><small>Fondo total</small><strong>{formatBs(currentFundSummary.totalBs)}</strong></article>
-                <article><small>Efectivo</small><strong>{formatBs(currentFundSummary.cashBs)}</strong></article>
-                <article><small>Digital</small><strong>{formatBs(currentFundSummary.digitalBs)}</strong></article>
-              </div>
-
-              <form className="fund-action-form" onSubmit={handleSubmitFundAction}>
-                <label>
-                  <span>Monto (Bs)</span>
-                  <input type="number" min="0.01" step="0.01" value={fundForm.amountBs} onChange={(event) => setFundForm((current) => ({ ...current, amountBs: event.target.value }))} required />
-                </label>
-                <label>
-                  <span>Fecha y hora</span>
-                  <input type="datetime-local" value={fundForm.createdAt} onChange={(event) => setFundForm((current) => ({ ...current, createdAt: event.target.value }))} required />
-                </label>
-                <label>
-                  <span>Medio</span>
-                  <select value={fundForm.paymentMethod} onChange={(event) => setFundForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
-                    <option value="efectivo">Efectivo</option>
-                    <option value="qr">QR / digital</option>
-                  </select>
-                </label>
-                {fundForm.paymentMethod === 'qr' ? <label>
-                  <span>Cuenta digital</span>
-                  <select value={fundForm.paymentAccount} onChange={(event) => setFundForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
-                    <option value="">Seleccionar cuenta</option>
-                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
-                  </select>
-                </label> : null}
-                <label className="fund-form-wide">
-                  <span>Concepto</span>
-                  <input value={fundForm.description} onChange={(event) => setFundForm((current) => ({ ...current, description: event.target.value }))} required />
-                </label>
-                {fundModal === 'out' ? <>
-                  <label>
-                    <span>Recibido por</span>
-                    <input value={fundForm.recipientName} onChange={(event) => setFundForm((current) => ({ ...current, recipientName: event.target.value }))} placeholder="Nombre completo" required />
-                  </label>
-                  <label>
-                    <span>CI / documento</span>
-                    <input value={fundForm.recipientDocument} onChange={(event) => setFundForm((current) => ({ ...current, recipientDocument: event.target.value }))} placeholder="Opcional" />
-                  </label>
-                </> : null}
-                <label className="fund-form-wide">
-                  <span>Observación</span>
-                  <textarea rows={3} value={fundForm.notes} onChange={(event) => setFundForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Detalle adicional del movimiento" />
-                </label>
-                {fundActionError ? <p className="fund-action-error">{fundActionError}</p> : null}
-                <footer className="fund-action-form-actions">
-                  <button type="button" className="ghost-button" onClick={() => setFundModal(null)} disabled={fundSubmitting}>Cancelar</button>
-                  <button type="submit" className={`fund-submit-button ${fundModal === 'in' ? 'income' : 'delivery'}`} disabled={fundSubmitting}>{fundSubmitting ? 'Registrando...' : fundModal === 'in' ? 'Registrar ingreso' : 'Registrar entrega y generar reporte'}</button>
-                </footer>
-              </form>
-
-              {fundModal === 'out' && pendingFundDeliveries.length > 0 ? <section className="fund-pending-deliveries">
-                <header><div><span>CONTROL</span><h3>Entregas pendientes de aprobación</h3></div><b>{pendingFundDeliveries.length}</b></header>
-                <div>
-                  {pendingFundDeliveries.slice(0, 6).map((movement) => <article key={movement.id}>
-                    <span><strong>{movement.receiptCode || movement.receipt || 'Entrega'}</strong><small>{formatDateTime(movement.createdAt)} · {getPaymentMethodLabel(movement)}</small></span>
-                    <b>{formatBs(Math.abs(toNumber(movement.amountBs)))}</b>
-                    <button type="button" onClick={() => printFundDeliveryReport(movement)}>Imprimir</button>
-                    <button type="button" className="approve" onClick={() => void handleApproveFundDelivery(movement)} disabled={fundApprovalBusyId === String(movement.id)}>{fundApprovalBusyId === String(movement.id) ? 'Aprobando...' : 'Aprobar'}</button>
-                  </article>)}
-                </div>
-              </section> : null}
-            </section>
-          </div>
-        ) : null}
+        {renderFundActionModal()}
 
         {vipTopUpModalOpen ? (
           <div className="bigcash-report-backdrop" onClick={() => !vipTopUpSubmitting && setVipTopUpModalOpen(false)}>
@@ -8367,10 +8371,12 @@ function AccountingSection({
         <header className="accounting-bigcash-head pettycash-head">
           <div>
             <h2>Caja Chica</h2>
-            <p>Control diario de gastos, adelantos, proveedores y deudas pagadas desde Caja Grande.</p>
-            <span className="accounting-source-badge"><i />Fondo recibido únicamente desde Caja Grande</span>
+            <p>Control independiente de ingresos, egresos, gastos y adelantos.</p>
+            <span className="accounting-source-badge"><i />Fondo propio de Caja Chica</span>
           </div>
           <div className="accounting-overview-actions">
+            <button type="button" className="accounting-overview-primary" onClick={() => openFundAction('in', 'PETTY_CASH')}>Ingreso de fondos</button>
+            <button type="button" className="accounting-overview-secondary danger" onClick={() => openFundAction('out', 'PETTY_CASH')}>Egreso de fondos</button>
             <label className="accounting-date-control petty-date-control">
               <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
               <span className="date-icon"><MiniIcon kind="calendar" /></span>
@@ -8422,7 +8428,7 @@ function AccountingSection({
               <div>
                 <strong>ACUMULADO HASTA LA FECHA</strong>
                 <h3 className="value-blue">{formatBs(pettyReceivedToDateBs)}</h3>
-                <p>Total recibido desde Caja Grande</p>
+                <p>Ingresos propios de Caja Chica</p>
               </div>
             </div>
             <div className="petty-money-context">
@@ -8434,7 +8440,7 @@ function AccountingSection({
 
         <nav className="petty-workspace-tabs" aria-label="Secciones de Caja Chica">
           {[
-            ['expenses', 'Gastos', pettySectorPages.expenses.total],
+            ['expenses', 'Movimientos', pettySectorPages.expenses.total],
             ['advances', 'Adelantos', pettySectorPages.advances.total],
             ['suppliers', 'Proveedores', pettySectorPages.suppliers.total],
             ['debts', 'Deudas', pettySectorPages.debts.total],
@@ -8453,7 +8459,7 @@ function AccountingSection({
         <section className="petty-main-grid">
           <article className="bigcash-card petty-expenses-card" hidden={pettyWorkspaceTab !== 'expenses'}>
             <header className="petty-table-head">
-              <h3>GASTOS DE CAJA CHICA</h3>
+              <h3>MOVIMIENTOS DE CAJA CHICA</h3>
               <div className="petty-action-pair">
                 <button
                   type="button"
@@ -8519,7 +8525,7 @@ function AccountingSection({
                     <th>Monto</th>
                     <th>Comprobante</th>
                     <th>Registrado por</th>
-                    <th />
+                    <th /><th>Fondo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -8557,15 +8563,15 @@ function AccountingSection({
                         </td>
                         <td>{movement.responsible || movement.createdBy || 'Varios'}</td>
                         <td><span className={`petty-category ${category.className}`}>{category.label}</span></td>
-                        <td>{formatBs(Math.abs(movement.amountBs))}</td>
+                        <td className={movement.amountBs > 0 ? 'value-green' : 'value-orange'}>{movement.amountBs > 0 ? '+ ' : '- '}{formatBs(Math.abs(movement.amountBs))}</td>
                         <td>{movement.receipt || '-'}</td>
                         <td>{registeredBy}</td>
-                        <td>{renderReceiptActions(movement)}</td>
+                        <td>{renderReceiptActions(movement)}</td><td className="petty-fund-cell">{renderPettyFund(movement)}</td>
                       </tr>
                     );
                   })}
-                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={8}><p className="status">Sin gastos registrados.</p></td></tr> : null}
-                  {pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={8}><p className="status">Cargando gastos...</p></td></tr> : null}
+                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={9}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
+                  {pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={9}><p className="status">Cargando gastos...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -8621,7 +8627,7 @@ function AccountingSection({
                     <th>CI</th>
                     <th>Monto</th>
                     <th>Registrado por</th>
-                    <th>Recibo</th>
+                    <th>Recibo</th><th>Fondo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -8641,14 +8647,14 @@ function AccountingSection({
                         <td>{ci}</td>
                         <td><strong className="value-orange">- {formatBs(Math.abs(toNumber(movement.amountBs)))}</strong></td>
                         <td>{getPersonnelAdvanceRegisteredBy(movement)}</td>
-                        <td>{renderReceiptActions(movement)}</td>
+                        <td>{renderReceiptActions(movement)}</td><td className="petty-fund-cell">{renderPettyFund(movement)}</td>
                       </tr>
                     );
                   })}
                   {!pettySectorPages.advances.loading && pagedPersonnelAdvanceRows.length === 0 ? (
-                    <tr><td colSpan={6}><p className="status">Sin adelantos registrados todavia.</p></td></tr>
+                    <tr><td colSpan={7}><p className="status">Sin adelantos registrados todavia.</p></td></tr>
                   ) : null}
-                  {pettySectorPages.advances.loading && pagedPersonnelAdvanceRows.length === 0 ? <tr><td colSpan={6}><p className="status">Cargando adelantos...</p></td></tr> : null}
+                  {pettySectorPages.advances.loading && pagedPersonnelAdvanceRows.length === 0 ? <tr><td colSpan={7}><p className="status">Cargando adelantos...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -8699,7 +8705,7 @@ function AccountingSection({
                     <th>Items</th>
                     <th>Costo</th>
                     <th>Estado</th>
-                    <th />
+                    <th /><th>Fondo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -8743,12 +8749,13 @@ function AccountingSection({
                           </button>
                         ) : <span className="cash-receipt-muted">Pagado</span>}
                       </td>
+                      <td className="petty-fund-cell">{renderPettyFund(loan)}</td>
                     </tr>
                   ))}
                   {!pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? (
-                    <tr><td colSpan={8}><p className="status">Sin prestamos de proveedores registrados.</p></td></tr>
+                    <tr><td colSpan={9}><p className="status">Sin prestamos de proveedores registrados.</p></td></tr>
                   ) : null}
-                  {pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? <tr><td colSpan={8}><p className="status">Cargando proveedores...</p></td></tr> : null}
+                  {pettySectorPages.suppliers.loading && pagedSupplierLoanRows.length === 0 ? <tr><td colSpan={9}><p className="status">Cargando proveedores...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -8792,7 +8799,7 @@ function AccountingSection({
                     <th>Pagado</th>
                     <th>Saldo</th>
                     <th>Estado</th>
-                    <th />
+                    <th /><th>Fondo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -8856,11 +8863,12 @@ function AccountingSection({
                             ) : null}
                           </div>
                         </td>
+                        <td className="petty-fund-cell">{renderPettyFund(debt)}</td>
                       </tr>
                     );
                   })}
-                  {!pettySectorPages.debts.loading && pagedCashDebts.length === 0 ? <tr><td colSpan={9}><p className="status">Sin deudas registradas.</p></td></tr> : null}
-                  {pettySectorPages.debts.loading && pagedCashDebts.length === 0 ? <tr><td colSpan={9}><p className="status">Cargando deudas...</p></td></tr> : null}
+                  {!pettySectorPages.debts.loading && pagedCashDebts.length === 0 ? <tr><td colSpan={10}><p className="status">Sin deudas registradas.</p></td></tr> : null}
+                  {pettySectorPages.debts.loading && pagedCashDebts.length === 0 ? <tr><td colSpan={10}><p className="status">Cargando deudas...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -8872,21 +8880,22 @@ function AccountingSection({
 
           <aside className="petty-side">
             <article className="petty-side-card petty-repositions">
-              <h3>ÚLTIMOS INGRESOS DESDE CAJA GRANDE</h3>
+              <h3>ÚLTIMOS INGRESOS DE CAJA CHICA</h3>
               <div className="petty-reposition-list">
                 {pettyTransfersRows.slice(0, 4).map((movement) => (
                   <div key={movement.id}>
                     <span>{formatDate(movement.createdAt)}</span>
-                    <strong>Reposición</strong>
+                    <strong>Ingreso de fondos</strong>
                     <b>{formatBs(Math.abs(movement.amountBs))}</b>
                   </div>
                 ))}
-                {pettyTransfersRows.length === 0 ? <p className="status">Sin reposiciones registradas.</p> : null}
+                {pettyTransfersRows.length === 0 ? <p className="status">Sin ingresos registrados.</p> : null}
               </div>
               <button type="button" className="section-link blue" onClick={() => openPettyHistory('reposition')}>Ver todas</button>
             </article>
           </aside>
         </section>
+        {renderFundActionModal()}
         {renderCashModals()}
       </section>
     );

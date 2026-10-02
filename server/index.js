@@ -15,6 +15,7 @@ import lincolnRoutes from './routes/lincoln.js';
 import { getDatabaseMode, isPostgresMode } from './database/mode.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
 import { runLegacyGuaranteeRefundRepair } from './migrations/repairLegacyGuaranteeRefunds.js';
+import { runPettyCashSeparation } from './migrations/separatePettyCash.js';
 import { ensureLincolnStateStore, getLincolnStateStoreInfo } from './storage/lincolnStateStore.js';
 import {
   ensureProductUploadDirectory,
@@ -290,6 +291,7 @@ app.use((error, _req, res, _next) => {
 const start = async () => {
   await ensureStateStore();
   await runLegacyGuaranteeRefundRepair();
+  await runPettyCashSeparation();
   await ensureLincolnStateStore();
   await ensureProductUploadDirectory();
   await ensureEconomicReceiptUploadDirectory();

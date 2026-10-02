@@ -18,6 +18,7 @@ import { buildContractCollectionGroups } from '../../src/utils/contractCollectio
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
 import { getBigCashFundMovements } from '../../src/utils/dailyCashReport.js';
+import { buildPettyCashFundTimeline, assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
 import {
   buildInventoryKardexRows,
   filterInventoryKardexMovements,
@@ -141,7 +142,7 @@ const summarizeAccountingMovement = (movement = {}) => {
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
     'fundReportStatus', 'fundRecipientName', 'fundRecipientDocument',
     'fundApprovedAt', 'fundApprovedBy', 'fundApprovalNotes',
-    'accountingPeriodId', 'accountingPeriodStatus',
+    'accountingPeriodId', 'accountingPeriodStatus', 'fundBalanceBs',
   ];
   return Object.fromEntries(fields
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
@@ -2006,10 +2007,12 @@ const findDirectOperation = (state, clientOperationId) => {
     .find((movement) => String(movement?.clientOperationId ?? '') === operationId) ?? null;
 };
 
-const getDirectCurrentCashSession = (state) => (
+const getDirectCurrentCashSession = (state, cashBoxType = null) => (
   (Array.isArray(state?.cashSessions) ? state.cashSessions : [])
     .find((session) => (
       !isArchivedAccountingRecord(session)
+      && (!cashBoxType || session.cashBoxType === cashBoxType
+        || (!session.cashBoxType && !state.settings?.accounting?.pettyResetAt))
       && String(session?.status ?? '').toLowerCase() === 'open'
     )) ?? null
 );
@@ -2048,6 +2051,7 @@ const reconstructDirectCashSessionFromMovements = (state) => {
   return {
     id: sessionId,
     status: 'open',
+    cashBoxType: 'PETTY_CASH',
     openingAmountBs: 0,
     openingBigCashBs: 0,
     openingPettyCashBs: 0,
@@ -4345,6 +4349,7 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
   try {
     const rawPayload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const payload = normalizeDirectCashMovementPayload(rawPayload);
+    assertIndependentCashMovement(payload);
     const amountBs = directMoney(payload.amountBs);
 
     if (amountBs <= 0) {
@@ -4379,7 +4384,7 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
         return state;
       }
 
-      let activeSession = getDirectCurrentCashSession(state);
+      let activeSession = getDirectCurrentCashSession(state, payload.cashBoxType === 'PETTY_CASH' ? 'PETTY_CASH' : null);
       if (!activeSession) {
         const recoveredSession = reconstructDirectCashSessionFromMovements(state);
         if (recoveredSession) {
@@ -4387,16 +4392,17 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
           activeSession = recoveredSession;
         }
       }
-      if (!activeSession && payload.type === 'transferencia') {
+      if (!activeSession && payload.cashBoxType === 'PETTY_CASH' && payload.type === 'ingreso') {
         activeSession = {
           id: directId('cash'),
           status: 'open',
+          cashBoxType: 'PETTY_CASH',
           openingAmountBs: 0,
           openingBigCashBs: 0,
           openingPettyCashBs: 0,
           openedBy: payload.createdBy,
           openedAt: new Date().toISOString(),
-          openNotes: 'Apertura automatica por reposicion a Caja Chica.',
+          openNotes: 'Apertura independiente por ingreso de fondos a Caja Chica.',
           accountingPeriodId: state?.settings?.accounting?.currentPeriodId ?? null,
           accountingPeriodStatus: 'current',
           treasuryAccounts: [],
@@ -4464,6 +4470,17 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
           }
           if (amountBs > pettyCashBalance) {
             const error = new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${pettyCashBalance.toFixed(2)}.`);
+            error.statusCode = 400;
+            throw error;
+          }
+          const method = directPaymentMethod(payload.paymentMethod);
+          const account = directPaymentAccount(method, payload.paymentAccount);
+          const available = state.cashMovements.filter(row => !isArchivedAccountingRecord(row) && !row.deletedAt && !row.voidedAt && row.receiptStatus !== 'anulado'
+            && row.cashBoxType === 'PETTY_CASH' && directPaymentMethod(row.paymentMethod) === method
+            && (method !== 'qr' || directPaymentAccount(method, row.paymentAccount) === account))
+            .reduce((sum, row) => sum + Number(row.amountBs || 0), 0);
+          if (amountBs > available + 0.0001) {
+            const error = new Error(`El medio seleccionado de Caja Chica no tiene fondo suficiente. Disponible: Bs ${available.toFixed(2)}.`);
             error.statusCode = 400;
             throw error;
           }
@@ -6968,6 +6985,7 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
     sortedMovements.slice(0, recentLimit).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
     allMovements.filter(isGuaranteeRefundMovement).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
     // El fondo necesita todo su flujo, incluso recibos retroactivos fuera del límite reciente.
+    allMovements.filter(row => row.cashBoxType === 'PETTY_CASH' && !isArchivedAccountingRecord(row)).forEach(row => selectedMovements.set(String(row.id), row));
     getBigCashFundMovements(allMovements).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
 
     const contractRows = Array.isArray(state.contracts) ? state.contracts : [];
@@ -7138,6 +7156,8 @@ router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH')
       .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
       .map(summarizeAccountingMovement);
+    const timeline = buildPettyCashFundTimeline(movements);
+    movements.forEach(row => { row.fundBalanceBs = timeline.byMovementId.get(String(row.id))?.totalBs ?? null; });
 
     await sendJsonPayload(req, res, {
       revision: snapshot?.revision ?? null,
@@ -7213,24 +7233,25 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
       // pero summarizeDirectCashState ya los excluye de saldos y totales.
       .filter((movement) => !movement?.accountingArchivedAt && movement?.accountingPeriodStatus !== 'archived')
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
+    const pettyTimeline = buildPettyCashFundTimeline(pettyMovements);
+    pettyMovements.forEach(row => { row.fundBalanceBs = pettyTimeline.byMovementId.get(String(row.id))?.totalBs ?? null; });
+    const hiddenLoans = new Set(state.settings?.accounting?.pettyHiddenSupplierLoanIds ?? []);
+    const withPaymentFund = row => {
+      const payment = pettyMovements.filter(m => m.sourceId === row.id || m.id === row.cashMovementId).sort((a,b) => Number(b.cashLedgerSequence) - Number(a.cashLedgerSequence))[0];
+      return { ...row, fundBalanceBs: payment?.fundBalanceBs ?? null };
+    };
     let rows;
     if (sector === 'suppliers') {
-      rows = (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).filter((loan) => !loan?.deletedAt);
+      rows = (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).filter((loan) => !loan?.deletedAt && !hiddenLoans.has(String(loan.id))).map(withPaymentFund);
     } else if (sector === 'debts') {
       rows = (Array.isArray(state.cashDebts) ? state.cashDebts : [])
-        .filter((debt) => !isArchivedAccountingRecord(debt));
+        .filter((debt) => !isArchivedAccountingRecord(debt) && (debt.cashBoxType || 'PETTY_CASH') === 'PETTY_CASH').map(withPaymentFund);
     } else if (sector === 'advances') {
       rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
     } else if (sector === 'expenses') {
-      rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && !isAdvance(movement));
+      rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) !== 0 && !movement?.isInternalTransfer && !isAdvance(movement));
     } else {
-      rows = pettyMovements.filter((movement) => {
-        const amount = Number(movement?.amountBs ?? 0);
-        const type = String(movement?.type ?? '').toLowerCase();
-        return (type === 'apertura' && amount > 0)
-          || (movement?.isInternalTransfer && amount > 0)
-          || (!movement?.isInternalTransfer && amount < 0);
-      });
+      rows = pettyMovements.filter(movement => Number(movement.amountBs) !== 0);
     }
 
     rows = rows
@@ -7240,7 +7261,7 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
         if (dateTo && rowDate > dateTo) return false;
         if (sector === 'history') {
           const amount = Number(row?.amountBs ?? 0);
-          const reposition = (String(row?.type ?? '').toLowerCase() === 'apertura' || row?.isInternalTransfer) && amount > 0;
+          const reposition = amount > 0;
           const expense = !row?.isInternalTransfer && amount < 0;
           const transport = Number(row?.transportExpenseBs ?? 0) > 0
             || String(row?.accountingTag ?? '') === 'transport_expense'
@@ -7264,7 +7285,7 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
           return result;
         }
         const amount = Number(movement?.amountBs ?? 0);
-        if ((String(movement?.type ?? '').toLowerCase() === 'apertura' || movement?.isInternalTransfer) && amount > 0) result.repositionsBs += amount;
+        if (amount > 0) result.repositionsBs += amount;
         if (!movement?.isInternalTransfer && amount < 0) result.expensesBs += Math.abs(amount);
         result.netBs = Math.round((result.repositionsBs - result.expensesBs) * 100) / 100;
         return result;

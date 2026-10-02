@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { preserveCashLedgerOrder } from '../../src/utils/cashLedgerOrder.js';
+import { assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -323,6 +324,10 @@ const preserveFullCommercialRecords = (currentState, nextState) => {
 
 const assertSafeStateTransition = (currentState, nextState) => {
   if (!currentState || !nextState) return;
+  const knownCashIds = new Set((currentState.cashMovements || []).map(row => String(row.id)));
+  for (const row of nextState.cashMovements || []) {
+    if (!knownCashIds.has(String(row.id))) assertIndependentCashMovement(row);
+  }
 
   const hasDestructiveResetApproval = hasRecentDestructiveResetLog(nextState);
 

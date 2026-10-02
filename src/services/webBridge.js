@@ -3,6 +3,7 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validatePro
 import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
 import { resolveEconomicReceiptDisplayTimestamp } from '../utils/economicReceiptTimestamp.js';
+import { assertIndependentCashMovement, buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
@@ -3739,6 +3740,8 @@ const transaction = (mutator) => {
   const clone = deepClone(state);
   const result = mutator(clone);
   const toPersist = result ?? clone;
+  const knownCashIds = new Set((state.cashMovements ?? []).map(row => String(row.id)));
+  (toPersist.cashMovements ?? []).filter(row => !knownCashIds.has(String(row.id))).forEach(assertIndependentCashMovement);
   writeState(toPersist);
   return toPersist;
 };
@@ -18688,6 +18691,7 @@ const createWebBridge = () => ({
       return updatedSession;
     },
     createManualMovement: async (payload) => {
+      assertIndependentCashMovement(payload);
       const movementType = String(payload?.type ?? '').trim();
       const amountRaw = toNumber(payload?.amountBs ?? 0, 'monto');
       const description = String(payload?.description ?? '').trim();
@@ -18704,9 +18708,6 @@ const createWebBridge = () => ({
       const accountingTag = String(payload?.accountingTag ?? '').trim();
       const transportExpenseBs = Math.max(0, Number(payload?.transportExpenseBs ?? 0));
       const cashBoxType = inferCashBoxType({ movementType, category, cashBoxType: payload?.cashBoxType });
-      const isPettyCashRepositionIncome = movementType === 'ingreso'
-        && cashBoxType === CASH_BOX_TYPES.PETTY_CASH
-        && normalizeCashCategory(category) === 'reposicion_caja_chica';
 
       if (!['ingreso', 'egreso', 'transferencia'].includes(movementType)) {
         throw new Error('Tipo de movimiento invalido. Usa ingreso, egreso o transferencia.');
@@ -18721,7 +18722,7 @@ const createWebBridge = () => ({
       let createdMovement = null;
       transaction((state) => {
         let activeSession = getActiveSession(state);
-        if (!activeSession && (movementType === 'transferencia' || isPettyCashRepositionIncome)) {
+        if (!activeSession && movementType === 'ingreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH) {
           activeSession = {
             id: makeId('cash'),
             status: 'open',
@@ -19485,6 +19486,7 @@ const createWebBridge = () => ({
       const providedMovements = Array.isArray(payload?.movements)
         ? payload.movements.filter((movement) => movement && typeof movement === 'object')
         : [];
+      const pettyTimeline = buildPettyCashFundTimeline(state.cashMovements);
       const movementSource = providedMovements.length > 0 ? providedMovements : state.cashMovements;
       const movements = movementSource
         .filter((movement) => isInRange(movement.createdAt, fromDate, toDate))
@@ -19534,6 +19536,7 @@ const createWebBridge = () => ({
               <td class="money income">${!voided && amountBs > 0 ? formatBs(amountBs) : '-'}</td>
               <td class="money expense">${!voided && amountBs < 0 ? formatBs(Math.abs(amountBs)) : '-'}</td>
               <td>${escapeHtml(movement.responsible || movement.createdBy || '-')}</td>
+              ${requestedCashBoxType === CASH_BOX_TYPES.PETTY_CASH ? `<td>${voided || movement.deletedAt ? '—' : formatBs(movement.fundBalanceBs ?? pettyTimeline.byMovementId.get(String(movement.id))?.totalBs ?? 0)}</td>` : ''}
             </tr>`;
           },
         )
@@ -19598,8 +19601,8 @@ const createWebBridge = () => ({
               <article><small>Anulados</small><strong>${movements.filter(isVoidedCashMovement).length}</strong></article>
             </section>
             <table>
-              <thead><tr><th style="width:4%">N.</th><th style="width:13%">Fecha</th><th style="width:10%">Movimiento</th><th style="width:26%">Concepto</th><th style="width:14%">Referencia</th><th style="width:10%">Ingreso</th><th style="width:10%">Egreso</th><th style="width:13%">Responsable</th></tr></thead>
-              <tbody>${rows || '<tr><td colspan="8">Sin movimientos en el periodo seleccionado.</td></tr>'}</tbody>
+              <thead><tr><th>N.</th><th>Fecha</th><th>Movimiento</th><th>Concepto</th><th>Referencia</th><th>Ingreso</th><th>Egreso</th><th>Responsable</th>${requestedCashBoxType === CASH_BOX_TYPES.PETTY_CASH ? '<th>Fondo</th>' : ''}</tr></thead>
+              <tbody>${rows || `<tr><td colspan="${requestedCashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 9 : 8}">Sin movimientos en el periodo seleccionado.</td></tr>`}</tbody>
             </table>
             <footer><span>Documento generado por El Copetin Administrativo</span><span>${escapeHtml(cashBoxLabel)} | ${escapeHtml(periodLabel)}</span></footer>
             <div class="actions"><button type="button" onclick="window.print()">Imprimir / guardar PDF</button></div>

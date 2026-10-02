@@ -66916,13 +66916,22 @@ body:has(.accounting-bigcash-view) .workspace {
 }
 
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(1) { width: 7.6rem; }
-.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(2) { width: 30%; }
+.accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(2) { width: 23%; }
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(3) { width: 13%; }
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(4) { width: 8.5rem; }
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(5) { width: 7rem; }
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(6) { width: 8rem; }
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(7) { width: 9rem; }
 .accounting-pettycash-view .petty-expenses-card .petty-table th:nth-child(8) { width: 5rem; }
+.accounting-pettycash-view .petty-table th:last-child { width: 8rem; text-align: right; }
+.accounting-pettycash-view .petty-table td.petty-fund-cell,
+.petty-history-modal-table td.petty-fund-cell {
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+  color: #173a70;
+  border-left: 2px solid #dbe4ef;
+}
 
 .accounting-pettycash-view .petty-table td:nth-last-child(1),
 .accounting-pettycash-view .petty-table th:nth-last-child(1) {

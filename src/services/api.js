@@ -1,4 +1,5 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
+import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge.js';
 import { buildContractCollectionGroups } from '../utils/contractCollectionGroups.js';
 import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex.js';
@@ -4286,13 +4287,15 @@ export const api = {
           rows = await callBridge('cash', 'listDebts', false);
         } else {
           const movements = await callBridge('cash', 'listMovements', false);
-          const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
+          const timeline = buildPettyCashFundTimeline(movements);
+          const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && !movement.accountingArchivedAt && movement.accountingPeriodStatus !== 'archived')
+            .map(row => ({ ...row, fundBalanceBs: timeline.byMovementId.get(String(row.id))?.totalBs ?? null }));
           const isAdvance = (movement) => String(movement?.category ?? '').toLowerCase().includes('adelanto')
             || String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance';
           if (normalizedSector === 'advances') {
             rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
           } else if (normalizedSector === 'expenses') {
-            rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && !isAdvance(movement));
+            rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) !== 0 && !movement?.isInternalTransfer && !isAdvance(movement));
           } else {
             rows = pettyMovements;
           }
