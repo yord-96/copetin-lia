@@ -84,13 +84,13 @@ test('reportes vacíos y texto con símbolos no generan fórmulas ni HTML ejecut
   assert.match(html, /&lt;script&gt;/);
 });
 
-test('fondo ordena recibos retroactivos por fecha comercial', () => {
+test('fondo conserva el orden de registro aunque se retroceda la fecha del recibo', () => {
   const base = { cashBoxType: 'BIG_CASH', paymentMethod: 'efectivo' };
   const timeline = buildBigCashFundTimeline([
     { ...base, id: 'fund', amountBs: 5000, accountingTag: 'big_cash_fund_in', createdAt: '2026-09-30T16:00:00Z' },
     { ...base, id: 'later', amountBs: 100, createdAt: '2026-10-01T16:00:00Z' },
     { ...base, id: 'refund', amountBs: -150, createdAt: '2026-10-02T04:54:36Z', receiptIssuedAt: '2026-10-01T04:54:00Z' },
   ]);
-  assert.equal(timeline.byMovementId.get('refund').totalBs, 4850);
-  assert.equal(timeline.byMovementId.get('later').totalBs, 4950);
+  assert.equal(timeline.byMovementId.get('refund').totalBs, 4950);
+  assert.equal(timeline.byMovementId.get('later').totalBs, 5100);
 });

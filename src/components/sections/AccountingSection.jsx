@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
+import { attachCashLedgerOrder, compareCashLedgerOrder } from '../../utils/cashLedgerOrder';
 import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
@@ -1188,7 +1189,7 @@ function AccountingSection({
   );
 
   const sortedMovements = useMemo(
-    () => cashMovements
+    () => attachCashLedgerOrder(cashMovements)
       .filter((movement) => !isArchivedAccountingRecord(movement))
       .slice()
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
@@ -1642,7 +1643,7 @@ function AccountingSection({
         && getDateKey(resolveCashMovementTimestamp(movement)) === dailyReportDate
         && Math.abs(toNumber(movement.amountBs)) > 0.0001
       ))
-      .sort((left, right) => new Date(resolveCashMovementTimestamp(left) ?? 0) - new Date(resolveCashMovementTimestamp(right) ?? 0))
+      .sort(compareCashLedgerOrder)
   ), [bigCashMovementRows, dailyReportDate]);
 
   const getDailyMovementNature = useCallback((movement) => {
@@ -7890,7 +7891,7 @@ function AccountingSection({
                 <div className="daily-sector-heading">
                   <span className="daily-sector-kicker">RESUMEN OPERATIVO</span>
                   <h3>Movimientos confirmados del día</h3>
-                  <p>Ingresos y egresos confirmados del día. Los filtros de la tabla se aplican al resumen, los totales y las exportaciones. Los desgloses por origen y medio corresponden a los ingresos visibles.</p>
+                  <p>El día y la hora corresponden a la fecha del recibo. Las filas y el fondo siguen el orden de registro en caja, que se conserva al editar fechas. Los filtros se aplican al resumen, los totales y las exportaciones.</p>
                 </div>
                 <div className="daily-sector-inline-stats" aria-label="Resumen del día">
                   <article className="daily-inline-stat income">

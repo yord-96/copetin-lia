@@ -75468,3 +75468,12 @@ button.inventory-loss-row-action.is-discard:hover {
 .accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(14) { width: 5.5% !important; }
 .accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(15) { width: 5.5% !important; }
 .accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(16) { width: 10% !important; }
+.daily-receipt-order {
+  display: grid;
+  gap: 3px;
+}
+.daily-receipt-order small {
+  color: #718096;
+  font-size: 9px;
+  font-weight: 500;
+}

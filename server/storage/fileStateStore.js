@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { preserveCashLedgerOrder } from '../../src/utils/cashLedgerOrder.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -392,7 +393,7 @@ export const getStateSnapshot = async () => {
 
   return {
     initialized: true,
-    state: payload.state,
+    state: preserveCashLedgerOrder(payload.state),
     revision: revisionForPayload(payload),
     version: Number(payload.version ?? 1),
     updatedAt: payload.updatedAt ?? null,
@@ -426,7 +427,7 @@ export const replaceStateSnapshot = async (state, expectedRevision) => {
       throw error;
     }
 
-    const safeState = preserveFullCommercialRecords(current?.state, state);
+    const safeState = preserveCashLedgerOrder(preserveFullCommercialRecords(current?.state, state), current?.state);
     assertSafeStateTransition(current?.state, safeState);
 
     const version = Number(current?.version ?? 0) + 1;
@@ -491,7 +492,7 @@ export const updateStateSnapshot = async (updater, expectedRevision = undefined)
       };
     }
 
-    const safeState = preserveFullCommercialRecords(current.state, nextState);
+    const safeState = preserveCashLedgerOrder(preserveFullCommercialRecords(current.state, nextState), current.state);
     assertSafeStateTransition(current.state, safeState);
 
     const version = Number(current?.version ?? 0) + 1;

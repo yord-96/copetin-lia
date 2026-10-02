@@ -17,7 +17,7 @@ import { createRoot } from 'react-dom/client';
 import DailyCashTable from '/src/components/DailyCashTable.jsx';
 import '/src/App.css';
 import '/src/index.css';
-const rows = Array.from({ length: 30 }, (_, id) => ({ id, receipt: 'RC-13498', hour: '00:54',
+const rows = Array.from({ length: 30 }, (_, id) => ({ id, ledgerSequence: 3278 + id, receipt: 'RC-13498', hour: '00:54',
   customer: 'MARIA ELIZABETH LLANOS', nature: 'Devoluciones de garantía', reference: '2767',
   method: 'QR · MERCANTIL', user: 'LISBETH MUÑOZ', refund: 150, expense: 150,
   fund: 5589, fundCash: 5589, fundDigital: 0 }));

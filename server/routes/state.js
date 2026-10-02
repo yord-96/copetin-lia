@@ -17,6 +17,7 @@ import { getGuaranteeLedgerEvidence } from '../../src/utils/guaranteeSettlement.
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
+import { getBigCashFundMovements } from '../../src/utils/dailyCashReport.js';
 import {
   buildInventoryKardexRows,
   filterInventoryKardexMovements,
@@ -135,7 +136,7 @@ const summarizeAccountingMovement = (movement = {}) => {
     'accountingTag', 'transportRevenueBs', 'transportExpenseBs', 'createdAt',
     'createdByName', 'userName', 'collectionTarget', 'damageCollectedBs',
     'collectionTargets', 'collectionBreakdown', 'receiptDetail', 'receivedAmountBs',
-    'receiptCustomerName', 'receiptIssuedAt',
+    'receiptCustomerName', 'receiptIssuedAt', 'cashLedgerSequence', 'cashRegisteredAt',
     'contractAllocationBs', 'guaranteeAllocationBs', 'surplusAllocationBs',
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
     'fundReportStatus', 'fundRecipientName', 'fundRecipientDocument',
@@ -6966,6 +6967,8 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
     const selectedMovements = new Map();
     sortedMovements.slice(0, recentLimit).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
     allMovements.filter(isGuaranteeRefundMovement).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
+    // El fondo necesita todo su flujo, incluso recibos retroactivos fuera del límite reciente.
+    getBigCashFundMovements(allMovements).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
 
     const contractRows = Array.isArray(state.contracts) ? state.contracts : [];
     const channelMap = new Map();
