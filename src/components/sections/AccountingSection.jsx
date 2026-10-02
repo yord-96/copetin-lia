@@ -10,7 +10,7 @@ import { cashMovementMatchesContractReferences } from '../../utils/contractCashL
 import {
   getCommercialContractCode,
   getRentalReceivableEventDate,
-  isRentalExcludedFromReceivables,
+  createRentalReceivableExclusionMatcher,
 } from '../../utils/accountingRentals';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import {
@@ -276,6 +276,9 @@ const groupReturnIssuesByContract = (rows) => {
 };
 
 const ACCOUNTING_TIME_ZONE = 'America/La_Paz';
+const accountingDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ACCOUNTING_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+});
 
 const getDateKey = (value) => {
   const rawValue = String(value ?? '').trim();
@@ -285,12 +288,7 @@ const getDateKey = (value) => {
   const parsed = new Date(rawValue);
   if (Number.isNaN(parsed.getTime())) return '';
   // Caja Grande usa el día comercial de Bolivia: 00:00:00 a 23:59:59.
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: ACCOUNTING_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(parsed);
+  const parts = accountingDayFormatter.formatToParts(parsed);
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return map.year && map.month && map.day ? `${map.year}-${map.month}-${map.day}` : '';
 };
@@ -1054,12 +1052,14 @@ function AccountingSection({
       .filter((contract) => getCommercialContractCode(contract?.contractCode))
       .map((contract) => [getCommercialContractCode(contract.contractCode), contract]),
   ), [contracts]);
-  const receivableExcludedRentalIds = useMemo(() => new Set(
-    rentals
-      .filter((rental) => isRentalExcludedFromReceivables(rental, hiddenContracts, contracts))
+  const receivableExcludedRentalIds = useMemo(() => {
+    const isExcluded = createRentalReceivableExclusionMatcher(hiddenContracts, contracts);
+    return new Set(rentals
+      .filter(isExcluded)
       .map((rental) => String(rental?.id ?? rental?.rentalId ?? ''))
       .filter(Boolean),
-  ), [contracts, hiddenContracts, rentals]);
+    );
+  }, [contracts, hiddenContracts, rentals]);
 
   const prepaidClientRows = useMemo(
     () => clients

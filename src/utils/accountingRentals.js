@@ -68,3 +68,32 @@ export const getRentalReceivableEventDate = (rental, contract = null) => (
   ?? rental?.createdAt
   ?? null
 );
+
+// Preparar las referencias una sola vez evita recorrer todos los contratos
+// por cada alquiler al abrir Contabilidad.
+export const createRentalReceivableExclusionMatcher = (deletedContracts = [], activeContracts = []) => {
+  const index = (rows, deleted) => {
+    const result = { rentals: new Set(), contracts: new Set(), orders: new Set() };
+    for (const row of rows) {
+      if (!row || Boolean(row.deletedAt) !== deleted) continue;
+      for (const [key, value] of [['rentals', row.rentalId], ['contracts', row.id], ['orders', row.orderCode]]) {
+        const reference = normalizeReference(value);
+        if (reference) result[key].add(reference);
+      }
+    }
+    return result;
+  };
+  const active = index(activeContracts, false);
+  const deleted = index(deletedContracts, true);
+  return rental => {
+    if (!rental || rental.deletedAt || isCancelledStatus(rental.status)) return true;
+    if (rental.receivablesExcludedAt || rental.receivablesExclusionReason === 'deleted_contract') return true;
+    const rentalId = normalizeReference(rental.id ?? rental.rentalId);
+    const contractId = normalizeReference(rental.contractId);
+    if (active.rentals.has(rentalId) || active.contracts.has(contractId)) return false;
+    if (deleted.rentals.has(rentalId) || deleted.contracts.has(contractId)) return true;
+    const orderCode = normalizeReference(rental.orderCode);
+    if (contractId || normalizeReference(rental.contractCode) || !orderCode) return false;
+    return !active.orders.has(orderCode) && deleted.orders.has(orderCode);
+  };
+};

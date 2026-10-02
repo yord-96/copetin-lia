@@ -1,11 +1,12 @@
 import { resolveCashMovementTimestamp } from './economicReceiptTimestamp.js';
+const cashDayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit' });
 
 export const getCashBusinessDate = (timestamp = new Date()) => {
   if (timestamp == null || timestamp === '') return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(timestamp))) return String(timestamp);
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  return cashDayFormatter.format(date);
 };
 export const getCashEffectiveDate = (row) => row?.cashEffectiveDate || getCashBusinessDate(resolveCashMovementTimestamp(row));
 

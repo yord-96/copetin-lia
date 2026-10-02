@@ -214,7 +214,7 @@ const getTabLabel = (tabId) => {
 const preloadTabModule = (tabId) => {
   const loader = PRELOADERS_BY_TAB[getTabPreloadKey(tabId)];
   if (!loader) return;
-  loader().catch(() => {});
+  return loader().catch(() => {});
 };
 
 const readDeveloperCompanyChoice = () => {
@@ -504,6 +504,15 @@ function AdminApp() {
     }
     const requestId = navigationRequestRef.current + 1;
     navigationRequestRef.current = requestId;
+    const switchingCashBoxes = String(targetTab).startsWith('contabilidad')
+      && String(controller.activeTab).startsWith('contabilidad');
+    // Las cajas comparten componente y datos: conservarlo evita recalcular
+    // todo Contabilidad y mantiene las selecciones al alternar entre ellas.
+    if (switchingCashBoxes) {
+      controller.setActiveTab(targetTab);
+      setPendingNavigationTab('');
+      return;
+    }
     setPendingNavigationTab(targetTab);
 
     // Primero dejamos que React pinte la confirmacion de navegacion. Despues
@@ -983,9 +992,11 @@ function AdminApp() {
           <main className="app-content">
             <section className={controller.isCatalogView ? 'workspace workspace-inventory' : 'workspace'}>
               {isNavigating ? (
-                <p className="status navigation-status" aria-live="polite">
-                  Abriendo {getTabLabel(pendingNavigationTab || controller.activeTab)}...
-                </p>
+                String(pendingNavigationTab).startsWith('contabilidad')
+                  ? <DuckLoadingView />
+                  : <p className="status navigation-status" aria-live="polite">
+                    Abriendo {getTabLabel(pendingNavigationTab || controller.activeTab)}...
+                  </p>
               ) : null}
               {isNavigating || shouldShowDeveloperCompanyModal ? null : (
                 <Suspense fallback={<DuckLoadingView />}>

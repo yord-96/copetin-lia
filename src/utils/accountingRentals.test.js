@@ -4,7 +4,24 @@ import {
   getCommercialContractCode,
   getRentalReceivableEventDate,
   isRentalExcludedFromReceivables,
+  createRentalReceivableExclusionMatcher,
 } from './accountingRentals.js';
+
+test('el índice conserva las prioridades de vínculos activos, eliminados y órdenes reutilizadas', () => {
+  const active = Array.from({ length: 40 }, (_, i) => ({ id: `contract-${i}`, rentalId: `rental-${i}`, orderCode: `order-${i % 5}` }));
+  const deleted = Array.from({ length: 40 }, (_, i) => ({ id: `deleted-${i}`, rentalId: `old-${i}`, orderCode: `order-${i % 10}`, deletedAt: '2026-10-01' }));
+  const matches = createRentalReceivableExclusionMatcher(deleted, active);
+  for (let i = 0; i < 50; i++) {
+    for (const rental of [
+      { id: `rental-${i}`, contractId: `deleted-${i}` },
+      { id: `old-${i}`, contractId: `contract-${i}` },
+      { id: ` OLD-${i} `, orderCode: `order-${i % 10}` },
+      { id: `unlinked-${i}`, orderCode: `order-${i % 10}` },
+      { id: `old-${i}`, contractCode: '100', status: i % 2 ? 'active' : 'cancelled' },
+      { id: `rental-${i}`, receivablesExclusionReason: 'deleted_contract' },
+    ]) assert.equal(matches(rental), isRentalExcludedFromReceivables(rental, deleted, active));
+  }
+});
 
 test('solo acepta referencias comerciales en la columna contrato', () => {
   assert.equal(getCommercialContractCode('595'), '595');
