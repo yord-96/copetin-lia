@@ -1,3 +1,4 @@
+import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
@@ -4032,70 +4033,15 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           || (type.includes('egreso') && isGuaranteeMovement(movement));
       })
       .sort((a, b) => new Date(a.createdAt ?? 0) - new Date(b.createdAt ?? 0));
-    const usedCashMovementIds = new Set();
-    const economicLedger = economicLedgerBase.map((entry, entryIndex) => {
-      if (!['deposit', 'guarantee', 'refund'].includes(entry.type) || entry.amountBs <= 0) {
-        return { ...entry, isCashRegistered: false };
-      }
-      const linkedMovementId = String(entry.cashMovementId ?? '').trim();
-      if (linkedMovementId) {
-        const linkedMovement = postedMovements.find((movement) => String(movement?.id ?? '') === linkedMovementId);
-        if (!linkedMovement || !isVoidedCashMovement(linkedMovement)) {
-          return {
-            ...entry,
-            isCashRegistered: true,
-            cashReceiptCode: String(entry.cashReceiptCode ?? linkedMovement?.receiptCode ?? linkedMovement?.receipt ?? '').trim(),
-            cashMovementId: linkedMovementId,
-          };
-        }
-      }
-      const entryMethod = normalizeLedgerPaymentMethod(entry.paymentMethod);
-      const entryAccount = normalizeLedgerPaymentAccount(entry.paymentAccount);
-      const entryDateMs = new Date(entry.createdAt ?? 0).getTime();
-      const candidates = entry.type === 'refund' ? refundRegistrationCandidates : cashRegistrationCandidates;
-      const matches = candidates
-        .map((movement, movementIndex) => ({ movement, movementIndex }))
-        .filter(({ movement, movementIndex }) => {
-          const movementKey = String(movement?.id ?? `cash-${movementIndex}`);
-          if (usedCashMovementIds.has(movementKey)) return false;
-          if (Math.abs(Math.abs(getCashMovementAmount(movement)) - entry.amountBs) >= 0.01) return false;
-          if (entry.type === 'refund') return true;
-          if (entry.type === 'guarantee' && !isGuaranteeMovement(movement)) return false;
-          if (entry.type === 'deposit' && isGuaranteeMovement(movement)) return false;
-          const movementMethod = normalizeLedgerPaymentMethod(
-            movement?.paymentMethod ?? movement?.method ?? movement?.payment?.method,
-          );
-          const movementAccount = normalizeLedgerPaymentAccount(
-            movement?.paymentAccount ?? movement?.account ?? movement?.qrAccount,
-          );
-          const methodCompatible = !entryMethod || !movementMethod || entryMethod === movementMethod;
-          const accountCompatible = entryMethod !== 'qr' || !entryAccount || !movementAccount || entryAccount === movementAccount;
-          return methodCompatible && accountCompatible;
-        })
-        .sort(({ movement: left }, { movement: right }) => {
-          const leftDateMs = new Date(left?.createdAt ?? 0).getTime();
-          const rightDateMs = new Date(right?.createdAt ?? 0).getTime();
-          const leftDistance = Number.isFinite(entryDateMs) && Number.isFinite(leftDateMs)
-            ? Math.abs(leftDateMs - entryDateMs)
-            : Number.MAX_SAFE_INTEGER;
-          const rightDistance = Number.isFinite(entryDateMs) && Number.isFinite(rightDateMs)
-            ? Math.abs(rightDateMs - entryDateMs)
-            : Number.MAX_SAFE_INTEGER;
-          return leftDistance - rightDistance;
-        });
-      const matchedMovement = matches[0]?.movement ?? null;
-      if (!matchedMovement) {
-        return { ...entry, isCashRegistered: false, cashReceiptCode: '', cashMovementId: null };
-      }
-      const matchedIndex = matches[0]?.movementIndex ?? entryIndex;
-      const matchedKey = String(matchedMovement?.id ?? `cash-${matchedIndex}`);
-      usedCashMovementIds.add(matchedKey);
-      return {
-        ...entry,
-        isCashRegistered: true,
-        cashReceiptCode: String(matchedMovement?.receiptCode ?? matchedMovement?.receipt ?? '').trim(),
-        cashMovementId: matchedMovement?.id ?? null,
-      };
+    const economicLedger = linkEconomicReceiptRows(economicLedgerBase, {
+      postedMovements,
+      deposits: cashRegistrationCandidates,
+      refunds: refundRegistrationCandidates,
+      getAmount: getCashMovementAmount,
+      isVoided: isVoidedCashMovement,
+      isGuarantee: isGuaranteeMovement,
+      normalizeMethod: normalizeLedgerPaymentMethod,
+      normalizeAccount: normalizeLedgerPaymentAccount,
     });
     const ledgerTotals = economicLedger.reduce((totals, entry) => {
       if (entry.type === 'deposit') totals.receivedBs += entry.amountBs;
@@ -10159,6 +10105,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     ].filter(Boolean).join('\n');
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
     const commonPayload = {
+      clientOperationId: `contract-deposit:${contractEconomicsData.contract?.id ?? contractCode}:${entry.id}`,
       receivedAmountBs: allocation.receivedBs,
       guaranteeAllocationBs: allocation.guaranteeBs,
       surplusAllocationBs: allocation.surplusBs,
