@@ -28,6 +28,19 @@ try {
   await server.listen();
   browser=await puppeteer.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
   const page=await browser.newPage(); const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const assertOverlay = async (selector) => {
+    const geometry = await page.$eval(selector, modal => {
+      const backdrop = modal.parentElement;
+      const box = modal.getBoundingClientRect();
+      const bounds = backdrop.getBoundingClientRect();
+      return { position: getComputedStyle(backdrop).position,
+        coversScreen: bounds.top === 0 && bounds.left === 0 && bounds.width === innerWidth && bounds.height === innerHeight,
+        visible: box.top >= 0 && box.bottom <= innerHeight,
+        centered: Math.abs((box.left + box.right) / 2 - innerWidth / 2) < 2 };
+    });
+    assert.equal(geometry.position, 'fixed');
+    assert.ok(geometry.coversScreen); assert.ok(geometry.visible); assert.ok(geometry.centered);
+  };
   for(const width of [1920,1440,1024]){
     await page.setViewport({width,height:1000});
     await page.goto(server.resolvedUrls.local[0]+'petty-layout');
@@ -37,11 +50,13 @@ try {
     assert.ok(result.text.includes('Ingreso de fondos'));assert.ok(!result.text.includes('INGRESOS DESDE CAJA GRANDE'));
     await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent==='Ingreso de fondos').click());
     await page.waitForSelector('.fund-action-modal');
+    await assertOverlay('.fund-action-modal');
     assert.match(await page.$eval('.fund-action-modal-head',e=>e.textContent),/CAJA CHICA/);
     assert.match(await page.$eval('.fund-current-summary',e=>e.textContent),/Bs 420.00/);
     await page.click('.fund-action-modal-head .bigcash-report-close');
     await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent.includes('+ Registrar gasto')).click());
     await page.waitForSelector('.accounting-movement-form');
+    await assertOverlay('.accounting-movement-form');
     if(width!==1920) await page.waitForFunction(()=>[...document.querySelectorAll('.accounting-movement-form option')].some(e=>e.textContent==='Reparación de equipos'));
     await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent.includes('+ Crear categoría')).click());
     await page.type('[aria-label="Nombre de la nueva categoría"]','Reparación de equipos');
@@ -50,6 +65,7 @@ try {
     await page.click('.accounting-movement-form .orders-modal-close');
     await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent==='Históricos').click());
     await page.waitForSelector('.fund-history-modal');
+    await assertOverlay('.fund-history-modal');
     assert.equal(await page.$$eval('.fund-history-document',rows=>rows.length),2);
     assert.match(await page.$eval('.fund-history-head',e=>e.textContent),/CAJA CHICA/);
     await page.evaluate(()=>[...document.querySelectorAll('.fund-history-tabs button')].find(e=>e.textContent==='Rendiciones de cuentas').click());

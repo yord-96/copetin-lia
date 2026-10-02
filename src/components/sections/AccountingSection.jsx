@@ -6253,7 +6253,7 @@ function AccountingSection({
   const renderFundHistoryModal = () => (
     fundHistoryOpen ? (
           <div className="bigcash-report-backdrop fund-history-backdrop" onClick={() => setFundHistoryOpen(false)}>
-            <section className="fund-history-modal" onClick={(event) => event.stopPropagation()}>
+            <section className="fund-history-modal" role="dialog" aria-modal="true" aria-label="Histórico de fondos" onClick={(event) => event.stopPropagation()}>
               <header className="fund-history-head">
                 <div>
                   <span>{activeModule === 'contabilidad_caja_chica' ? 'CAJA CHICA' : 'CAJA GRANDE'} · DOCUMENTOS DE FONDO</span>
@@ -6309,7 +6309,7 @@ function AccountingSection({
   const renderFundActionModal = () => (
     fundModal ? (
           <div className="bigcash-report-backdrop fund-action-backdrop" onClick={() => !fundSubmitting && setFundModal(null)}>
-            <section className="fund-action-modal" onClick={(event) => event.stopPropagation()}>
+            <section className="fund-action-modal" role="dialog" aria-modal="true" aria-label={fundModal === 'in' ? 'Ingreso de fondos' : 'Egreso de fondos'} onClick={(event) => event.stopPropagation()}>
               <header className="fund-action-modal-head">
                 <div>
                   <span>{fundBoxLabel.toUpperCase()} · FONDO OPERATIVO</span>

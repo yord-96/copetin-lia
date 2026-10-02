@@ -74786,6 +74786,20 @@ button.inventory-loss-row-action.is-discard:hover {
   white-space: normal;
 }
 
+.bigcash-report-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 22000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(10, 25, 48, .58);
+  backdrop-filter: blur(3px);
+}
+body:has(.bigcash-report-backdrop) {
+  overflow: hidden;
+}
 .fund-action-backdrop {
   z-index: 22000 !important;
 }
