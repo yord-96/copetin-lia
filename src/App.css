@@ -75386,3 +75386,85 @@ button.inventory-loss-row-action.is-discard:hover {
     border-bottom: 1px solid #dbe5f1 !important;
   }
 }
+
+/* Reporte diario: altura natural y encabezado fijo al desplazarse por la página. */
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-sector,
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table-wrap {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+  scrollbar-gutter: auto !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table-wrap {
+  padding: 0 !important;
+  border: 1px solid #dce5f0 !important;
+  border-radius: 12px !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table {
+  overflow: visible !important;
+  width: 100% !important;
+  max-width: none !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table thead th {
+  position: sticky !important;
+  top: var(--daily-header-offset, 0px) !important;
+  z-index: 8 !important;
+  height: auto !important;
+  padding: 14px 5px !important;
+  color: #fff !important;
+  font-size: clamp(9px, .6vw, 10px) !important;
+  line-height: 1.35 !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere !important;
+  box-shadow: 0 2px 0 #dce5f0;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table .daily-header-label {
+  display: block;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table :is(tbody, tfoot) :is(td, th) {
+  padding: 13px 6px !important;
+  font-size: clamp(10px, .65vw, 11px) !important;
+  line-height: 1.45 !important;
+  font-weight: 600 !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  font-variant-numeric: tabular-nums;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table :is(.daily-col-customer, .daily-col-user) {
+  text-align: left !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table .daily-money-cell {
+  overflow-wrap: anywhere !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-fund-cell strong {
+  font-size: 11px !important;
+  white-space: normal;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-fund-cell small {
+  font-size: 9px !important;
+  line-height: 1.4;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(1) { width: 5.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(2) { width: 4% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(3) { width: 7.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(4) { width: 7.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(5) { width: 5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(6) { width: 7% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(7) { width: 5.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(8) { width: 5.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(9) { width: 6% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(10) { width: 6% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(11) { width: 6% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(12) { width: 6% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(13) { width: 7.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(14) { width: 5.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(15) { width: 5.5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th:nth-child(16) { width: 10% !important; }

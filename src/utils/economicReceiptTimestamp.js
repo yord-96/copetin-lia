@@ -3,6 +3,11 @@ const toIsoOrNull = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 };
 
+// La fecha del recibo es la fecha comercial; createdAt conserva la auditoría.
+export const resolveCashMovementTimestamp = (movement = {}) => (
+  toIsoOrNull(movement?.receiptIssuedAt) ?? toIsoOrNull(movement?.createdAt)
+);
+
 export const resolveEconomicReceiptTimestamps = (
   { createdAt = null, receiptIssuedAt = null } = {},
   fallbackDate = new Date(),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import DailyCashTable from '../DailyCashTable';
+import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
 import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
@@ -1638,10 +1639,10 @@ function AccountingSection({
       .filter((movement) => (
         !isVoidedCashMovement(movement)
         && !isOpeningCashMovement(movement)
-        && getDateKey(movement.createdAt) === dailyReportDate
+        && getDateKey(resolveCashMovementTimestamp(movement)) === dailyReportDate
         && Math.abs(toNumber(movement.amountBs)) > 0.0001
       ))
-      .sort((left, right) => new Date(left?.createdAt ?? 0) - new Date(right?.createdAt ?? 0))
+      .sort((left, right) => new Date(resolveCashMovementTimestamp(left) ?? 0) - new Date(resolveCashMovementTimestamp(right) ?? 0))
   ), [bigCashMovementRows, dailyReportDate]);
 
   const getDailyMovementNature = useCallback((movement) => {
@@ -1705,7 +1706,7 @@ function AccountingSection({
 
   const dailyTableRows = useMemo(() => dailyReportRows.map((movement) => ({
     ...buildDailyCashRow(movement, {
-      hour: getHourLabel(movement.createdAt),
+      hour: getHourLabel(resolveCashMovementTimestamp(movement)),
       customer: getDailyCustomerName(movement),
       nature: getDailyMovementNature(movement),
       reference: getMovementReference(movement),

@@ -1,3 +1,5 @@
+import { resolveCashMovementTimestamp } from './economicReceiptTimestamp.js';
+
 export const DAILY_CASH_COLUMNS = [
   { key: 'receipt', label: 'Recibo', width: 15 },
   { key: 'hour', label: 'Hora', width: 10 },
@@ -48,7 +50,7 @@ export function buildBigCashFundTimeline(movements = []) {
     .filter(isPostedFundMovement)
     .slice()
     .sort((a, b) => {
-      const time = new Date(a?.createdAt ?? 0) - new Date(b?.createdAt ?? 0);
+      const time = new Date(resolveCashMovementTimestamp(a) ?? 0) - new Date(resolveCashMovementTimestamp(b) ?? 0);
       return time || String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
     });
   const anchorIndex = orderedRows.findIndex((movement) => (

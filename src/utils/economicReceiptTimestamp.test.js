@@ -3,7 +3,22 @@ import test from 'node:test';
 import {
   resolveEconomicReceiptDisplayTimestamp,
   resolveEconomicReceiptTimestamps,
+  resolveCashMovementTimestamp,
 } from './economicReceiptTimestamp.js';
+
+test('caja usa el día comercial editado sin cambiar la fecha de registro', () => {
+  const movement = {
+    createdAt: '2026-10-02T04:41:14.425Z',
+    receiptIssuedAt: '2026-10-01T04:41:00.000Z',
+    receiptEditedAt: '2026-10-02T04:41:47.078Z',
+  };
+  const timestamp = resolveCashMovementTimestamp(movement);
+  assert.equal(timestamp, movement.receiptIssuedAt);
+  assert.equal(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz' }).format(new Date(timestamp)), '2026-10-01');
+  assert.equal(movement.createdAt, '2026-10-02T04:41:14.425Z');
+  assert.equal(resolveCashMovementTimestamp({ ...movement, receiptIssuedAt: 'invalid' }), movement.createdAt);
+  assert.equal(resolveCashMovementTimestamp({ createdAt: movement.createdAt }), movement.createdAt);
+});
 
 test('conserva la fecha historica al generar posteriormente el recibo', () => {
   const historicalDate = '2026-08-19T18:11:00.000Z';

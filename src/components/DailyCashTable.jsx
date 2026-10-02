@@ -157,8 +157,22 @@ function DailyFiltersPanel({ rows, filters, position, formatBs, onFiltersChange,
 export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery, onFundHistory }) {
   const [filtersOpen, setFiltersOpen] = useState(null);
   const triggerRef = useRef(null);
+  const tableWrapRef = useRef(null);
   const totals = totalDailyCashRows(rows);
   const filterCount = Object.keys(filters).length;
+
+  useEffect(() => {
+    const topbar = document.querySelector('.topbar');
+    const updateOffset = () => {
+      const position = topbar && getComputedStyle(topbar).position;
+      const height = position === 'sticky' || position === 'fixed' ? topbar.getBoundingClientRect().height : 0;
+      tableWrapRef.current?.style.setProperty('--daily-header-offset', `${height}px`);
+    };
+    updateOffset();
+    const observer = new ResizeObserver(updateOffset);
+    if (topbar) observer.observe(topbar);
+    return () => observer.disconnect();
+  }, []);
 
   const closeFilters = useMemo(() => () => {
     setFiltersOpen(null);
@@ -205,7 +219,7 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
       </div>
     </div>
 
-    <div className="bigcash-table-wrap daily-report-table-wrap">
+    <div ref={tableWrapRef} className="bigcash-table-wrap daily-report-table-wrap">
       <table className="accounting-table bigcash-table daily-report-table">
         <thead><tr>{DAILY_CASH_COLUMNS.map((column) => <th
           key={column.key}
