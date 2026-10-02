@@ -21,11 +21,13 @@ test('el almacenamiento conserva el orden de caja al editar y al reemplazar el e
       state.cashMovements.reverse();
       state.cashMovements[0].cashLedgerSequence = 999;
       state.cashMovements[0].receiptIssuedAt = '2020-01-01T00:00:00Z';
+      state.cashMovements[0].cashEffectiveDate = '2020-01-01';
       state.cashMovements.push({ id: 'refund', cashLedgerSequence: 1, cashRegisteredAt: '2020-01-01' });
       return state;
     });
     const updated = await getStateSnapshot();
     assert.deepEqual(updated.state.cashMovements.map(row => row.cashLedgerSequence), [2, 1, 3]);
+    assert.equal(updated.state.cashMovements[0].cashEffectiveDate, '2026-10-01');
     const registeredAt = updated.state.cashMovements[2].cashRegisteredAt;
     assert.ok(new Date(registeredAt).getTime() >= Date.now() - 10000);
     await replaceStateSnapshot({ cashMovements: updated.state.cashMovements.map(row => ({ ...row,

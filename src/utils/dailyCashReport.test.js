@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, getDailyCashFilterOptions, createDailyCashWorkbook, buildDailyCashReportHtml } from './dailyCashReport.js';
+import { preserveCashLedgerOrder } from './cashLedgerOrder.js';
 
 const row = (id, amountBs, key, extra = {}) => buildDailyCashRow({ id, amountBs, receiptCode: `RC-${id}` }, {
   hour: '08:30', customer: 'Cliente de prueba', nature: { key, label: key }, reference: '0012', method: 'Efectivo', user: 'Operador', ...extra,
@@ -29,7 +30,7 @@ test('combina filtros, distingue vacíos de cero y admite selección vacía', ()
   assert.equal(getDailyCashFilterOptions([row(8, 1, 'rental', { customer: 'José' })], DAILY_CASH_COLUMNS[2], 'jose')[0].label, 'José');
 });
 
-test('Excel conserva las 16 columnas y filas filtradas, montos numéricos, rojos y subtotales', async () => {
+test('Excel conserva las 17 columnas y filas filtradas, montos numéricos, rojos y subtotales', async () => {
   const filters = { income: [''] };
   const visible = filterDailyCashRows(rows, filters);
   const workbook = await createDailyCashWorkbook({ rows: visible, date: '2026-09-29', filters });
@@ -45,12 +46,12 @@ test('Excel conserva las 16 columnas y filas filtradas, montos numéricos, rojos
   assert.equal(sheet.getCell('O11').value.result, 60.25);
   assert.equal(sheet.getCell('O11').value.formula, 'SUBTOTAL(109,O9:O10)');
   assert.equal(sheet.getCell('N11').value.formula, 'SUBTOTAL(109,N9:N10)');
-  assert.equal(sheet.autoFilter, 'A8:P10');
+  assert.equal(sheet.autoFilter, 'A8:Q10');
   const html = buildDailyCashReportHtml({ rows: visible, date: '2026-09-29', filters });
   assert.match(html, /RC-2/);
   assert.doesNotMatch(html, /RC-1/);
   assert.match(html, /TOTAL DE MOVIMIENTOS VISIBLES/);
-  assert.equal((html.match(/<th>/g) || []).length, 16);
+  assert.equal((html.match(/<th>/g) || []).length, 17);
 });
 
 test('fondo acumulado arrastra efectivo y digital entre movimientos y días', () => {
@@ -62,7 +63,7 @@ test('fondo acumulado arrastra efectivo y digital entre movimientos y días', ()
     { id: 'd', cashBoxType: 'BIG_CASH', amountBs: -300, paymentMethod: 'qr', paymentAccount: 'CIDRE', createdAt: '2026-10-02T11:00:00-04:00' },
     { id: 'e', cashBoxType: 'BIG_CASH', amountBs: 100, paymentMethod: 'efectivo', createdAt: '2026-10-03T08:00:00-04:00' },
   ];
-  const timeline = buildBigCashFundTimeline(movements);
+  const timeline = buildBigCashFundTimeline(movements, { asOfDate: '2026-10-03' });
   assert.equal(timeline.byMovementId.has('old'), false);
   assert.equal(timeline.byMovementId.get('a').totalBs, 5000);
   assert.equal(timeline.byMovementId.get('b').digitalBs, 500);
@@ -93,4 +94,60 @@ test('fondo conserva el orden de registro aunque se retroceda la fecha del recib
   ]);
   assert.equal(timeline.byMovementId.get('refund').totalBs, 4950);
   assert.equal(timeline.byMovementId.get('later').totalBs, 5100);
+});
+
+test('regresión 2752: solo pagos vigentes afectan su canal; excluye historia y futuros', async () => {
+  const make = (id, amountBs, method = 'efectivo', date = '2026-10-01') => ({
+    id, amountBs, cashBoxType: 'BIG_CASH', paymentMethod: method,
+    receiptIssuedAt: `${date}T04:00:00Z`, createdAt: '2026-10-02T06:00:00Z',
+  });
+  const state = preserveCashLedgerOrder({ cashMovements: [
+    { ...make('fund', 5000), accountingTag: 'big_cash_fund_in' },
+    make('cash-160', 160), make('cash-444', 444), make('digital-235', 235, 'qr'),
+    make('historical-375', 375, 'qr', '2026-09-25'), make('refund-15', -15), make('damage-10', 10),
+    make('historical-425', 425, 'qr', '2026-09-12'), make('historical-36', 36, 'qr', '2026-09-12'),
+    make('refund-150', -150), make('damage-25', 25), make('digital-406', 406, 'qr'),
+    make('historical-cash-150', 150, 'efectivo', '2026-09-29'),
+    make('digital-420', 420, 'qr'), make('digital-808', 808, 'qr'),
+    make('future-2752', 255, 'qr', '2026-10-24'), make('refund-2752', -150),
+    make('historical-339', 339, 'qr', '2026-09-26'), make('refund-2777', -150),
+    make('historical-172', 172.5, 'qr', '2026-09-22'), make('refund-2709', -150),
+    make('future-1219', 1219, 'qr', '2026-10-22'), make('future-cash-300', 300, 'efectivo', '2026-10-22'),
+    make('refund-2713', -85), make('future-548', 548, 'qr', '2026-10-26'), make('refund-2775', -200),
+    make('historical-cash-185', 185, 'efectivo', '2026-09-24'), make('historical-812', 812, 'qr', '2026-09-24'),
+    make('refund-2741', -217), make('digital-next-day', 18, 'qr', '2026-10-02'),
+    make('historical-300', 300, 'qr', '2026-09-27'), make('refund-2811', -200),
+  ] });
+  const timeline = buildBigCashFundTimeline(state.cashMovements, { asOfDate: '2026-10-01' });
+  const at2752 = timeline.byMovementId.get('refund-2752');
+  assert.equal(at2752.beforeCashBs, 5474);
+  assert.equal(at2752.cashBs, 5324);
+  assert.equal(at2752.digitalBs, 1869);
+  assert.equal(at2752.cashChangeBs, -150);
+  assert.equal(at2752.digitalChangeBs, 0);
+  assert.equal(timeline.cashBs, 4322);
+  assert.equal(timeline.digitalBs, 1869);
+  assert.equal(timeline.totalBs, 6191);
+  for (const movement of state.cashMovements.filter(row => row.id.startsWith('historical') || row.id.startsWith('future'))) {
+    assert.equal(timeline.byMovementId.has(movement.id), false, movement.id);
+  }
+  for (const snapshot of timeline.byMovementId.values()) {
+    assert.equal(snapshot.cashBs, snapshot.beforeCashBs + snapshot.cashChangeBs);
+    assert.equal(snapshot.digitalBs, snapshot.beforeDigitalBs + snapshot.digitalChangeBs);
+    assert.equal(snapshot.totalBs, snapshot.cashBs + snapshot.digitalBs);
+  }
+  const nextDay = buildBigCashFundTimeline(state.cashMovements, { asOfDate: '2026-10-02' });
+  assert.equal(nextDay.cashBs, 4322);
+  assert.equal(nextDay.digitalBs, 1887);
+  const labels = { hour: '01:10', customer: 'ISMAEL OJEDA', nature: { key: 'guarantee_refund', label: 'Devolución' }, reference: '2752', method: 'Efectivo', user: 'Operador' };
+  const row = buildDailyCashRow(state.cashMovements.find(row => row.id === 'refund-2752'), labels, at2752);
+  const book = await createDailyCashWorkbook({ rows: [row], date: '2026-10-01' });
+  const sheet = book.getWorksheet('Reporte diario');
+  assert.equal(sheet.getCell('P9').value, 5324);
+  assert.equal(sheet.getCell('Q9').value, 1869);
+  assert.equal(sheet.getCell('P10').value, 5324);
+  assert.equal(sheet.getCell('Q10').value, 1869);
+  const html = buildDailyCashReportHtml({ rows: [row], date: '2026-10-01' });
+  assert.match(html, /Fondo efectivo/);
+  assert.match(html, /Fondo digital/);
 });

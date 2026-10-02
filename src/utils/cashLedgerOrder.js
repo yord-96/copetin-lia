@@ -1,3 +1,14 @@
+import { resolveCashMovementTimestamp } from './economicReceiptTimestamp.js';
+
+export const getCashBusinessDate = (timestamp = new Date()) => {
+  if (timestamp == null || timestamp === '') return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(timestamp))) return String(timestamp);
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+};
+export const getCashEffectiveDate = (row) => row?.cashEffectiveDate || getCashBusinessDate(resolveCashMovementTimestamp(row));
+
 const sequenceOf = (row) => Number.isSafeInteger(row?.cashLedgerSequence) && row.cashLedgerSequence > 0
   ? row.cashLedgerSequence : 0;
 const maxSequence = (rows, initial = 0) => rows.reduce((max, row) => Math.max(max, sequenceOf(row)), initial);
@@ -6,7 +17,10 @@ const maxSequence = (rows, initial = 0) => rows.reduce((max, row) => Math.max(ma
 export function attachCashLedgerOrder(movements = [], lastSequence = 0) {
   const rows = Array.isArray(movements) ? movements : [];
   let sequence = maxSequence(rows, lastSequence);
-  return rows.map((row) => sequenceOf(row) ? row : { ...row, cashLedgerSequence: ++sequence });
+  return rows.map((row) => ({ ...row,
+    cashLedgerSequence: sequenceOf(row) || ++sequence,
+    cashEffectiveDate: getCashEffectiveDate(row),
+  }));
 }
 
 // Existing order comes from the stored snapshot, never from an edited payload.
@@ -20,6 +34,7 @@ export function preserveCashLedgerOrder(state, previousState = null, now = new D
     return { ...row,
       cashLedgerSequence: previous ? previous.cashLedgerSequence : ++sequence,
       cashRegisteredAt: previous ? previous.cashRegisteredAt ?? null : now,
+      cashEffectiveDate: previous ? previous.cashEffectiveDate : getCashBusinessDate(resolveCashMovementTimestamp(row)),
     };
   }) : attachCashLedgerOrder(state.cashMovements, state.cashLedgerLastSequence || 0);
   return { ...state, cashMovements: rows,

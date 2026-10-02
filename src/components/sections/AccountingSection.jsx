@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
-import { attachCashLedgerOrder, compareCashLedgerOrder } from '../../utils/cashLedgerOrder';
+import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate } from '../../utils/cashLedgerOrder';
 import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
@@ -1635,6 +1635,9 @@ function AccountingSection({
   }, [bigCashMovementRows, bigCashWorkspaceQuery, bigCashWorkspaceRanges.voided, getMovementReference]);
 
   const dailyReportDate = bigCashWorkspaceRanges.daily?.dateFrom || getInputDate();
+  const dailyFundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements, {
+    asOfDate: dailyReportDate < getCashBusinessDate() ? dailyReportDate : getCashBusinessDate(),
+  }), [sortedMovements, dailyReportDate]);
   const dailyReportRows = useMemo(() => (
     bigCashMovementRows
       .filter((movement) => (
@@ -1713,9 +1716,9 @@ function AccountingSection({
       reference: getMovementReference(movement),
       method: getPaymentMethodLabel(movement),
       user: getMovementUserLabel(movement),
-    }, fundTimeline.byMovementId.get(String(movement?.id ?? ''))),
+    }, dailyFundTimeline.byMovementId.get(String(movement?.id ?? ''))),
     movement,
-  })), [dailyReportRows, fundTimeline, getDailyCustomerName, getDailyMovementNature, getMovementReference, getMovementUserLabel]);
+  })), [dailyReportRows, dailyFundTimeline, getDailyCustomerName, getDailyMovementNature, getMovementReference, getMovementUserLabel]);
   const visibleDailyTableRows = useMemo(() => filterDailyCashRows(dailyTableRows, dailyColumnFilters), [dailyTableRows, dailyColumnFilters]);
 
   const dailyIncomeRows = useMemo(
@@ -7891,7 +7894,7 @@ function AccountingSection({
                 <div className="daily-sector-heading">
                   <span className="daily-sector-kicker">RESUMEN OPERATIVO</span>
                   <h3>Movimientos confirmados del día</h3>
-                  <p>El día y la hora corresponden a la fecha del recibo. Las filas y el fondo siguen el orden de registro en caja, que se conserva al editar fechas. Los filtros se aplican al resumen, los totales y las exportaciones.</p>
+                  <p>El fondo efectivo y el digital se calculan por separado. Solo afectan los pagos realizados desde la apertura del fondo hasta este día; los abonos históricos y futuros quedan fuera. El orden de caja se conserva al editar el recibo.</p>
                 </div>
                 <div className="daily-sector-inline-stats" aria-label="Resumen del día">
                   <article className="daily-inline-stat income">

@@ -136,7 +136,7 @@ const summarizeAccountingMovement = (movement = {}) => {
     'accountingTag', 'transportRevenueBs', 'transportExpenseBs', 'createdAt',
     'createdByName', 'userName', 'collectionTarget', 'damageCollectedBs',
     'collectionTargets', 'collectionBreakdown', 'receiptDetail', 'receivedAmountBs',
-    'receiptCustomerName', 'receiptIssuedAt', 'cashLedgerSequence', 'cashRegisteredAt',
+    'receiptCustomerName', 'receiptIssuedAt', 'cashLedgerSequence', 'cashRegisteredAt', 'cashEffectiveDate',
     'contractAllocationBs', 'guaranteeAllocationBs', 'surplusAllocationBs',
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
     'fundReportStatus', 'fundRecipientName', 'fundRecipientDocument',

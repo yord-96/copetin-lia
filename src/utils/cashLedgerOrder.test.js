@@ -9,7 +9,7 @@ test('recupera el orden legacy e incluye pagos y devoluciones retroactivos despu
     { ...base, id: 'old', amountBs: 900, createdAt: '2026-09-01T10:00:00Z' },
     { ...base, id: 'fund', amountBs: 5000, accountingTag: 'big_cash_fund_in', createdAt: '2026-10-01T19:46:00Z' },
     { ...base, id: 'payment', amountBs: 235, createdAt: '2026-10-01T04:27:40Z', receiptIssuedAt: '2026-10-01T04:27:40Z' },
-    { ...base, id: 'refund', amountBs: -150, createdAt: '2026-10-02T04:54:36Z', receiptIssuedAt: '2026-09-01T04:54:00Z' },
+    { ...base, id: 'refund', amountBs: -150, createdAt: '2026-10-02T04:54:36Z', receiptIssuedAt: '2026-10-01T04:54:00Z' },
   ] });
   const timeline = buildBigCashFundTimeline(state.cashMovements.slice().reverse());
   assert.equal(timeline.byMovementId.has('old'), false);

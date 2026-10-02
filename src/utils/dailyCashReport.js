@@ -1,4 +1,4 @@
-import { compareCashLedgerOrder } from './cashLedgerOrder.js';
+import { compareCashLedgerOrder, getCashBusinessDate, getCashEffectiveDate } from './cashLedgerOrder.js';
 
 export const DAILY_CASH_COLUMNS = [
   { key: 'receipt', label: 'Recibo', width: 15 },
@@ -16,7 +16,8 @@ export const DAILY_CASH_COLUMNS = [
   { key: 'user', label: 'Registrado por', width: 27 },
   { key: 'income', label: 'Ingresos', width: 20, money: true, tone: 'income' },
   { key: 'expense', label: 'Egresos', width: 20, money: true, tone: 'out' },
-  { key: 'fund', label: 'Fondo', width: 28, balance: true },
+  { key: 'fundCash', label: 'Fondo efectivo', width: 24, balance: true },
+  { key: 'fundDigital', label: 'Fondo digital', width: 24, balance: true },
 ];
 
 const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -40,29 +41,37 @@ const getFundChannel = (movement) => {
   return { bucket: 'digital', key: `${method || 'digital'}:${account || ''}`, label: method === 'transferencia' ? `Transferencia${account ? ` · ${account}` : ''}` : 'Digital' };
 };
 
-export function getBigCashFundMovements(movements = []) {
+export function getBigCashFundMovements(movements = [], { asOfDate = getCashBusinessDate() } = {}) {
   const orderedRows = (Array.isArray(movements) ? movements : [])
     .filter(isPostedFundMovement)
     .slice()
     .sort(compareCashLedgerOrder);
   const anchorIndex = orderedRows.findIndex((movement) => (
-    normalize(movement?.accountingTag) === 'big_cash_fund_in'
+    (normalize(movement?.accountingTag) === 'big_cash_fund_in'
     || normalize(movement?.category) === 'ingreso_fondos'
+    ) && getCashEffectiveDate(movement) <= asOfDate
   ));
-  return anchorIndex >= 0 ? orderedRows.slice(anchorIndex) : [];
+  if (anchorIndex < 0) return [];
+  const openedOn = getCashEffectiveDate(orderedRows[anchorIndex]);
+  return orderedRows.slice(anchorIndex).filter((movement) => {
+    const effectiveDate = getCashEffectiveDate(movement);
+    return effectiveDate && effectiveDate >= openedOn && effectiveDate <= asOfDate;
+  });
 }
 
-export function buildBigCashFundTimeline(movements = []) {
+export function buildBigCashFundTimeline(movements = [], options) {
   let totalBs = 0;
   let cashBs = 0;
   let digitalBs = 0;
   const accounts = new Map();
   const byMovementId = new Map();
-  const rows = getBigCashFundMovements(movements);
+  const rows = getBigCashFundMovements(movements, options);
 
   rows.forEach((movement) => {
     const amountBs = round(Number(movement?.amountBs ?? 0));
     const channel = getFundChannel(movement);
+    const beforeCashBs = cashBs;
+    const beforeDigitalBs = digitalBs;
     totalBs = round(totalBs + amountBs);
     if (channel.bucket === 'cash') cashBs = round(cashBs + amountBs);
     else digitalBs = round(digitalBs + amountBs);
@@ -73,6 +82,10 @@ export function buildBigCashFundTimeline(movements = []) {
       totalBs,
       cashBs,
       digitalBs,
+      beforeCashBs,
+      beforeDigitalBs,
+      cashChangeBs: channel.bucket === 'cash' ? amountBs : 0,
+      digitalChangeBs: channel.bucket === 'digital' ? amountBs : 0,
       accounts: [...accounts.values()].map((row) => ({ ...row })),
     });
   });
@@ -86,6 +99,7 @@ export function buildBigCashFundTimeline(movements = []) {
   };
 }
 export const dailyCashFilterValue = (value) => value == null ? '' : String(value);
+export const getDailyCashClosingBalance = (rows, key) => rows.findLast((row) => row[key] != null)?.[key] ?? 0;
 export const dailyCashCellText = (column, value, formatMoney = bs) => value == null ? '—' : (column.money || column.balance) ? formatMoney(value) : String(value);
 
 // One numeric row feeds the screen, column filters, PDF and XLSX.
@@ -116,6 +130,8 @@ export function buildDailyCashRow(movement, labels, fund = null) {
     fund: fund?.totalBs ?? null,
     fundCash: fund?.cashBs ?? null,
     fundDigital: fund?.digitalBs ?? null,
+    fundCashChange: fund?.cashChangeBs ?? null,
+    fundDigitalChange: fund?.digitalChangeBs ?? null,
     fundAccounts: Array.isArray(fund?.accounts) ? fund.accounts : [],
   };
 }
@@ -192,7 +208,7 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   });
   rows.forEach((entry, index) => {
-    const row = sheet.addRow(DAILY_CASH_COLUMNS.map((column) => column.balance ? entry.fund ?? null : entry[column.key] ?? null));
+    const row = sheet.addRow(DAILY_CASH_COLUMNS.map((column) => entry[column.key] ?? null));
     row.height = Math.max(32, ...DAILY_CASH_COLUMNS.map(({ key, width, money }) => money ? 32 : Math.ceil(String(entry[key] ?? '').length / (width - 3)) * 15 + 8));
     DAILY_CASH_COLUMNS.forEach((column, col) => {
       const cell = row.getCell(col + 1);
@@ -201,9 +217,9 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
       if (column.key === 'receipt' && entry.ledgerSequence != null) {
         cell.note = `Orden de caja: #${entry.ledgerSequence}${entry.registeredAt ? `\nRegistro: ${entry.registeredAt}` : '\nOrden histórico guardado'}`;
       }
-      if (column.balance && entry.fund != null) {
+      if (column.balance && entry[column.key] != null) {
         cell.numFmt = moneyFormat;
-        cell.note = `Efectivo: ${bs(entry.fundCash ?? 0)}\nDigital: ${bs(entry.fundDigital ?? 0)}`;
+        cell.note = `Variación de este movimiento: ${bs(entry[`${column.key}Change`] ?? 0)}`;
       }
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: index % 2 ? 'FFF1F5F9' : 'FFFFFFFF' } };
       cell.border = { bottom: { style: 'hair', color: { argb: 'FFD9E1EB' } } };
@@ -221,7 +237,7 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
       cell.value = rows.length ? { formula: `SUBTOTAL(109,${letter}9:${letter}${8 + rows.length})`, result: totals[column.key] } : 0;
       cell.numFmt = moneyFormat;
     } else if (column.balance) {
-      cell.value = rows.length ? rows[rows.length - 1].fund ?? 0 : 0;
+      cell.value = getDailyCashClosingBalance(rows, column.key);
       cell.numFmt = moneyFormat;
     }
     cell.font = { name: 'Calibri', bold: true, size: 11, color: { argb: column.tone === 'out' ? 'FFDC2626' : column.tone === 'income' ? 'FF15803D' : 'FF15345F' } };
@@ -231,7 +247,7 @@ export async function createDailyCashWorkbook({ rows, date, filters = {}, genera
   total.height = 32;
   const note = total.number + 2;
   sheet.mergeCells(note, 1, note, DAILY_CASH_COLUMNS.length);
-  sheet.getCell(note, 1).value = 'El día y la hora corresponden al recibo; las filas y el fondo siguen el orden de registro en caja, que no cambia al editar fechas. Las columnas de conceptos no se suman nuevamente a Ingresos / Egresos. Los totales inferiores se actualizan al filtrar en Excel; el resumen superior corresponde a la exportación.';
+  sheet.getCell(note, 1).value = 'El efectivo y el digital se calculan por separado. Solo los pagos desde la apertura hasta el día del reporte afectan al fondo; se excluyen abonos históricos y futuros. La fecha de incorporación a caja se conserva al editar el recibo. Las columnas de conceptos no se suman nuevamente a Ingresos / Egresos. Los totales inferiores se actualizan al filtrar en Excel; el resumen superior corresponde a la exportación.';
   sheet.getCell(note, 1).alignment = { wrapText: true };
   sheet.getCell(note, 1).font = { name: 'Calibri', size: 10, color: { argb: 'FF64748B' } };
   sheet.getRow(note).height = 45;
@@ -245,9 +261,9 @@ export function buildDailyCashReportHtml({ rows, date, filters = {}, generatedAt
   const totals = totalDailyCashRows(rows);
   const money = (value) => esc(formatMoney(value));
   const cells = (row) => DAILY_CASH_COLUMNS.map((column) => column.balance
-    ? `<td class="money fund"><strong>${money(row.fund ?? 0)}</strong><small>Efec. ${money(row.fundCash ?? 0)} · Digital ${money(row.fundDigital ?? 0)}</small></td>`
+    ? `<td class="money fund">${row[column.key] == null ? '—' : `<strong>${money(row[column.key])}</strong><small>Movimiento: ${money(row[`${column.key}Change`] ?? 0)}</small>`}</td>`
     : `<td class="${column.money ? 'money' : ''} ${column.tone || ''}">${esc(dailyCashCellText(column, row[column.key], formatMoney))}</td>`).join('');
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte diario · ${esc(date)}</title><style>
 @page{size:A3 landscape;margin:10mm}*{box-sizing:border-box}body{margin:0;color:#17233a;font:10px Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #15345f;padding-bottom:12px}.brand{color:#df4d00;font-size:11px;font-weight:bold;letter-spacing:1px}h1{font-size:25px;color:#15345f;margin:5px 0}.meta{text-align:right;line-height:1.7;color:#64748b}.filters{margin:12px 0;color:#64748b;overflow-wrap:anywhere}.summary{display:flex;gap:12px;margin:14px 0}.card{flex:1;border:1px solid #d9e1eb;border-left:4px solid #15345f;background:#f8fafc;padding:12px}.card span{display:block;font-size:10px;color:#64748b;text-transform:uppercase}.card strong{display:block;font-size:21px;margin-top:5px}.income{color:#15803d}.out{color:#dc2626}table{width:100%;table-layout:fixed;border-collapse:collapse}thead{display:table-header-group}th{background:#15345f;color:white;text-align:left;padding:10px 5px;font-size:9px}td{padding:9px 5px;border-bottom:1px solid #d9e1eb;vertical-align:middle;overflow-wrap:anywhere}tr{break-inside:avoid}tbody tr:nth-child(even){background:#f1f5f9}.money{text-align:right;white-space:nowrap;font-weight:bold;font-variant-numeric:tabular-nums}.fund small{display:block;margin-top:3px;color:#64748b;font-size:8px;font-weight:normal;white-space:normal}.totals td{background:#e8eff8;border-top:2px solid #15345f;font-weight:bold;padding:12px 5px}.note{margin-top:14px;color:#64748b;line-height:1.6}.toolbar{display:flex;justify-content:flex-end;padding:12px;background:#f1f5f9;margin-bottom:18px}.toolbar button{background:#15345f;color:white;border:0;border-radius:6px;padding:10px 16px;cursor:pointer}@media screen{body{padding:22px;min-width:1250px}}@media print{.toolbar{display:none}}
-</style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte diario de ingresos y egresos</h1><div>Movimientos confirmados · ${esc(date)} · 00:00–23:59 (hora Bolivia)</div></div><div class="meta">${rows.length} movimientos incluidos<br>Generado: ${esc(generatedAt.toLocaleString('es-BO'))}</div></header><div class="filters">${esc(describeDailyCashFilters(filters, formatMoney))}</div><section class="summary"><div class="card income"><span>Total ingresos</span><strong>${money(totals.income)}</strong></div><div class="card out"><span>Total egresos</span><strong>${money(totals.expense)}</strong></div><div class="card"><span>Resultado neto</span><strong>${money(round(totals.income - totals.expense))}</strong></div></section><table><colgroup>${DAILY_CASH_COLUMNS.map(({ width }) => `<col style="width:${width / DAILY_CASH_COLUMNS.reduce((sum, col) => sum + col.width, 0) * 100}%">`).join('')}</colgroup><thead><tr>${DAILY_CASH_COLUMNS.map(({ label }) => `<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${cells(row)}</tr>`).join('') || `<tr><td colspan="${DAILY_CASH_COLUMNS.length}">Sin movimientos para los filtros seleccionados.</td></tr>`}<tr class="totals"><td colspan="6">TOTAL DE MOVIMIENTOS VISIBLES</td>${DAILY_CASH_COLUMNS.slice(6).map((column) => `<td class="money ${column.tone || ''}">${column.money ? money(totals[column.key]) : column.balance ? money(rows.length ? rows[rows.length - 1].fund ?? 0 : 0) : ''}</td>`).join('')}</tr></tbody></table><div class="note">Los conceptos (contrato, cobro extra, transporte, garantías y daños / faltantes) desglosan cada movimiento; no se suman nuevamente a ingresos o egresos. Se excluyen movimientos anulados y saldos de apertura.<br>El día y la hora corresponden al recibo. Las filas y el fondo siguen el orden de registro en caja, que se conserva al editar fechas. Este reporte conserva las columnas y los filtros de la tabla del sistema.</div></body></html>`;
+</style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div><header><div><div class="brand">EL COPETÍN · CAJA GRANDE</div><h1>Reporte diario de ingresos y egresos</h1><div>Movimientos confirmados · ${esc(date)} · 00:00–23:59 (hora Bolivia)</div></div><div class="meta">${rows.length} movimientos incluidos<br>Generado: ${esc(generatedAt.toLocaleString('es-BO'))}</div></header><div class="filters">${esc(describeDailyCashFilters(filters, formatMoney))}</div><section class="summary"><div class="card income"><span>Total ingresos</span><strong>${money(totals.income)}</strong></div><div class="card out"><span>Total egresos</span><strong>${money(totals.expense)}</strong></div><div class="card"><span>Resultado neto</span><strong>${money(round(totals.income - totals.expense))}</strong></div></section><table><colgroup>${DAILY_CASH_COLUMNS.map(({ width }) => `<col style="width:${width / DAILY_CASH_COLUMNS.reduce((sum, col) => sum + col.width, 0) * 100}%">`).join('')}</colgroup><thead><tr>${DAILY_CASH_COLUMNS.map(({ label }) => `<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${cells(row)}</tr>`).join('') || `<tr><td colspan="${DAILY_CASH_COLUMNS.length}">Sin movimientos para los filtros seleccionados.</td></tr>`}<tr class="totals"><td colspan="6">TOTAL DE MOVIMIENTOS VISIBLES</td>${DAILY_CASH_COLUMNS.slice(6).map((column) => `<td class="money ${column.tone || ''}">${column.money ? money(totals[column.key]) : column.balance ? money(getDailyCashClosingBalance(rows, column.key)) : ''}</td>`).join('')}</tr></tbody></table><div class="note">Los conceptos (contrato, cobro extra, transporte, garantías y daños / faltantes) desglosan cada movimiento; no se suman nuevamente a ingresos o egresos. Se excluyen movimientos anulados y saldos de apertura.<br>El efectivo y el digital se calculan por separado. Solo afectan al fondo los pagos desde la apertura hasta el día del reporte; se excluyen abonos históricos y futuros. La fecha de incorporación a caja se conserva al editar el recibo. Este reporte conserva las columnas y los filtros de la tabla del sistema.</div></body></html>`;
 }

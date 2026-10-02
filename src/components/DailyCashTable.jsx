@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Filter, X } from 'lucide-react';
-import { DAILY_CASH_COLUMNS, dailyCashCellText, getDailyCashFilterOptions, totalDailyCashRows } from '../utils/dailyCashReport';
+import { DAILY_CASH_COLUMNS, dailyCashCellText, getDailyCashFilterOptions, getDailyCashClosingBalance, totalDailyCashRows } from '../utils/dailyCashReport';
 
 function FilterValues({ column, rows, selected, formatBs, onApply }) {
   const [search, setSearch] = useState('');
@@ -231,12 +231,12 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
         </th>)}</tr></thead>
         <tbody>
           {rows.map((row, index) => <tr key={row.id ?? index}>{DAILY_CASH_COLUMNS.map((column) => <td key={column.key} className={`daily-col-${column.key} ${(column.money || column.balance) ? 'daily-money-cell' : ''} ${column.tone === 'out' && row[column.key] != null ? 'daily-expense-cell' : ''} ${column.tone === 'income' ? 'daily-revenue-cell' : ''} ${column.key === 'nature' && row.expense != null ? 'daily-expense-text' : column.key === 'nature' && row.income != null ? 'daily-revenue-text' : ''}`}>
-            {column.key === 'receipt' && row.ledgerSequence != null ? <span className="daily-receipt-order" title={row.registeredAt ? `Registrado en caja: ${new Date(row.registeredAt).toLocaleString('es-BO', { timeZone: 'America/La_Paz' })}` : 'Orden histórico guardado en caja'}><span>{row.receipt}</span><small>Caja #{row.ledgerSequence}</small></span> : column.balance && row.fund != null ? <span className="daily-fund-cell"><strong>{formatBs(row.fund)}</strong><small>Efec. {formatBs(row.fundCash ?? 0)} · Digital {formatBs(row.fundDigital ?? 0)}</small></span> : dailyCashCellText(column, row[column.key], formatBs)}
+            {column.key === 'receipt' && row.ledgerSequence != null ? <span className="daily-receipt-order" title={row.registeredAt ? `Registrado en caja: ${new Date(row.registeredAt).toLocaleString('es-BO', { timeZone: 'America/La_Paz' })}` : 'Orden histórico guardado en caja'}><span>{row.receipt}</span><small>Caja #{row.ledgerSequence}</small></span> : column.balance && row[column.key] != null ? <span className="daily-fund-cell"><strong>{formatBs(row[column.key])}</strong><small className={row[`${column.key}Change`] < 0 ? 'daily-expense-text' : row[`${column.key}Change`] > 0 ? 'daily-revenue-text' : ''}>{row[`${column.key}Change`] ? `${row[`${column.key}Change`] > 0 ? '+' : '−'} ${formatBs(Math.abs(row[`${column.key}Change`]))}` : 'Sin cambio'}</small></span> : dailyCashCellText(column, row[column.key], formatBs)}
           </td>)}</tr>)}
           {!rows.length && <tr><td colSpan={DAILY_CASH_COLUMNS.length}><p className="status">{allRows.length ? 'No hay movimientos que coincidan con los filtros.' : 'No hay movimientos confirmados para este día.'}</p></td></tr>}
         </tbody>
         <tfoot><tr><th scope="row" colSpan={6}>TOTAL {filterCount ? 'FILTRADO' : 'DEL DÍA'}</th>{DAILY_CASH_COLUMNS.slice(6).map((column) => <td key={column.key} className={`daily-col-${column.key} daily-money-cell ${column.tone === 'out' ? 'daily-expense-cell' : column.tone === 'income' ? 'daily-revenue-cell' : ''}`}>
-          {column.money ? formatBs(totals[column.key]) : column.balance ? formatBs(rows.length ? rows[rows.length - 1].fund ?? 0 : 0) : ''}
+          {column.money ? formatBs(totals[column.key]) : column.balance ? formatBs(getDailyCashClosingBalance(rows, column.key)) : ''}
         </td>)}</tr></tfoot>
       </table>
     </div>
