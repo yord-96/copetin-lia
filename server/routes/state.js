@@ -17,6 +17,7 @@ import { getGuaranteeLedgerEvidence } from '../../src/utils/guaranteeSettlement.
 import { buildContractCollectionGroups } from '../../src/utils/contractCollectionGroups.js';
 import { consolidateReturnIssueLines } from '../../src/utils/returnIssues.js';
 import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceiptTimestamp.js';
+import { reconcileContractDocumentPayments } from '../../src/utils/contractDocumentPayments.js';
 import { getBigCashFundMovements, buildBigCashFundTimeline } from '../../src/utils/dailyCashReport.js';
 import { getCashBusinessDate, getCashEffectiveDate, compareCashLedgerOrder } from '../../src/utils/cashLedgerOrder.js';
 import { buildPettyCashFundTimeline, assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
@@ -7607,7 +7608,7 @@ const getOrdersContractCashEconomicSummary = (contract = {}, cashMovements = [])
   }, { contractPaidBs: 0, guaranteePaidBs: 0, totalReceivedBs: 0, receiptCount: 0 });
 
   return {
-    contractPaidBs: toPositiveRoundedNumber(totals.contractPaidBs),
+    contractPaidBs: toPositiveRoundedNumber(Math.max(totals.contractPaidBs, reconcileContractDocumentPayments(contract, {id:contract.rentalId,orderCode:contract.orderCode}, cashMovements).appliedBs)),
     guaranteePaidBs: toPositiveRoundedNumber(totals.guaranteePaidBs),
     totalReceivedBs: toPositiveRoundedNumber(totals.totalReceivedBs),
     receiptCount: totals.receiptCount,

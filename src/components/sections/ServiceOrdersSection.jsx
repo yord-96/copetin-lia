@@ -36,6 +36,7 @@ import { getProductImageSrc } from '../../utils/productImage';
 import { isInventoryCatalogItemActive } from '../../utils/inventoryCatalogVisibility';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
+import { reconcileContractDocumentPayments } from '../../utils/contractDocumentPayments';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
 import { calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
 import { buildGuaranteeApplicationPlan } from '../../utils/guaranteeApplication';
@@ -2902,12 +2903,15 @@ function ServiceOrdersSection({
         Math.max(0, Number(rowLedgerConfirmedRentalBs.toFixed(2))),
       );
       const canonicalLedgerPaidBs = getConfirmedContractLedgerPaidBs(contract, rowChargeTargetBs);
+      const reconciledPayments = reconcileContractDocumentPayments(contract, linkedRental,
+        Array.from(linkedCollectionMovements.values()).map(row => row.rawMovement ?? row));
       const cashPaidOnAccountBs = Math.max(
         0,
         Number(collectionRegisteredBs.toFixed(2)),
         Number(ledgerReceivedForRentalBs.toFixed(2)),
         canonicalLedgerPaidBs,
         toMoneyNumber(serverCashSummary?.contractPaidBs),
+        reconciledPayments.appliedBs,
       );
       const paidOnAccountBs = Math.min(
         rowChargeTargetBs,
