@@ -8758,7 +8758,7 @@ export const buildContractDocumentHtml = ({
         return sum + effectiveSaleBs;
       }, 0);
     const baseLineTotalBs = hasStoredLineTotal
-      ? storedLineTotalBs
+      ? Number((storedLineTotalBs + getManualSupplierSaleTotalBs(supplierSupportLines)).toFixed(2))
       : fulfillmentBreakdown.supplierQty > 0
         ? Number((ownLineTotalBs + supplierSaleBs).toFixed(2))
         : totalQuantityLineTotalBs;
