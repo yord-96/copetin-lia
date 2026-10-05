@@ -4166,6 +4166,21 @@ function AccountingSection({
   const modalPendingFundDeliveries = postedMovements.filter(row => row.cashBoxType === fundBoxType
     && row.category === 'entrega_fondos' && row.fundReportStatus !== 'approved');
   const renderPettyFund = (row) => row?.fundBalanceBs == null ? '—' : formatBs(row.fundBalanceBs);
+  const renderPettyFlowFund = (row) => {
+    const balance = pettyFundTimeline.byMovementId.get(String(row.id));
+    const total = row.fundBalanceBs ?? balance?.totalBs;
+    const cash = row.fundCashBalanceBs ?? balance?.cashBs;
+    const digital = row.fundDigitalBalanceBs ?? balance?.digitalBs;
+    const active = !isVoidedCashMovement(row) && !isDeletedCashMovement(row);
+    return <>
+      <strong>{total == null ? '—' : formatBs(total)}</strong>
+      {cash != null ? <small>Efectivo: {formatBs(cash)}</small> : null}
+      {digital != null ? <small>Digital: {formatBs(digital)}</small> : null}
+      {active ? <small className={row.amountBs > 0 ? 'petty-flow-up' : 'petty-flow-down'}>
+        {row.amountBs > 0 ? '↑ Sube' : '↓ Baja'} {formatBs(Math.abs(row.amountBs))} · {getPaymentMethodLabel({ ...row, paymentMethod: row.paymentMethod || 'efectivo' })}
+      </small> : <small>Sin efecto en el fondo</small>}
+    </>;
+  };
   const openFundAction = (kind, box = 'BIG_CASH') => {
     setFundBoxType(box);
     setFundActionError('');
@@ -8585,11 +8600,12 @@ function AccountingSection({
                     <th>Fecha</th>
                     <th>Concepto</th>
                     <th>Proveedor / Destino</th>
-                    <th>Categoría</th>
-                    <th>Monto</th>
-                    <th>Comprobante</th>
-                    <th>Registrado por</th>
-                    <th>Acciones</th><th>Fondo</th>
+                    <th>Comprobante / Registrado por</th>
+                    <th>Acciones</th>
+                    <th>Método / Cuenta</th>
+                    <th>Ingresos</th>
+                    <th>Egresos</th>
+                    <th>Fondo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -8619,6 +8635,7 @@ function AccountingSection({
                         </td>
                         <td>
                           <strong>{movement.description}</strong>
+                          <small><span className={`petty-category ${category.className}`}>{category.label}</span></small>
                           {hasTransportExpense ? (
                             <small className="cash-linked-reference">
                               Transporte ligado a {getMovementReference(movement)}
@@ -8626,11 +8643,12 @@ function AccountingSection({
                           ) : null}
                         </td>
                         <td>{movement.responsible || movement.createdBy || 'Varios'}</td>
-                        <td><span className={`petty-category ${category.className}`}>{category.label}</span></td>
-                        <td className={movement.amountBs > 0 ? 'value-green' : 'value-orange'}>{movement.amountBs > 0 ? '+ ' : '- '}{formatBs(Math.abs(movement.amountBs))}</td>
-                        <td>{movement.receipt || '-'}</td>
-                        <td>{registeredBy}</td>
-                        <td>{renderReceiptActions(movement)}</td><td className="petty-fund-cell">{renderPettyFund(movement)}</td>
+                        <td><strong>{movement.receipt || movement.receiptCode || '—'}</strong><small>{registeredBy}</small></td>
+                        <td>{renderReceiptActions(movement)}</td>
+                        <td className="petty-flow-method">{getPaymentMethodLabel({ ...movement, paymentMethod: movement.paymentMethod || 'efectivo' })}</td>
+                        <td className="petty-flow-money value-green">{movement.amountBs > 0 ? `+ ${formatBs(movement.amountBs)}` : '—'}</td>
+                        <td className="petty-flow-money value-orange">{movement.amountBs < 0 ? `− ${formatBs(Math.abs(movement.amountBs))}` : '—'}</td>
+                        <td className="petty-fund-cell">{renderPettyFlowFund(movement)}</td>
                       </tr>
                     );
                   })}

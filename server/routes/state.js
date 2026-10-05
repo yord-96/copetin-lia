@@ -146,7 +146,7 @@ const summarizeAccountingMovement = (movement = {}) => {
     'deletedAt', 'deletedBy', 'deletionReason', 'editedAt', 'editedBy', 'editReason',
     'fundReportStatus', 'fundRecipientName', 'fundRecipientDocument',
     'fundApprovedAt', 'fundApprovedBy', 'fundApprovalNotes',
-    'accountingPeriodId', 'accountingPeriodStatus', 'fundBalanceBs',
+    'accountingPeriodId', 'accountingPeriodStatus', 'fundBalanceBs', 'fundCashBalanceBs', 'fundDigitalBalanceBs',
   ];
   return Object.fromEntries(fields
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
@@ -7232,7 +7232,12 @@ router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
       .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
       .map(summarizeAccountingMovement);
     const timeline = buildPettyCashFundTimeline(movements);
-    movements.forEach(row => { row.fundBalanceBs = timeline.byMovementId.get(String(row.id))?.totalBs ?? null; });
+    movements.forEach(row => {
+      const balance = timeline.byMovementId.get(String(row.id));
+      row.fundBalanceBs = balance?.totalBs ?? null;
+      row.fundCashBalanceBs = balance?.cashBs ?? null;
+      row.fundDigitalBalanceBs = balance?.digitalBs ?? null;
+    });
 
     await sendJsonPayload(req, res, {
       revision: snapshot?.revision ?? null,
@@ -7335,7 +7340,12 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
       .filter((movement) => !movement?.accountingArchivedAt && movement?.accountingPeriodStatus !== 'archived')
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
     const pettyTimeline = buildPettyCashFundTimeline(pettyMovements);
-    pettyMovements.forEach(row => { row.fundBalanceBs = pettyTimeline.byMovementId.get(String(row.id))?.totalBs ?? null; });
+    pettyMovements.forEach(row => {
+      const balance = pettyTimeline.byMovementId.get(String(row.id));
+      row.fundBalanceBs = balance?.totalBs ?? null;
+      row.fundCashBalanceBs = balance?.cashBs ?? null;
+      row.fundDigitalBalanceBs = balance?.digitalBs ?? null;
+    });
     const hiddenLoans = new Set(state.settings?.accounting?.pettyHiddenSupplierLoanIds ?? []);
     const withPaymentFund = row => {
       const payment = pettyMovements.filter(m => m.sourceId === row.id || m.id === row.cashMovementId).sort((a,b) => Number(b.cashLedgerSequence) - Number(a.cashLedgerSequence))[0];

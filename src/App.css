@@ -75582,3 +75582,18 @@ body:has(.bigcash-report-backdrop) {
   padding: 5px 8px;
   font-size: 10px;
 }
+/* Flujo contiguo: método, ingresos, egresos y saldo resultante. */
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(1) { width: 9%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(2) { width: 23%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(3) { width: 10%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(4) { width: 10%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(5) { width: 6%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(6) { width: 10%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(7) { width: 8%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(8) { width: 8%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(9) { width: 16%; }
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-flow-method { border-left: 2px solid #cddbeb; }
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-flow-money { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-fund-cell > strong { color: #173a70; }
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-flow-up { color: #087f49; }
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-flow-down { color: #c44320; }

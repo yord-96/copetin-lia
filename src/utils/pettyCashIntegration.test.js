@@ -70,6 +70,15 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(snapshot.state.resetLogs.length,1);
     assert.equal(snapshot.state.cashMovements.filter(row=>row.accountingPeriodStatus!=='archived'&&row.cashBoxType==='PETTY_CASH').length,3);
     assert.equal(snapshot.state.settings.accounting.pettyExpenseCategories.length,1);
+    const digitalIncome = await request('/cash/movement', {...payload, amountBs:120,paymentMethod:'qr',paymentAccount:'CIDRE'});
+    const digitalExpense = await request('/cash/movement', {...payload,type:'egreso',category:'compras',amountBs:20,paymentMethod:'qr',paymentAccount:'CIDRE'});
+    assert.equal(digitalIncome.status,200);
+    assert.equal(digitalExpense.status,200);
+    const split = await request('/accounting/petty-sector?sector=expenses');
+    const finalRow = split.body.rows.find(row=>row.id===digitalExpense.body.movement.id);
+    assert.equal(finalRow.fundBalanceBs,300);
+    assert.equal(finalRow.fundCashBalanceBs,200);
+    assert.equal(finalRow.fundDigitalBalanceBs,100);
   } finally {
     if(server) await new Promise(resolve=>server.close(resolve));
     await fs.rm(directory,{recursive:true,force:true});
