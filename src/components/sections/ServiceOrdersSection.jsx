@@ -2917,6 +2917,7 @@ function ServiceOrdersSection({
         rowChargeTargetBs,
         Number((cashPaidOnAccountBs + rowLedgerTotals.guaranteeAppliedRentalBs).toFixed(2)),
       );
+      const customerCreditBs = Math.max(0, Number((cashPaidOnAccountBs + rowLedgerTotals.guaranteeAppliedRentalBs - rowChargeTargetBs - Math.max(0, guaranteeBs - rowGuaranteeReserveBs)).toFixed(2)));
       const economicDueBs = Math.max(
         0,
         Number((rowChargeTargetBs - paidOnAccountBs).toFixed(2)),
@@ -3029,6 +3030,7 @@ function ServiceOrdersSection({
         totalBs,
         managedTotalBs,
         paidOnAccountBs,
+        customerCreditBs,
         dueBs,
         contractPendingBs: receivableBreakdown.contractPendingBs,
         transportPendingBs: receivableBreakdown.transportPendingBs,
@@ -12193,7 +12195,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         </td>
                         <td className={`orders-total ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
                           <span className="orders-total-with-economics">
-                            {row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
+                            {row.customerCreditBs > 0.009 ? `A favor ${formatBs(row.customerCreditBs)}` : row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
                             {row.hasEconomicLedger ? (
                               <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
                             ) : null}
@@ -12314,7 +12316,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       <div className="orders-mobile-contract-money">
                         <small>Debe</small>
                         <b className={`orders-total-with-economics ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
-                          {row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
+                          {row.customerCreditBs > 0.009 ? `A favor ${formatBs(row.customerCreditBs)}` : row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
                           {row.hasEconomicLedger ? (
                             <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
                           ) : null}

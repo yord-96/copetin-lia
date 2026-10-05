@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -26,9 +26,22 @@ test('Órdenes entrega al listado 27000 pagados al contrato con garantía separa
     assert.equal(response.status,200);
     assert.equal(result.overview.contracts[0].economicCashSummary.contractPaidBs,27000);
     assert.equal(result.overview.contracts[0].totals.totalBs-result.overview.contracts[0].economicCashSummary.contractPaidBs,7253.5);
+    const store = await import('../../server/storage/fileStateStore.js');
+    await store.updateStateSnapshot(state => {
+      state.contracts[0].economicLedger = [
+        {id:'first',type:'deposit',amountBs:5000,cashMovementId:'cash1',isCashRegistered:true},
+        {id:'second',type:'deposit',amountBs:5000,cashMovementId:'cash2',isCashRegistered:true},
+        {id:'third',type:'deposit',amountBs:28078.5,cashMovementId:'cash3',isCashRegistered:true,surplusAllocationBs:28078.5},
+      ];
+      state.cashMovements[2].amountBs = 28078.5;
+      return state;
+    });
+    const overpaidResponse = await fetch(`http://127.0.0.1:${server.address().port}/__copetin_db/orders/mobile-overview`,{headers:{'X-App-Internal-Key':'orders-test'}});
+    const overpaid = (await overpaidResponse.json()).overview.contracts[0];
+    assert.equal(overpaid.economicCashSummary.contractPaidBs,38078.5);
+    assert.equal(overpaid.economicCashSummary.contractPaidBs-overpaid.totals.totalBs-overpaid.totals.guaranteeBs,825);
   } finally {
     if(server) await new Promise(resolve=>server.close(resolve));
     await fs.rm(directory,{recursive:true,force:true});
   }
 });
-

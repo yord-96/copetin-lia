@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {reconcileContractDocumentPayments} from './contractDocumentPayments.js';
 import {buildContractDocumentHtml} from '../services/webBridge.js';
@@ -21,4 +21,18 @@ test('1179: tres recibos suman 30000, garantía 3000 y abono comercial 27000 sin
   assert.match(html,/<small>Faltapagardelcontrato<\/small><strong>Bs7[.,]253[.,]50/);
   assert.match(html,/<span>Acobrar<\/span><strong>Bs7[.,]253[.,]50/);
   assert.ok(html.includes('RC-3'));
+});
+
+test('un excedente guardado no oculta el pago: 38078.50 recibidos contra 34253.50 deja 825 a favor después de garantía pendiente', () => {
+  const contract={id:'contract',totals:{totalBs:34253.5,itemsNetSubtotalBs:31053.5,guaranteeBs:3000},items:[],economicLedger:[
+    {id:'first',type:'deposit',amountBs:5000,isCashRegistered:true},
+    {id:'second',type:'deposit',amountBs:5000,isCashRegistered:true},
+    {id:'third',type:'deposit',amountBs:28078.5,isCashRegistered:true,contractAllocationBs:0,surplusAllocationBs:28078.5},
+  ]};
+  const result=reconcileContractDocumentPayments(contract,{});
+  assert.equal(result.receivedBs,38078.5); assert.equal(result.appliedBs,38078.5);
+  const html=buildContractDocumentHtml({contract,rental:{},deliveries:[],settings:{},items:[]}).replace(/\s|&nbsp;/g,'');
+  assert.match(html,/<small>Saldoafavordelcliente<\/small><strong>Bs825[.,]00/);
+  assert.match(html,/<span>Excedenteafavordelcliente<\/span><strong>Bs825[.,]00/);
+  assert.doesNotMatch(html,/PENDIENTETOTAL/);
 });

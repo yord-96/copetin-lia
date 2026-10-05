@@ -25,9 +25,10 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
     const received = Math.max(0, Number(entry.amountBs) || 0);
     const linkedGuarantee = ledger.filter(row => row.type === 'guarantee' && row.sourceDepositId === entry.id).reduce((sum,row)=>sum+(Number(row.amountBs)||0),0);
     const guarantee = Math.min(received, Math.max(linkedGuarantee,Number(entry.guaranteeAllocationBs)||0));
-    const surplus = Math.max(0,Number(entry.surplusAllocationBs)||0);
     const damage = Math.max(0,Number(entry.damageAllocationBs)||0);
-    entry.documentContractAllocationBs = Math.max(0, received-guarantee-surplus-damage);
+    // El excedente guardado puede haberse calculado con un saldo anterior.
+    // Todo el dinero comercial cuenta; el excedente se obtiene contra el total actual.
+    entry.documentContractAllocationBs = Math.max(0, received-guarantee-damage);
     appliedBs += entry.documentContractAllocationBs;
     reservedBs += guarantee;
   }

@@ -8942,6 +8942,8 @@ export const buildContractDocumentHtml = ({
     printedTotalBs - effectiveDocumentPaidBs - Math.max(0, Number(prepaidAppliedBs ?? 0))
       + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0) - documentPayments.reservedBs)),
   );
+  const pendingGuaranteeBs = isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0) - documentPayments.reservedBs);
+  const customerCreditBs = Math.max(0, Number((effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0)) - printedTotalBs - pendingGuaranteeBs).toFixed(2)));
   const serviceRows = contractServices
     .map((service) => {
       contractRowNumber += 1;
@@ -9138,7 +9140,9 @@ export const buildContractDocumentHtml = ({
       economicPendingBs - economicPendingItemsBs,
     ),
   );
-  const economicStatusLabel = economicPendingBs > 0.005
+  const economicStatusLabel = customerCreditBs > 0.005
+    ? `SALDO A FAVOR DEL CLIENTE ${formatBs(customerCreditBs)}`
+    : economicPendingBs > 0.005
     ? `PENDIENTE TOTAL ${formatBs(economicPendingBs)}`
     : economicTotalsForDocument.refundsBs > 0
       ? 'LIQUIDADO Y DEVUELTO'
@@ -9194,9 +9198,9 @@ export const buildContractDocumentHtml = ({
     <div class="rc-economic-summary is-main">
       <span><small>Total del alquiler y transporte</small><strong>${formatBs(printedTotalBs)}</strong></span>
       <span><small>Pagado a cuenta del contrato</small><strong>${formatBs(effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0)))}</strong></span>
-      <span class="${currentCommercialPendingBs > 0.005 ? 'is-pending' : 'is-paid'}"><small>Falta pagar del contrato</small><strong>${formatBs(currentCommercialPendingBs)}</strong></span>
+      <span class="${currentCommercialPendingBs > 0.005 ? 'is-pending' : 'is-paid'}"><small>${customerCreditBs > 0.005 ? 'Saldo a favor del cliente' : 'Falta pagar del contrato'}</small><strong>${formatBs(customerCreditBs > 0.005 ? customerCreditBs : currentCommercialPendingBs)}</strong></span>
     </div>
-    <p class="rc-economic-explanation">Total del contrato menos lo pagado a cuenta = saldo del contrato. La garantía se muestra por separado; no es un descuento ni se aplica automáticamente al alquiler.</p>
+    <p class="rc-economic-explanation">${customerCreditBs > 0.005 ? `Saldo a favor = pagos recibidos menos total del contrato y garantía pendiente (${formatBs(pendingGuaranteeBs)}).` : 'Total del contrato menos lo pagado a cuenta = saldo del contrato.'} La garantía se muestra por separado; no es un descuento ni se aplica automáticamente al alquiler.</p>
     <div class="rc-economic-summary">
       <span><small>Pagos recibidos del cliente</small><strong>${formatBs(economicTotalsForDocument.collectedBs)}</strong></span>
       <span><small>Garantía apartada, separada del alquiler</small><strong>${formatBs(economicTotalsForDocument.guaranteeBs)}</strong></span>
@@ -9235,7 +9239,7 @@ export const buildContractDocumentHtml = ({
             <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated || documentPayments.reservedBs >= Number(guaranteeBs) ? 'apartada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
             ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
             <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(effectiveDocumentPaidBs)}</strong></div>
-            <div class="rc-financial-item"><span>A cobrar</span><strong>${formatBs(printedPendingBs)}</strong></div>
+            <div class="rc-financial-item"><span>${customerCreditBs > 0.005 ? 'Excedente a favor del cliente' : 'A cobrar'}</span><strong>${formatBs(customerCreditBs > 0.005 ? customerCreditBs : printedPendingBs)}</strong></div>
             <div class="rc-financial-item manual"><span>A cuenta</span><strong>&nbsp;</strong></div>
             <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
             <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(printedManagedBs)}</strong></div>
