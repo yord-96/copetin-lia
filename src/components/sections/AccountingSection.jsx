@@ -8615,7 +8615,7 @@ function AccountingSection({
                 </thead>
                 <tbody>
                   {pettyOpeningBalance ? <tr className="petty-opening-balance">
-                    <th colSpan={7}>SALDO ANTERIOR<small>Fondo antes del primer movimiento mostrado. No es un ingreso. El flujo conserva el orden de registro aunque se editen las fechas.</small></th>
+                    <th colSpan={7}>Saldo anterior<small>Fondo disponible antes del primer movimiento mostrado. No es un ingreso.</small></th>
                     <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.totalBs)}</strong><small>Efectivo: {formatBs(pettyOpeningBalance.cashBs)}</small><small>Digital: {formatBs(pettyOpeningBalance.digitalBs)}</small></td>
                     <td />
                   </tr> : null}
@@ -8655,9 +8655,9 @@ function AccountingSection({
                         </td>
                         <td>{movement.responsible || movement.createdBy || 'Varios'}</td>
                         <td><strong>{movement.receipt || movement.receiptCode || '—'}</strong><small>{registeredBy}</small></td>
-                        <td className="petty-flow-method">{getPaymentMethodLabel({ ...movement, paymentMethod: movement.paymentMethod || 'efectivo' })}</td>
-                        <td className="petty-flow-money value-green">{movement.amountBs > 0 ? `+ ${formatBs(movement.amountBs)}` : '—'}</td>
-                        <td className="petty-flow-money value-orange">{movement.amountBs < 0 ? `− ${formatBs(Math.abs(movement.amountBs))}` : '—'}</td>
+                        <td className="petty-flow-method"><span className="petty-method-badge">{getPaymentMethodLabel({ ...movement, paymentMethod: movement.paymentMethod || 'efectivo' })}</span></td>
+                        <td className="petty-flow-money value-green">{movement.amountBs > 0 ? <span className="petty-amount-badge is-income">+ {formatBs(movement.amountBs)}</span> : <span className="petty-empty-amount">—</span>}</td>
+                        <td className="petty-flow-money value-orange">{movement.amountBs < 0 ? <span className="petty-amount-badge is-expense">− {formatBs(Math.abs(movement.amountBs))}</span> : <span className="petty-empty-amount">—</span>}</td>
                         <td className="petty-fund-cell">{renderPettyFlowFund(movement)}</td>
                         <td>{renderReceiptActions(movement)}</td>
                       </tr>
