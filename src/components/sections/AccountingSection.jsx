@@ -4166,16 +4166,12 @@ function AccountingSection({
   const modalPendingFundDeliveries = postedMovements.filter(row => row.cashBoxType === fundBoxType
     && row.category === 'entrega_fondos' && row.fundReportStatus !== 'approved');
   const renderPettyFund = (row) => row?.fundBalanceBs == null ? '—' : formatBs(row.fundBalanceBs);
-  const renderPettyFlowFund = (row) => {
+  const renderPettyFlowFund = (row, channel) => {
     const balance = pettyFundTimeline.byMovementId.get(String(row.id));
-    const total = row.fundBalanceBs ?? balance?.totalBs;
     const cash = row.fundCashBalanceBs ?? balance?.cashBs;
     const digital = row.fundDigitalBalanceBs ?? balance?.digitalBs;
-    return <>
-      <strong>{total == null ? '—' : formatBs(total)}</strong>
-      {cash != null ? <small>Efectivo: {formatBs(cash)}</small> : null}
-      {digital != null ? <small>Digital: {formatBs(digital)}</small> : null}
-    </>;
+    const value = channel === 'cash' ? cash : digital;
+    return <strong>{value == null ? '—' : formatBs(value)}</strong>;
   };
   const firstPettyFlowRow = pagedPettyExpenseRows.find(row => !isVoidedCashMovement(row) && !isDeletedCashMovement(row));
   const firstPettyFlowBalance = firstPettyFlowRow && pettyFundTimeline.byMovementId.get(String(firstPettyFlowRow.id));
@@ -8151,6 +8147,9 @@ function AccountingSection({
 
               {serverDailyLoading ? <p className="status">Actualizando reporte desde el servidor...</p> : null}
               {serverDailyError ? <p className="status error">{serverDailyError}</p> : null}
+              {!serverDailyLoading && dailyTableRows.length > 0 && dailyTableRows.every(row => row.fundCash == null && row.fundDigital == null) ? (
+                <p className="daily-fund-notice">Estos movimientos quedan fuera del fondo operativo actual. Los pagos anteriores a su apertura no modifican los saldos de efectivo ni digital; por eso se muestran guiones.</p>
+              ) : null}
               <DailyCashTable
                 key={dailyReportDate}
                 allRows={dailyTableRows}
@@ -8609,14 +8608,16 @@ function AccountingSection({
                     <th>Método / Cuenta</th>
                     <th>Ingresos</th>
                     <th>Egresos</th>
-                    <th>Fondo</th>
+                    <th>Fondo efectivo</th>
+                    <th>Fondo digital</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pettyOpeningBalance ? <tr className="petty-opening-balance">
                     <th colSpan={7}>Saldo anterior<small>Fondo disponible antes del primer movimiento mostrado. No es un ingreso.</small></th>
-                    <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.totalBs)}</strong><small>Efectivo: {formatBs(pettyOpeningBalance.cashBs)}</small><small>Digital: {formatBs(pettyOpeningBalance.digitalBs)}</small></td>
+                    <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.cashBs)}</strong></td>
+                    <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.digitalBs)}</strong></td>
                     <td />
                   </tr> : null}
                   {pagedPettyExpenseRows.map((movement) => {
@@ -8658,13 +8659,14 @@ function AccountingSection({
                         <td className="petty-flow-method"><span className="petty-method-badge">{getPaymentMethodLabel({ ...movement, paymentMethod: movement.paymentMethod || 'efectivo' })}</span></td>
                         <td className="petty-flow-money value-green">{movement.amountBs > 0 ? <span className="petty-amount-badge is-income">+ {formatBs(movement.amountBs)}</span> : <span className="petty-empty-amount">—</span>}</td>
                         <td className="petty-flow-money value-orange">{movement.amountBs < 0 ? <span className="petty-amount-badge is-expense">− {formatBs(Math.abs(movement.amountBs))}</span> : <span className="petty-empty-amount">—</span>}</td>
-                        <td className="petty-fund-cell">{renderPettyFlowFund(movement)}</td>
+                        <td className="petty-fund-cell">{renderPettyFlowFund(movement, 'cash')}</td>
+                        <td className="petty-fund-cell">{renderPettyFlowFund(movement, 'digital')}</td>
                         <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
                   })}
-                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={9}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
-                  {pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={9}><p className="status">Cargando gastos...</p></td></tr> : null}
+                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={10}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
+                  {pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={10}><p className="status">Cargando gastos...</p></td></tr> : null}
                 </tbody>
               </table>
             </div>

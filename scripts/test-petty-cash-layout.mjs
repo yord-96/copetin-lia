@@ -49,8 +49,8 @@ try {
     await page.goto(server.resolvedUrls.local[0]+'petty-layout');
     await page.waitForFunction(()=>document.querySelectorAll('.petty-expenses-card tbody tr:not(.petty-opening-balance)').length===2);
     const result=await page.evaluate(()=>({headers:[...document.querySelectorAll('.petty-expenses-card thead th')].map(e=>e.textContent),funds:[...document.querySelectorAll('.petty-expenses-card tbody tr:not(.petty-opening-balance) .petty-fund-cell > strong')].map(e=>e.textContent),opening:document.querySelector('.petty-opening-balance .petty-fund-cell strong')?.textContent,text:document.body.textContent}));
-    assert.equal(result.headers.at(-1),'Acciones'); assert.deepEqual(result.funds,['Bs 500.00','Bs 420.00']);
-    assert.deepEqual(result.headers.slice(-5),['Método / Cuenta','Ingresos','Egresos','Fondo','Acciones']);
+    assert.equal(result.headers.at(-1),'Acciones'); assert.deepEqual(result.funds,['Bs 500.00','Bs 0.00','Bs 420.00','Bs 0.00']);
+    assert.deepEqual(result.headers.slice(-6),['Método / Cuenta','Ingresos','Egresos','Fondo efectivo','Fondo digital','Acciones']);
     assert.equal(result.opening,'Bs 0.00');
     assert.doesNotMatch(result.text,/↑ Sube|↓ Baja/);
     assert.ok(result.text.includes('Ingreso de fondos'));assert.ok(!result.text.includes('INGRESOS DESDE CAJA GRANDE'));
