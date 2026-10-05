@@ -48,6 +48,7 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(wrongChannel.status,400);
     const rows=await request('/accounting/petty-sector?sector=expenses');
     assert.equal(rows.body.total,2);
+    assert.deepEqual(rows.body.rows.map(row=>row.id),[income.body.movement.id,expense.body.movement.id]);
     assert.equal(rows.body.rows.find(row=>row.id===income.body.movement.id).fundBalanceBs,300);
     assert.equal(rows.body.rows.find(row=>row.id===expense.body.movement.id).fundBalanceBs,220);
     const suppliers=await request('/accounting/petty-sector?sector=suppliers');

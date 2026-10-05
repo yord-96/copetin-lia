@@ -1982,7 +1982,7 @@ function AccountingSection({
     () => Math.abs(sumBy(selectedDayAdvanceRows, (movement) => movement.amountBs)),
     [selectedDayAdvanceRows],
   );
-  const pagedPettyExpenseRows = pettySectorPages.expenses.rows;
+  const pagedPettyExpenseRows = useMemo(() => pettySectorPages.expenses.rows.slice().sort(compareCashLedgerOrder), [pettySectorPages.expenses.rows]);
   const pagedPersonnelAdvanceRows = pettySectorPages.advances.rows;
   const pagedCashDebts = pettySectorPages.debts.rows;
 
@@ -4171,16 +4171,21 @@ function AccountingSection({
     const total = row.fundBalanceBs ?? balance?.totalBs;
     const cash = row.fundCashBalanceBs ?? balance?.cashBs;
     const digital = row.fundDigitalBalanceBs ?? balance?.digitalBs;
-    const active = !isVoidedCashMovement(row) && !isDeletedCashMovement(row);
     return <>
       <strong>{total == null ? '—' : formatBs(total)}</strong>
       {cash != null ? <small>Efectivo: {formatBs(cash)}</small> : null}
       {digital != null ? <small>Digital: {formatBs(digital)}</small> : null}
-      {active ? <small className={row.amountBs > 0 ? 'petty-flow-up' : 'petty-flow-down'}>
-        {row.amountBs > 0 ? '↑ Sube' : '↓ Baja'} {formatBs(Math.abs(row.amountBs))} · {getPaymentMethodLabel({ ...row, paymentMethod: row.paymentMethod || 'efectivo' })}
-      </small> : <small>Sin efecto en el fondo</small>}
     </>;
   };
+  const firstPettyFlowRow = pagedPettyExpenseRows.find(row => !isVoidedCashMovement(row) && !isDeletedCashMovement(row));
+  const firstPettyFlowBalance = firstPettyFlowRow && pettyFundTimeline.byMovementId.get(String(firstPettyFlowRow.id));
+  const pettyOpeningAmount = toNumber(firstPettyFlowRow?.amountBs);
+  const pettyOpeningCashMovement = String(firstPettyFlowRow?.paymentMethod || 'efectivo').toLowerCase() === 'efectivo';
+  const pettyOpeningBalance = firstPettyFlowRow ? {
+    totalBs: toNumber(firstPettyFlowRow.fundBalanceBs ?? firstPettyFlowBalance?.totalBs) - pettyOpeningAmount,
+    cashBs: toNumber(firstPettyFlowRow.fundCashBalanceBs ?? firstPettyFlowBalance?.cashBs) - (pettyOpeningCashMovement ? pettyOpeningAmount : 0),
+    digitalBs: toNumber(firstPettyFlowRow.fundDigitalBalanceBs ?? firstPettyFlowBalance?.digitalBs) - (pettyOpeningCashMovement ? 0 : pettyOpeningAmount),
+  } : null;
   const openFundAction = (kind, box = 'BIG_CASH') => {
     setFundBoxType(box);
     setFundActionError('');
@@ -8601,14 +8606,19 @@ function AccountingSection({
                     <th>Concepto</th>
                     <th>Proveedor / Destino</th>
                     <th>Comprobante / Registrado por</th>
-                    <th>Acciones</th>
                     <th>Método / Cuenta</th>
                     <th>Ingresos</th>
                     <th>Egresos</th>
                     <th>Fondo</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
+                  {pettyOpeningBalance ? <tr className="petty-opening-balance">
+                    <th colSpan={7}>SALDO ANTERIOR<small>Fondo antes del primer movimiento mostrado. No es un ingreso. El flujo conserva el orden de registro aunque se editen las fechas.</small></th>
+                    <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.totalBs)}</strong><small>Efectivo: {formatBs(pettyOpeningBalance.cashBs)}</small><small>Digital: {formatBs(pettyOpeningBalance.digitalBs)}</small></td>
+                    <td />
+                  </tr> : null}
                   {pagedPettyExpenseRows.map((movement) => {
                     const category = getPettyExpenseCategory(movement);
                     const isPersonnelAdvanceMovement =
@@ -8632,6 +8642,7 @@ function AccountingSection({
                         <td>
                           <strong>{formatDate(movement.createdAt)}</strong>
                           <small>{getLongHourLabel(movement.createdAt)}</small>
+                          {movement.cashLedgerSequence ? <small>Caja #{movement.cashLedgerSequence}</small> : null}
                         </td>
                         <td>
                           <strong>{movement.description}</strong>
@@ -8644,11 +8655,11 @@ function AccountingSection({
                         </td>
                         <td>{movement.responsible || movement.createdBy || 'Varios'}</td>
                         <td><strong>{movement.receipt || movement.receiptCode || '—'}</strong><small>{registeredBy}</small></td>
-                        <td>{renderReceiptActions(movement)}</td>
                         <td className="petty-flow-method">{getPaymentMethodLabel({ ...movement, paymentMethod: movement.paymentMethod || 'efectivo' })}</td>
                         <td className="petty-flow-money value-green">{movement.amountBs > 0 ? `+ ${formatBs(movement.amountBs)}` : '—'}</td>
                         <td className="petty-flow-money value-orange">{movement.amountBs < 0 ? `− ${formatBs(Math.abs(movement.amountBs))}` : '—'}</td>
                         <td className="petty-fund-cell">{renderPettyFlowFund(movement)}</td>
+                        <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
                   })}

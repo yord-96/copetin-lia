@@ -75597,3 +75597,16 @@ body:has(.bigcash-report-backdrop) {
 .accounting-pettycash-view.accounting-redesign .petty-table .petty-fund-cell > strong { color: #173a70; }
 .accounting-pettycash-view.accounting-redesign .petty-table .petty-flow-up { color: #087f49; }
 .accounting-pettycash-view.accounting-redesign .petty-table .petty-flow-down { color: #c44320; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(5) { width: 10%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(6) { width: 8%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(7) { width: 8%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(8) { width: 16%; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card th:nth-child(9) { width: 6%; text-align: center; }
+.accounting-pettycash-view.accounting-redesign .petty-expenses-card td:last-child { text-align: center; }
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-opening-balance th {
+  padding: 14px 10px; background: #113669; color: #fff; text-align: center; font-size: 11px;
+}
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-opening-balance th small {
+  display: block; margin-top: 5px; font-size: 10px; font-weight: 400; line-height: 1.5;
+}
+.accounting-pettycash-view.accounting-redesign .petty-table .petty-opening-balance td { background: #eaf2fc; border-bottom: 2px solid #cddbeb; }

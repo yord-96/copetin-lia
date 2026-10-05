@@ -1,5 +1,6 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
 import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
+import { compareCashLedgerOrder } from '../utils/cashLedgerOrder.js';
 import { addPettyExpenseCategory } from '../utils/pettyExpenseCategories.js';
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge.js';
 import { buildContractCollectionGroups } from '../utils/contractCollectionGroups.js';
@@ -4329,7 +4330,10 @@ export const api = {
           const movements = await callBridge('cash', 'listMovements', false);
           const timeline = buildPettyCashFundTimeline(movements);
           const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && !movement.accountingArchivedAt && movement.accountingPeriodStatus !== 'archived')
-            .map(row => ({ ...row, fundBalanceBs: timeline.byMovementId.get(String(row.id))?.totalBs ?? null }));
+            .map(row => {
+              const balance = timeline.byMovementId.get(String(row.id));
+              return { ...row, fundBalanceBs: balance?.totalBs ?? null, fundCashBalanceBs: balance?.cashBs ?? null, fundDigitalBalanceBs: balance?.digitalBs ?? null };
+            });
           const isAdvance = (movement) => String(movement?.category ?? '').toLowerCase().includes('adelanto')
             || String(movement?.accountingTag ?? '').toLowerCase() === 'personnel_advance';
           if (normalizedSector === 'advances') {
@@ -4341,7 +4345,8 @@ export const api = {
           }
         }
         rows = Array.isArray(rows) ? rows : [];
-        rows.sort((a, b) => new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
+        rows.sort((a, b) => normalizedSector === 'expenses' ? compareCashLedgerOrder(a, b)
+          : new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
         return {
           sector: normalizedSector,
           rows: rows.slice(offset, offset + limit),

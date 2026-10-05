@@ -47,11 +47,12 @@ try {
   for(const width of [1920,1440,1024]){
     await page.setViewport({width,height:1000});
     await page.goto(server.resolvedUrls.local[0]+'petty-layout');
-    await page.waitForFunction(()=>document.querySelectorAll('.petty-expenses-card tbody tr').length===2);
-    const result=await page.evaluate(()=>({headers:[...document.querySelectorAll('.petty-expenses-card th')].map(e=>e.textContent),funds:[...document.querySelectorAll('.petty-expenses-card .petty-fund-cell > strong')].map(e=>e.textContent),text:document.body.textContent}));
-    assert.equal(result.headers.at(-1),'Fondo'); assert.deepEqual(result.funds,['Bs 500.00','Bs 420.00']);
-    assert.deepEqual(result.headers.slice(-4),['Método / Cuenta','Ingresos','Egresos','Fondo']);
-    assert.match(result.text,/↑ Sube Bs 500.00/); assert.match(result.text,/↓ Baja Bs 80.00/);
+    await page.waitForFunction(()=>document.querySelectorAll('.petty-expenses-card tbody tr:not(.petty-opening-balance)').length===2);
+    const result=await page.evaluate(()=>({headers:[...document.querySelectorAll('.petty-expenses-card thead th')].map(e=>e.textContent),funds:[...document.querySelectorAll('.petty-expenses-card tbody tr:not(.petty-opening-balance) .petty-fund-cell > strong')].map(e=>e.textContent),opening:document.querySelector('.petty-opening-balance .petty-fund-cell strong')?.textContent,text:document.body.textContent}));
+    assert.equal(result.headers.at(-1),'Acciones'); assert.deepEqual(result.funds,['Bs 500.00','Bs 420.00']);
+    assert.deepEqual(result.headers.slice(-5),['Método / Cuenta','Ingresos','Egresos','Fondo','Acciones']);
+    assert.equal(result.opening,'Bs 0.00');
+    assert.doesNotMatch(result.text,/↑ Sube|↓ Baja/);
     assert.ok(result.text.includes('Ingreso de fondos'));assert.ok(!result.text.includes('INGRESOS DESDE CAJA GRANDE'));
     await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent==='Ingreso de fondos').click());
     await page.waitForSelector('.fund-action-modal');
@@ -94,12 +95,12 @@ try {
   for (const width of [1920,1440,1024]) {
     await page.setViewport({width,height:1000});
     await page.goto(server.resolvedUrls.local[0]+'petty-layout?long');
-    await page.waitForFunction(()=>document.querySelectorAll('.petty-expenses-card tbody tr').length===30);
+    await page.waitForFunction(()=>document.querySelectorAll('.petty-expenses-card tbody tr:not(.petty-opening-balance)').length===30);
     const layout=await page.evaluate(()=>{
       const wrap=document.querySelector('.petty-expenses-card .petty-table-wrap');
       return {overflow:getComputedStyle(wrap).overflowY, full:wrap.scrollHeight<=wrap.clientHeight+2,
         right:wrap.getBoundingClientRect().right,
-        dates:[...wrap.querySelectorAll('tbody td:first-child')].every(td=>getComputedStyle(td.querySelector('small')).display==='block'),
+        dates:[...wrap.querySelectorAll('tbody tr:not(.petty-opening-balance) td:first-child')].every(td=>getComputedStyle(td.querySelector('small')).display==='block'),
         cellsFit:[...wrap.querySelectorAll('td')].every(td=>td.scrollWidth<=td.clientWidth+2),
         clipped:[...wrap.querySelectorAll('td')].filter(td=>td.scrollWidth>td.clientWidth+2).slice(0,3).map(td=>({column:td.cellIndex,text:td.textContent,width:td.clientWidth,scroll:td.scrollWidth,html:td.innerHTML}))};
     });

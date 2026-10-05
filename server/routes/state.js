@@ -7387,7 +7387,8 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
         return [row?.description, row?.receipt, row?.receiptCode, row?.responsible, row?.createdBy, row?.category, row?.notes, row?.personName, row?.supplierName, row?.loanCode]
           .some((value) => normalizeValue(value).includes(normalizeValue(search)));
       })
-      .sort((a, b) => new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
+      .sort((a, b) => sector === 'expenses' ? compareCashLedgerOrder(a, b)
+        : new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
 
     const summary = sector === 'history'
       ? rows.reduce((result, movement) => {
