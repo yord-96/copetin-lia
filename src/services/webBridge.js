@@ -1,6 +1,7 @@
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
 import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
+import { reconcileContractDocumentPayments } from '../utils/contractDocumentPayments.js';
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
 import { resolveEconomicReceiptDisplayTimestamp } from '../utils/economicReceiptTimestamp.js';
 import { assertIndependentCashMovement, buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
@@ -8400,6 +8401,7 @@ export const buildContractDocumentHtml = ({
   deliveries,
   settings,
   items = [],
+  cashMovements = [],
   paperSize = 'oficio',
   documentKind = 'contract',
 }) => {
@@ -8464,8 +8466,8 @@ export const buildContractDocumentHtml = ({
     current.push(entry);
     returnIssuesByItemId.set(itemId, current);
   });
-  const activeEconomicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
-    .filter((entry) => !entry?.deletedAt);
+  const documentPayments = reconcileContractDocumentPayments(contract, rental, cashMovements);
+  const activeEconomicLedger = documentPayments.ledger;
   const confirmedEconomicDepositBs = activeEconomicLedger
     .filter((entry) => (
       entry?.type === 'deposit'
@@ -8476,7 +8478,7 @@ export const buildContractDocumentHtml = ({
         || String(entry?.cashReceiptCode ?? '').trim()
       )
     ))
-    .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry?.documentContractAllocationBs ?? entry?.amountBs ?? entry?.amount ?? 0)), 0);
   const ledgerChargeCoverageBs = activeEconomicLedger
     .filter((entry) => entry?.type === 'charge')
     .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
@@ -8932,13 +8934,13 @@ export const buildContractDocumentHtml = ({
   const printedManagedBs = printedTotalBs + Math.max(0, Number(guaranteeBs ?? 0));
   const effectiveDocumentPaidBs = Math.max(
     0,
-    Number(paidBs ?? 0),
+    documentPayments.hasPayments ? documentPayments.appliedBs : Number(paidBs ?? 0),
     Math.min(printedTotalBs, confirmedEconomicDepositBs),
   );
   const printedPendingBs = Math.max(
     0,
     printedTotalBs - effectiveDocumentPaidBs - Math.max(0, Number(prepaidAppliedBs ?? 0))
-      + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0))),
+      + (isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0) - documentPayments.reservedBs)),
   );
   const serviceRows = contractServices
     .map((service) => {
@@ -9104,10 +9106,7 @@ export const buildContractDocumentHtml = ({
   );
 
   const storedSettlementPendingBs = Number(
-    rental?.returnSettlement?.pendingCollectionBs
-    ?? rental?.payment?.pendingPaymentBs
-    ?? rental?.totals?.pendingPaymentBs
-    ?? printedPendingBs,
+    rental?.returnSettlement?.pendingCollectionBs ?? printedPendingBs,
   );
   const storedSettlementCommercialBs = Number(
     rental?.returnSettlement?.outstandingRentalBs
@@ -9233,7 +9232,7 @@ export const buildContractDocumentHtml = ({
             <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-            <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated ? 'pagada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
+            <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated || documentPayments.reservedBs >= Number(guaranteeBs) ? 'apartada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
             ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
             <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(effectiveDocumentPaidBs)}</strong></div>
             <div class="rc-financial-item"><span>A cobrar</span><strong>${formatBs(printedPendingBs)}</strong></div>
@@ -20009,7 +20008,7 @@ const createWebBridge = () => ({
       }
       const deliveries = resolveDeliveriesForRental(state, rental);
       const title = `Contrato ${contract?.contractCode ?? rental.orderCode ?? rental.id}`;
-      return { ok: true, title, html: buildContractDocumentHtml({ rental, contract, deliveries, settings: state.settings, items: state.items }) };
+      return { ok: true, title, html: buildContractDocumentHtml({ rental, contract, deliveries, settings: state.settings, items: state.items, cashMovements: state.cashMovements }) };
     },
     printInventoryOrder: async (payload) => {
       const state = readState();

@@ -491,6 +491,7 @@ router.get(
 
       const rawHtml = buildContractDocumentHtml({
         contract: context.contract,
+        cashMovements: snapshot?.state?.cashMovements ?? [],
         rental: context.rental ?? {},
         deliveries: context.deliveries,
         settings: snapshot?.state?.settings ?? {},
