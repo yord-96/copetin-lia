@@ -11,9 +11,12 @@ import { addPettyExpenseCategory } from '/src/utils/pettyExpenseCategories.js';
 import '/src/App.css';
 import '/src/index.css';
 const rows=[{id:'fund',cashBoxType:'PETTY_CASH',type:'ingreso',category:'ingreso_fondos',amountBs:500,description:'Fondo propio',fundBalanceBs:500,createdAt:'2026-10-02T15:00:00Z',cashLedgerSequence:1}, {id:'expense',cashBoxType:'PETTY_CASH',type:'egreso',category:'entrega_fondos',amountBs:-80,description:'Pago propio',fundBalanceBs:420,createdAt:'2026-10-01T08:00:00Z',cashLedgerSequence:2}];
+if (location.search.includes('long')) {
+  rows.splice(0, rows.length, ...Array.from({length:30}, (_, i) => ({id:'long-'+i,cashBoxType:'PETTY_CASH',type:i%3?'egreso':'ingreso',category:i%3?'alimentacion':'ingreso_fondos',amountBs:i%3?-140:10000,description:'PAGO DE BOCADITOS PARA CONTRATO DE ALCALDIA, 250 BROCHETAS Y 125 MUSLITOS',responsible:'NOELIA ELISA ORELLANA',createdBy:'LISBETH MUÑOZ',receipt:'FIRMA EN CUADERNO',fundBalanceBs:7517.50,cashLedgerSequence:i+1,createdAt:'2026-10-05T13:41:00Z'})));
+}
 api.cash.getPettyCategories=async()=>({categories:JSON.parse(localStorage.getItem('test-petty-categories')||'[]')});
 api.cash.createPettyCategory=async label=>{const result=addPettyExpenseCategory(JSON.parse(localStorage.getItem('test-petty-categories')||'[]'),label);localStorage.setItem('test-petty-categories',JSON.stringify(result.categories));return result;};
-api.cash.getPettySector=async ({sector})=>({rows:sector==='expenses'?rows:[],total:sector==='expenses'?2:0,hasMore:false});
+api.cash.getPettySector=async ({sector})=>({rows:sector==='expenses'?rows:[],total:sector==='expenses'?rows.length:0,hasMore:false});
 const formatBs=n=>'Bs '+Number(n).toFixed(2);
 createRoot(document.getElementById('root')).render(<main className="app-main"><AccountingSection activeModule="contabilidad_caja_chica" cashMovements={[...rows,{id:'big-fund',cashBoxType:'BIG_CASH',type:'ingreso',category:'ingreso_fondos',amountBs:5000}]} cashSummary={{pettyCashBalanceBs:420}} onPrintCashMovementReceipt={async()=>({html:'<html><body>Recibo de ingreso de Caja Chica</body></html>'})} formatBs={formatBs} formatDate={v=>String(v??'')} formatDateTime={v=>String(v??'')} /></main>);
 `;
@@ -84,6 +87,26 @@ try {
     await incomePopup.waitForFunction(()=>document.body.textContent.includes('Recibo de ingreso de Caja Chica'));
     await incomePopup.close();
     console.log('Caja Chica verificada',width);
+  }
+  assert.deepEqual(errors,[]);
+  for (const width of [1920,1440,1024]) {
+    await page.setViewport({width,height:1000});
+    await page.goto(server.resolvedUrls.local[0]+'petty-layout?long');
+    await page.waitForFunction(()=>document.querySelectorAll('.petty-expenses-card tbody tr').length===30);
+    const layout=await page.evaluate(()=>{
+      const wrap=document.querySelector('.petty-expenses-card .petty-table-wrap');
+      return {overflow:getComputedStyle(wrap).overflowY, full:wrap.scrollHeight<=wrap.clientHeight+2,
+        right:wrap.getBoundingClientRect().right,
+        dates:[...wrap.querySelectorAll('tbody td:first-child')].every(td=>getComputedStyle(td.querySelector('small')).display==='block'),
+        cellsFit:[...wrap.querySelectorAll('td')].every(td=>td.scrollWidth<=td.clientWidth+2),
+        clipped:[...wrap.querySelectorAll('td')].filter(td=>td.scrollWidth>td.clientWidth+2).slice(0,3).map(td=>({column:td.cellIndex,text:td.textContent,width:td.clientWidth,scroll:td.scrollWidth,html:td.innerHTML}))};
+    });
+    assert.equal(layout.overflow,'visible');assert.ok(layout.full);assert.ok(layout.right<=width);
+    assert.ok(layout.dates);assert.ok(layout.cellsFit,JSON.stringify(layout.clipped));
+    await page.evaluate(()=>window.scrollTo(0,document.querySelector('.petty-expenses-card table').getBoundingClientRect().top+scrollY+150));
+    const headerTop=await page.$eval('.petty-expenses-card th',th=>th.getBoundingClientRect().top);
+    assert.ok(Math.abs(headerTop)<2);
+    console.log('Tabla completa de Caja Chica y encabezado fijo',width);
   }
   assert.deepEqual(errors,[]);
 }finally{await browser?.close();await server.close();}

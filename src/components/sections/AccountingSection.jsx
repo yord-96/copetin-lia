@@ -1643,6 +1643,20 @@ function AccountingSection({
   }, [bigCashMovementRows, bigCashWorkspaceQuery, bigCashWorkspaceRanges.voided, getMovementReference]);
 
   const dailyReportDate = bigCashWorkspaceRanges.daily?.dateFrom || getInputDate();
+  const pettyViewRef = useRef(null);
+  useEffect(() => {
+    if (activeModule !== 'contabilidad_caja_chica') return;
+    const topbar = document.querySelector('.topbar');
+    const updateOffset = () => {
+      const position = topbar && getComputedStyle(topbar).position;
+      const height = position === 'sticky' || position === 'fixed' ? topbar.getBoundingClientRect().height : 0;
+      pettyViewRef.current?.style.setProperty('--petty-header-offset', `${height}px`);
+    };
+    updateOffset();
+    const observer = new ResizeObserver(updateOffset);
+    if (topbar) observer.observe(topbar);
+    return () => observer.disconnect();
+  }, [activeModule]);
   const [serverDailyReport, setServerDailyReport] = useState(null);
   const [serverDailyError, setServerDailyError] = useState('');
   const [serverDailyLoading, setServerDailyLoading] = useState(false);
@@ -8416,7 +8430,7 @@ function AccountingSection({
 
   if (activeModule === 'contabilidad_caja_chica') {
     return (
-      <section className="panel accounting-pettycash-view accounting-redesign">
+      <section ref={pettyViewRef} className="panel accounting-pettycash-view accounting-redesign">
         <header className="accounting-bigcash-head pettycash-head">
           <div>
             <h2>Caja Chica</h2>
@@ -8575,7 +8589,7 @@ function AccountingSection({
                     <th>Monto</th>
                     <th>Comprobante</th>
                     <th>Registrado por</th>
-                    <th /><th>Fondo</th>
+                    <th>Acciones</th><th>Fondo</th>
                   </tr>
                 </thead>
                 <tbody>
