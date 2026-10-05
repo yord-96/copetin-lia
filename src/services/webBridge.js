@@ -9194,14 +9194,18 @@ export const buildContractDocumentHtml = ({
     <div class="rc-economic-lines">${economicLinesHtml}</div>
     ${economicHiddenCount > 0 ? `<p class="rc-economic-more">+ ${economicHiddenCount} movimiento(s) anterior(es) conservado(s) en el historial</p>` : ''}`;
 
+  const itemFinancialSummaryHtml = hasDailySchedulePricing
+    ? `<div class="rc-financial-item"><span>Total de los días</span><strong>${formatBs(computedDocumentItemsSubtotalBs)}</strong></div>
+       ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Descuento ya incluido en los días</span><strong>${formatBs(itemDiscountsBs)}</strong></div>` : ''}`
+    : `<div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsGrossSubtotalBs)}</strong></div>
+       ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Descuento items</span><strong>- ${formatBs(itemDiscountsBs)}</strong></div>` : ''}
+       ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Items neto</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>` : ''}`;
   const financialSummaryHtml = isQuoteDocument
     ? `
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
             ${dailyScheduleFinancialItemsHtml}
-            <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsGrossSubtotalBs)}</strong></div>
-            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Descuento items</span><strong>- ${formatBs(itemDiscountsBs)}</strong></div>` : ''}
-            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Items neto</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>` : ''}
+            ${itemFinancialSummaryHtml}
             <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
@@ -9212,9 +9216,7 @@ export const buildContractDocumentHtml = ({
           <div class="rc-financial-summary">
             ${durationFinancialItemsHtml}
             ${dailyScheduleFinancialItemsHtml}
-            <div class="rc-financial-item"><span>Items</span><strong>${formatBs(documentItemsGrossSubtotalBs)}</strong></div>
-            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Descuento items</span><strong>- ${formatBs(itemDiscountsBs)}</strong></div>` : ''}
-            ${itemDiscountsBs > 0 ? `<div class="rc-financial-item"><span>Items neto</span><strong>${formatBs(documentItemsSubtotalBs)}</strong></div>` : ''}
+            ${itemFinancialSummaryHtml}
             <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}

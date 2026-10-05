@@ -15,5 +15,14 @@ test('contrato diario incluye cobertura manual en el día correcto sin duplicar 
   assert.match(html,/<span>Dia1<\/span><strong>Bs18[.,]798[.,]00<\/strong>/);
   assert.match(html,/<span>Dia2<\/span><strong>Bs9[.,]405[.,]50<\/strong>/);
   assert.match(html,/<span>Dia3<\/span><strong>Bs3[.,]675[.,]00<\/strong>/);
+  assert.match(html,/<span>Totaldelosdías<\/span><strong>Bs31[.,]878[.,]50<\/strong>/);
+  assert.match(html,/<span>Descuentoyaincluidoenlosdías<\/span><strong>Bs387[.,]50<\/strong>/);
+  assert.doesNotMatch(html,/<span>Items<\/span><strong>Bs32[.,]266/);
+  const withoutManual = {...contract,supplierFulfillmentPlan:[],totals:{...contract.totals,itemsGrossSubtotalBs:31441,itemsNetSubtotalBs:31053.5,totalBs:34253.5}};
+  for (const documentKind of ['contract','quote']) {
+    const updated = buildContractDocumentHtml({contract:withoutManual,rental:{items},deliveries:[],settings:{},items:[],documentKind}).replace(/\s|&nbsp;/g,'');
+    assert.match(updated,/<span>Totaldelosdías<\/span><strong>Bs31[.,]053[.,]50<\/strong>/);
+    assert.doesNotMatch(updated,/<span>Items<\/span><strong>Bs31[.,]441/);
+  }
 });
 
