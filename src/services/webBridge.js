@@ -8118,6 +8118,13 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
     line-height: 1;
     white-space: nowrap;
   }
+  .rc-economic-summary.is-main { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rc-economic-summary.is-main span { min-height: 13mm; background: #f5f8fc; border-color: #ccd8e7; border-radius: 1.5mm; }
+  .rc-economic-summary.is-main strong { font-size: 13px; color: #173a70; }
+  .rc-economic-summary.is-main .is-pending { background: #fff0e8; border-color: #e9b59b; }
+  .rc-economic-summary.is-main .is-pending strong { color: #b34219; }
+  .rc-economic-summary.is-main .is-paid { background: #edf8f0; border-color: #a8d5b5; }
+  .rc-economic-explanation { margin: 1mm 0 2mm; color: #665b4e; font: 8px Arial, Helvetica, sans-serif; line-height: 1.4; }
   .rc-economic-lines {
     display: grid;
     border: .2mm solid #e4d3bb;
@@ -9185,9 +9192,15 @@ export const buildContractDocumentHtml = ({
         ${economicStatusDetailHtml}
       </span>
     </div>
+    <div class="rc-economic-summary is-main">
+      <span><small>Total del alquiler y transporte</small><strong>${formatBs(printedTotalBs)}</strong></span>
+      <span><small>Pagado a cuenta del contrato</small><strong>${formatBs(effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0)))}</strong></span>
+      <span class="${currentCommercialPendingBs > 0.005 ? 'is-pending' : 'is-paid'}"><small>Falta pagar del contrato</small><strong>${formatBs(currentCommercialPendingBs)}</strong></span>
+    </div>
+    <p class="rc-economic-explanation">Total del contrato menos lo pagado a cuenta = saldo del contrato. La garantía se muestra por separado; no es un descuento ni se aplica automáticamente al alquiler.</p>
     <div class="rc-economic-summary">
-      <span><small>Cobrado / pagos</small><strong>${formatBs(economicTotalsForDocument.collectedBs)}</strong></span>
-      <span><small>Garantia apartada</small><strong>${formatBs(economicTotalsForDocument.guaranteeBs)}</strong></span>
+      <span><small>Pagos recibidos del cliente</small><strong>${formatBs(economicTotalsForDocument.collectedBs)}</strong></span>
+      <span><small>Garantía apartada, separada del alquiler</small><strong>${formatBs(economicTotalsForDocument.guaranteeBs)}</strong></span>
       <span><small>Danos / faltantes</small><strong>${formatBs(economicTotalsForDocument.chargesBs)}</strong></span>
       <span><small>Devuelto al cliente</small><strong>${formatBs(economicTotalsForDocument.refundsBs)}</strong></span>
     </div>

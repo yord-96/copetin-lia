@@ -26,3 +26,13 @@ test('contrato diario incluye cobertura manual en el día correcto sin duplicar 
   }
 });
 
+
+test('estado económico muestra total, pago aplicado y diferencia con garantía separada', () => {
+  const contract = {contractCode:'test',items:[{itemId:'item',itemName:'Material',quantity:1,unitPriceBs:100,lineTotalBs:100}],totals:{totalBs:100,itemsNetSubtotalBs:100,guaranteeBs:20},payment:{paidAtApprovalBs:40},economicLedger:[]};
+  const html = buildContractDocumentHtml({contract,rental:{},deliveries:[],settings:{},items:[]}).replace(/\s|&nbsp;/g,'');
+  assert.match(html,/<small>Totaldelalquilerytransporte<\/small><strong>Bs100[.,]00/);
+  assert.match(html,/<small>Pagadoacuentadelcontrato<\/small><strong>Bs40[.,]00/);
+  assert.match(html,/<small>Faltapagardelcontrato<\/small><strong>Bs60[.,]00/);
+  assert.ok(html.includes('Lagarantíasemuestraporseparado'));
+});
+
