@@ -3768,7 +3768,10 @@ function AccountingSection({
   };
 
   const resetCashForm = (patch = {}) => {
+    const localNow = new Date();
+    localNow.setMinutes(localNow.getMinutes() - localNow.getTimezoneOffset());
     setCashForm({
+      createdAt: localNow.toISOString().slice(0, 16),
       amountBs: '',
       description: '',
       category: 'varios',
@@ -3846,9 +3849,12 @@ function AccountingSection({
   };
 
   const openEditPettyExpense = (movement) => {
-    if (!isDeveloperUser || !movement || isVoidedCashMovement(movement)) return;
+    if (!movement || isVoidedCashMovement(movement) || isDeletedCashMovement(movement)) return;
+    const localDate = new Date(movement.receiptIssuedAt || movement.createdAt);
+    localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
     setEditingPettyExpense(movement);
     setCashForm({
+      createdAt: localDate.toISOString().slice(0, 16),
       amountBs: String(Math.abs(toNumber(movement.amountBs)) || ''),
       description: movement.description || '',
       category: movement.category || 'varios',
@@ -4370,6 +4376,7 @@ function AccountingSection({
         if (editingPettyExpense) {
           await onUpdatePettyExpense?.({
             movementId: editingPettyExpense.id,
+            createdAt: new Date(cashForm.createdAt).toISOString(),
             amountBs,
             description: cashForm.description,
             category: cashForm.category,
@@ -4378,13 +4385,14 @@ function AccountingSection({
             responsible: cashForm.responsible || currentUserName,
             receipt: cashForm.receipt,
             notes: cashForm.notes,
-            reason: 'Edicion manual autorizada por Developer.',
+            reason: 'Corrección de gasto desde Caja Chica.',
           });
           setCashActionFeedback('Gasto de Caja Chica actualizado.');
         } else {
         const created = await onCreateCashMovement?.({
           type: 'egreso',
           cashBoxType: 'PETTY_CASH',
+          createdAt: new Date(cashForm.createdAt).toISOString(),
           amountBs,
           description: cashForm.description,
           category: cashForm.category,
@@ -4742,11 +4750,11 @@ function AccountingSection({
                 <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); printCashReceipt(movement); }}>
                   Recibo
                 </button>
-                {isDeveloperUser ? (
+                {(
                   <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); openEditPettyExpense(movement); }}>
                     Editar
                   </button>
-                ) : null}
+                )}
                 {isDeveloperUser ? (
                   <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); handleDeletePettyExpenseAction(movement); }}>
                     Eliminar
@@ -5427,7 +5435,7 @@ function AccountingSection({
       ) : null}
       {cashModal ? (
         <div className="accounting-modal-backdrop" onClick={closeCashAction}>
-          <form className={`accounting-modal accounting-movement-form ${cashModal === 'advance' ? 'is-advance' : ''}`} onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
+          <form className={`accounting-modal accounting-movement-form ${cashModal === 'advance' ? 'is-advance' : ''} ${cashModal === 'expense' ? 'is-expense' : ''}`} onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
             <header>
               <div>
                 <h3>{getCashModalTitle()}</h3>
@@ -5641,6 +5649,9 @@ function AccountingSection({
                 </select>
               </label>
             </div>
+            {cashModal === 'expense' ? <label className="petty-expense-date">Fecha y hora del gasto
+              <input type="datetime-local" value={cashForm.createdAt || ''} onChange={event => setCashForm(current => ({ ...current, createdAt: event.target.value }))} required />
+            </label> : null}
             {cashModal !== 'advance' && cashForm.paymentMethod === 'qr' ? (
               <label>
                 Cuenta destino QR

@@ -4631,7 +4631,8 @@ const requireDeveloperCashAction = (payload = {}) => {
 router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    requireDeveloperCashAction(payload);
+    const expenseDate = payload.createdAt == null ? null : new Date(payload.createdAt);
+    if (expenseDate && Number.isNaN(expenseDate.getTime())) return res.status(400).json({ error: 'La fecha del gasto no es válida.' });
     const movementId = String(req.params.movementId ?? '').trim();
     const amountBs = directMoney(payload.amountBs);
     if (!movementId) return res.status(400).json({ error: 'Movimiento no identificado.' });
@@ -4658,11 +4659,16 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
       }
       const now = new Date().toISOString();
       const previousSnapshot = {
+        createdAt: movement.createdAt, receiptIssuedAt: movement.receiptIssuedAt,
         amountBs: movement.amountBs, description: movement.description, category: movement.category,
         paymentMethod: movement.paymentMethod, paymentAccount: movement.paymentAccount,
         responsible: movement.responsible, receipt: movement.receipt, notes: movement.notes,
       };
       movement.amountBs = -amountBs;
+      if (expenseDate) {
+        movement.createdAt = expenseDate.toISOString();
+        movement.receiptIssuedAt = expenseDate.toISOString();
+      }
       movement.description = String(payload.description ?? '').trim();
       movement.category = String(payload.category ?? movement.category ?? 'varios').trim();
       movement.paymentMethod = directPaymentMethod(payload.paymentMethod ?? movement.paymentMethod);
@@ -4671,7 +4677,7 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
       movement.receipt = String(payload.receipt ?? movement.receipt ?? '').trim();
       movement.notes = String(payload.notes ?? movement.notes ?? '').trim();
       movement.editedAt = now;
-      movement.editedBy = String(payload.updatedBy ?? payload.createdBy ?? 'Developer').trim() || 'Developer';
+      movement.editedBy = String(payload.updatedBy ?? payload.createdBy ?? 'Usuario').trim() || 'Usuario';
       movement.editReason = String(payload.reason ?? 'Correccion de gasto desde Caja Chica.').trim();
       movement.editHistory = [
         ...(Array.isArray(movement.editHistory) ? movement.editHistory : []),

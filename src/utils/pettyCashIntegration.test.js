@@ -80,6 +80,21 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(finalRow.fundBalanceBs,300);
     assert.equal(finalRow.fundCashBalanceBs,200);
     assert.equal(finalRow.fundDigitalBalanceBs,100);
+    const editedDate = '2026-09-28T14:30:00.000Z';
+    const beforeEdit = (await store.getStateSnapshot()).state.cashMovements.find(row => row.id === digitalExpense.body.movement.id);
+    const editResponse = await fetch(`${base}/cash/petty-expense/${digitalExpense.body.movement.id}`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json','X-App-Internal-Key':'test-petty-key'},
+      body: JSON.stringify({amountBs:20,description:'Gasto corregido',createdAt:editedDate,userRole:'ventas',updatedBy:'Operadora'}),
+    });
+    const edited = await editResponse.json();
+    assert.equal(editResponse.status,200,JSON.stringify(edited));
+    assert.equal(edited.movement.createdAt,editedDate);
+    assert.equal(edited.movement.receiptIssuedAt,editedDate);
+    assert.equal(edited.movement.editedBy,'Operadora');
+    assert.equal(edited.movement.cashLedgerSequence,beforeEdit.cashLedgerSequence);
+    assert.equal(edited.movement.cashEffectiveDate,beforeEdit.cashEffectiveDate);
+    assert.equal(edited.movement.editHistory.at(-1).createdAt,digitalExpense.body.movement.createdAt);
+    assert.equal(edited.summary.pettyCashBalanceBs,300);
   } finally {
     if(server) await new Promise(resolve=>server.close(resolve));
     await fs.rm(directory,{recursive:true,force:true});
