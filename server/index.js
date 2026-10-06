@@ -189,6 +189,13 @@ app.use(
     immutable: true,
     maxAge: '30d',
     index: false,
+    setHeaders: (res) => {
+      // Puppeteer genera los documentos con page.setContent(), por lo que las
+      // imágenes se cargan desde un contexto sin el mismo origen HTTP.
+      // Permitimos que Chromium use únicamente estos recursos públicos del catálogo.
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    },
   }),
 );
 
