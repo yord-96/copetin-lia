@@ -9,7 +9,7 @@ const cacheDirectory = path.resolve(
   process.env.DOCUMENT_PDF_CACHE_DIR
     ?? path.join(projectRoot, 'data', 'generated-documents', 'pdf-cache'),
 );
-const browserUserDataDirectory = path.resolve(
+const browserUserDataRoot = path.resolve(
   process.env.CHROMIUM_USER_DATA_DIR
     ?? path.join(projectRoot, 'data', 'chromium-profile'),
 );
@@ -43,6 +43,8 @@ const executableCandidates = [
 
 let browserPromise = null;
 let browserInstance = null;
+let browserProfileDirectory = null;
+let browserLaunchSerial = 0;
 
 const findExecutablePath = async () => {
   for (const candidate of executableCandidates) {
@@ -62,33 +64,101 @@ const findExecutablePath = async () => {
   throw error;
 };
 
+
+const isBrowserConnected = (browser) => Boolean(
+  browser && (typeof browser.isConnected === 'function' ? browser.isConnected() : browser.connected),
+);
+
+const isRecoverableBrowserError = (error) => {
+  const message = String(error?.message ?? error ?? '').toLowerCase();
+  const name = String(error?.name ?? '').toLowerCase();
+  return (
+    name.includes('connectionclosed')
+    || name.includes('targetclose')
+    || name.includes('protocolerror')
+    || message.includes('connection closed')
+    || message.includes('target closed')
+    || message.includes('browser has disconnected')
+    || message.includes('session closed')
+    || message.includes('protocol error')
+    || message.includes('the browser is already running')
+  );
+};
+
+const removeBrowserProfile = async (profileDirectory) => {
+  if (!profileDirectory) return;
+  await fs.rm(profileDirectory, { recursive: true, force: true }).catch(() => {});
+};
+
+const disposeBrowser = async (browser, profileDirectory) => {
+  if (browser) {
+    try {
+      if (isBrowserConnected(browser)) {
+        await browser.close();
+      }
+    } catch {
+      try {
+        browser.process()?.kill?.('SIGKILL');
+      } catch {
+        // Best effort: the process may already be gone.
+      }
+    }
+  }
+  await removeBrowserProfile(profileDirectory);
+};
+
+const invalidateBrowser = async (browser = browserInstance) => {
+  const profileDirectory = browserProfileDirectory;
+  if (!browser || browserInstance === browser) {
+    browserInstance = null;
+    browserPromise = null;
+    browserProfileDirectory = null;
+  }
+  await disposeBrowser(browser, profileDirectory);
+};
+
 const launchBrowser = async () => {
   const [{ default: puppeteer }, executablePath] = await Promise.all([
     import('puppeteer-core'),
     findExecutablePath(),
   ]);
-  await fs.mkdir(browserUserDataDirectory, { recursive: true });
 
-  const browser = await puppeteer.launch({
-    executablePath,
-    userDataDir: browserUserDataDirectory,
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--font-render-hinting=medium',
-      `--disk-cache-size=${chromiumDiskCacheBytes}`,
-      `--media-cache-size=${chromiumMediaCacheBytes}`,
-    ],
-  });
+  const profileParent = path.dirname(browserUserDataRoot);
+  const profilePrefix = `${path.basename(browserUserDataRoot)}-${process.pid}-${++browserLaunchSerial}-`;
+  await fs.mkdir(profileParent, { recursive: true });
+  const profileDirectory = await fs.mkdtemp(path.join(profileParent, profilePrefix));
+
+  let browser = null;
+  try {
+    browser = await puppeteer.launch({
+      executablePath,
+      userDataDir: profileDirectory,
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--font-render-hinting=medium',
+        `--disk-cache-size=${chromiumDiskCacheBytes}`,
+        `--media-cache-size=${chromiumMediaCacheBytes}`,
+      ],
+    });
+  } catch (error) {
+    await removeBrowserProfile(profileDirectory);
+    throw error;
+  }
+
   browserInstance = browser;
+  browserProfileDirectory = profileDirectory;
 
   browser.on('disconnected', () => {
     if (browserInstance === browser) {
+      const disconnectedProfile = browserProfileDirectory;
       browserInstance = null;
       browserPromise = null;
+      browserProfileDirectory = null;
+      removeBrowserProfile(disconnectedProfile).catch(() => {});
     }
   });
 
@@ -96,13 +166,27 @@ const launchBrowser = async () => {
 };
 
 const getBrowser = async () => {
+  if (browserInstance && isBrowserConnected(browserInstance)) {
+    return browserInstance;
+  }
+
+  if (browserInstance && !isBrowserConnected(browserInstance)) {
+    await invalidateBrowser(browserInstance);
+  }
+
   if (!browserPromise) {
     browserPromise = launchBrowser().catch((error) => {
       browserPromise = null;
       throw error;
     });
   }
-  return browserPromise;
+
+  const browser = await browserPromise;
+  if (!isBrowserConnected(browser)) {
+    await invalidateBrowser(browser);
+    throw new Error('El motor Chromium se desconectó durante el arranque.');
+  }
+  return browser;
 };
 
 const sanitizeFileName = (value) =>
@@ -237,37 +321,57 @@ const optimizeDocumentImages = async (page, options) => {
 export const ensureDocumentPdfCacheDirectory = async () => {
   await Promise.all([
     fs.mkdir(cacheDirectory, { recursive: true }),
-    fs.mkdir(browserUserDataDirectory, { recursive: true }),
+    fs.mkdir(path.dirname(browserUserDataRoot), { recursive: true }),
   ]);
   return cacheDirectory;
 };
 
 export const closeDocumentPdfRenderer = async () => {
   const pendingBrowser = browserPromise;
-  browserPromise = null;
-  if (!pendingBrowser) return;
+  const currentBrowser = browserInstance;
+  const profileDirectory = browserProfileDirectory;
 
-  try {
-    const browser = await pendingBrowser;
-    if (browser?.connected) {
-      await browser.close();
+  browserPromise = null;
+  browserInstance = null;
+  browserProfileDirectory = null;
+
+  let browser = currentBrowser;
+  if (!browser && pendingBrowser) {
+    try {
+      browser = await pendingBrowser;
+    } catch {
+      browser = null;
     }
-  } finally {
-    browserInstance = null;
   }
+
+  await disposeBrowser(browser, profileDirectory);
 };
 
 export const warmDocumentPdfRenderer = async () => {
   await ensureDocumentPdfCacheDirectory();
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.setContent('<!doctype html><html><body></body></html>', {
-      waitUntil: 'domcontentloaded',
-      timeout: 10000,
-    });
-  } finally {
-    await page.close();
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let browser = null;
+    let page = null;
+    try {
+      browser = await getBrowser();
+      page = await browser.newPage();
+      await page.setContent('<!doctype html><html><body></body></html>', {
+        waitUntil: 'domcontentloaded',
+        timeout: 10000,
+      });
+      return;
+    } catch (error) {
+      if (attempt === 0 && isRecoverableBrowserError(error)) {
+        await invalidateBrowser(browser);
+        continue;
+      }
+      throw error;
+    } finally {
+      if (page) {
+        await page.close().catch(() => {});
+      }
+    }
   }
 };
 
@@ -311,46 +415,61 @@ export const renderHtmlDocumentToPdf = async ({
     if (error?.code !== 'ENOENT') throw error;
   }
 
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.setViewport({ width: 1240, height: 1754, deviceScaleFactor: 1 });
-    await page.setContent(renderedHtml, {
-      waitUntil: 'domcontentloaded',
-      timeout: Number(process.env.DOCUMENT_RENDER_TIMEOUT_MS ?? 15000),
-    });
-    await page.emulateMediaType('print');
-    await waitForDocumentAssets(page);
-    const imageOptimizationStats = await optimizeDocumentImages(
-      page,
-      normalizedImageOptimization,
-    );
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let browser = null;
+    let page = null;
+    try {
+      browser = await getBrowser();
+      page = await browser.newPage();
 
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      preferCSSPageSize: true,
-      margin: {
-        top: '0mm',
-        right: '0mm',
-        bottom: '0mm',
-        left: '0mm',
-      },
-    });
+      await page.setViewport({ width: 1240, height: 1754, deviceScaleFactor: 1 });
+      await page.setContent(renderedHtml, {
+        waitUntil: 'domcontentloaded',
+        timeout: Number(process.env.DOCUMENT_RENDER_TIMEOUT_MS ?? 15000),
+      });
+      await page.emulateMediaType('print');
+      await waitForDocumentAssets(page);
+      const imageOptimizationStats = await optimizeDocumentImages(
+        page,
+        normalizedImageOptimization,
+      );
 
-    const pdfBuffer = Buffer.from(pdf);
-    const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
-    await fs.writeFile(temporaryPath, pdfBuffer);
-    await fs.rename(temporaryPath, cachePath);
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        preferCSSPageSize: true,
+        margin: {
+          top: '0mm',
+          right: '0mm',
+          bottom: '0mm',
+          left: '0mm',
+        },
+      });
 
-    return {
-      buffer: pdfBuffer,
-      cacheHit: false,
-      cacheKey,
-      fileName: `${normalizedFileName}.pdf`,
-      imageOptimizationStats,
-    };
-  } finally {
-    await page.close();
+      const pdfBuffer = Buffer.from(pdf);
+      const temporaryPath = `${cachePath}.${process.pid}.${Date.now()}.${attempt}.tmp`;
+      await fs.writeFile(temporaryPath, pdfBuffer);
+      await fs.rename(temporaryPath, cachePath);
+
+      return {
+        buffer: pdfBuffer,
+        cacheHit: false,
+        cacheKey,
+        fileName: `${normalizedFileName}.pdf`,
+        imageOptimizationStats,
+      };
+    } catch (error) {
+      if (attempt === 0 && isRecoverableBrowserError(error)) {
+        await invalidateBrowser(browser);
+        continue;
+      }
+      throw error;
+    } finally {
+      if (page) {
+        await page.close().catch(() => {});
+      }
+    }
   }
+
+  throw new Error('No se pudo generar el PDF después de reiniciar Chromium.');
 };
