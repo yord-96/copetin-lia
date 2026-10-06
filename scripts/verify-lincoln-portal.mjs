@@ -56,6 +56,12 @@ createRoot(document.getElementById('root')).render(React.createElement(Admin,{cu
   await page.type('input[autocomplete=username]', 'demo'); await page.type('input[type=password]', 'demo-password'); await clickText('Ingresar');
   await page.waitForSelector('.lp-editor', { timeout: 10000 }).catch(async (error) => { console.log(await page.$eval('body', (node) => node.innerText)); throw error; });
   await page.screenshot({ path: path.join(temporary, 'overview.png'), fullPage: true });
+  await page.setViewport({ width: 1920, height: 1000 });
+  await clickText('Especificaciones');
+  assert.ok(await page.$eval('.lp-tab-content', (node) => node.getBoundingClientRect().width <= 1160));
+  assert.ok(await page.$eval('.lp-record-table textarea', (node) => node.getBoundingClientRect().height < 60));
+  await page.screenshot({ path: path.join(temporary, 'compact-specifications.png'), fullPage: true });
+  await page.setViewport({ width: 1440, height: 1000 });
   await clickText('Actividades');
   assert.equal(await page.$$eval('.lp-table-wrap tbody tr', (rows) => rows.length), 5);
   await clickText('Invitados'); await clickText('+ Agregar'); await page.type('textarea[aria-label="Nombre completo"]', 'Invitado de prueba');
@@ -78,6 +84,10 @@ createRoot(document.getElementById('root')).render(React.createElement(Admin,{cu
   await page.setViewport({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
   await page.screenshot({ path: path.join(temporary, 'mobile.png'), fullPage: true });
+  await clickText('Invitados');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
+  assert.equal(await page.$eval('.lp-record-table tbody tr', (node) => getComputedStyle(node).display), 'grid');
+  await page.screenshot({ path: path.join(temporary, 'compact-mobile-guests.png'), fullPage: true });
   await page.setViewport({ width: 1440, height: 1000 });
   await page.goto(`http://127.0.0.1:${server.address().port}/__portal-admin-test`);
   await page.waitForSelector('input[type=password]'); await page.type('input[type=password]', 'staff-password'); await clickText('Ingresar');
