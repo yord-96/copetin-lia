@@ -7,7 +7,6 @@ import { getStateSnapshot } from '../storage/fileStateStore.js';
 import {
   renderHtmlDocumentToPdf,
 } from '../storage/documentPdfRenderer.js';
-import { getProductUploadInfo } from '../storage/productImageStore.js';
 import { hasValidPublicQuoteAccess } from '../security/publicQuoteAccess.js';
 import {
   buildContractDocumentHtml,
@@ -28,8 +27,6 @@ const contractLogoPath = path.join(
   'logo_el_copetin_redisenado.png',
 );
 let contractLogoDataUrlPromise = null;
-const productUploadInfo = getProductUploadInfo();
-const productImageDataUrlPromises = new Map();
 const DOCUMENT_ACCESS_TOKEN_TTL_MS = 2 * 60 * 1000;
 const documentAccessSecret = internalKey || String(
   process.env.DOCUMENT_ACCESS_SECRET
@@ -102,55 +99,14 @@ const embedContractAssets = async (html) => {
     );
 };
 
-const getProductImageDataUrl = async (filename) => {
-  const safeFilename = path.basename(String(filename ?? '').trim());
-  if (!safeFilename) return '';
-
-  if (!productImageDataUrlPromises.has(safeFilename)) {
-    const promise = fs.readFile(path.join(productUploadInfo.uploadDirectory, safeFilename))
-      .then((buffer) => {
-        const extension = path.extname(safeFilename).toLowerCase();
-        const mimeType = extension === '.png'
-          ? 'image/png'
-          : extension === '.webp'
-            ? 'image/webp'
-            : 'image/jpeg';
-        return `data:${mimeType};base64,${buffer.toString('base64')}`;
-      })
-      .catch(() => '');
-    productImageDataUrlPromises.set(safeFilename, promise);
-  }
-
-  return productImageDataUrlPromises.get(safeFilename);
-};
-
 const embedInventoryAssets = async (html) => {
-  let nextHtml = String(html ?? '');
-  const matches = [...nextHtml.matchAll(
-    /(?:https?:\/\/[^"'\s>]+)?\/uploads\/products\/([^"'\s>?#]+)(?:\?[^"'\s>]*)?/gi,
-  )];
-  const replacements = await Promise.all(
-    matches.map(async (match) => {
-      const encodedFilename = match[1] ?? '';
-      let decodedFilename = encodedFilename;
-      try {
-        decodedFilename = decodeURIComponent(encodedFilename);
-      } catch {
-        decodedFilename = encodedFilename;
-      }
-      return {
-        source: match[0],
-        dataUrl: await getProductImageDataUrl(decodedFilename),
-      };
-    }),
-  );
-
-  replacements.forEach(({ source, dataUrl }) => {
-    if (!dataUrl) return;
-    nextHtml = nextHtml.split(source).join(dataUrl);
-  });
-
-  return embedContractAssets(nextHtml);
+  // No incrustamos las fotos de inventario como data: URLs.
+  // Hacerlo obligaba a Node a leer, convertir a base64 y conservar imágenes
+  // originales de alta resolución antes de que Chromium pudiera reducirlas.
+  // En órdenes grandes eso dispara el RSS del proceso y puede activar
+  // max_memory_restart de PM2. Chromium puede cargar estas rutas públicas
+  // directamente usando el <base> que agrega documentPdfRenderer.
+  return embedContractAssets(String(html ?? ''));
 };
 
 const requireInternalKey = (req, res, next) => {
@@ -710,6 +666,15 @@ router.get(
       const assetStartedAt = Date.now();
       const html = await embedInventoryAssets(rawHtml);
       const assetDurationMs = Date.now() - assetStartedAt;
+
+      console.info('[inventory-pdf] Documento preparado.', {
+        orderCode: context.rental?.orderCode ?? context.contract?.orderCode ?? '',
+        rentalId: context.rental?.id ?? '',
+        rawHtmlBytes: Buffer.byteLength(rawHtml, 'utf8'),
+        htmlBytes: Buffer.byteLength(html, 'utf8'),
+        rentalItems: Array.isArray(context.rental?.items) ? context.rental.items.length : 0,
+        rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      });
 
       const renderStartedAt = Date.now();
       const result = await renderHtmlDocumentToPdf({
