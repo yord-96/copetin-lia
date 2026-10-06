@@ -99,14 +99,26 @@ const embedContractAssets = async (html) => {
     );
 };
 
+const getLocalDocumentAssetBaseUrl = () => {
+  const configured = String(process.env.DOCUMENT_ASSET_BASE_URL ?? '').trim();
+  if (configured) return configured.replace(/\/$/, '');
+
+  const port = Number.parseInt(process.env.PORT ?? '4000', 10) || 4000;
+  return `http://127.0.0.1:${port}`;
+};
+
 const embedInventoryAssets = async (html) => {
-  // No incrustamos las fotos de inventario como data: URLs.
-  // Hacerlo obligaba a Node a leer, convertir a base64 y conservar imágenes
-  // originales de alta resolución antes de que Chromium pudiera reducirlas.
-  // En órdenes grandes eso dispara el RSS del proceso y puede activar
-  // max_memory_restart de PM2. Chromium puede cargar estas rutas públicas
-  // directamente usando el <base> que agrega documentPdfRenderer.
-  return embedContractAssets(String(html ?? ''));
+  // Las fotos no se incrustan como Base64: en órdenes grandes eso hacía crecer
+  // demasiado el RSS de Node. En su lugar Chromium las solicita directamente
+  // al mismo backend por loopback, evitando DNS/TLS/Nginx y manteniendo las
+  // imágenes fuera del heap de Node.
+  const localAssetBaseUrl = getLocalDocumentAssetBaseUrl();
+  const nextHtml = String(html ?? '').replace(
+    /(?:https?:\/\/[^"'\s>]+)?(\/uploads\/products\/[^"'\s>]+)/gi,
+    (_match, assetPath) => `${localAssetBaseUrl}${assetPath}`,
+  );
+
+  return embedContractAssets(nextHtml);
 };
 
 const requireInternalKey = (req, res, next) => {
