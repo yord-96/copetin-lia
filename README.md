@@ -81,6 +81,14 @@ El portal incorpora autenticación propia. Las APIs internas previas del sistema
 
 ## Documentacion adicional
 
+### Diagnóstico de apertura de Órdenes
+
+Desde la carpeta del proyecto en el VPS, `node scripts/diagnose-orders-server.mjs` consulta el backend local y muestra el tiempo de Órdenes y de una solicitud de salud concurrente. Lee la clave interna desde `.env` sin imprimirla. Las consultas no modifican los datos.
+
+La ruta de Órdenes informa `Server-Timing` y registra `[orders-overview]` con los tiempos de lectura del estado, índice de caja, resúmenes de contratos y demás listas. El índice conserva las reglas económicas existentes y evita recorrer toda la caja dos veces por cada contrato. La preparación de contratos cede ejecución cada 50 registros para atender otras solicitudes.
+
+Para comparar localmente con una copia de datos: `node scripts/benchmark-orders-overview.mjs ruta/al/estado.json`. El benchmark usa una copia temporal, informa el tamaño y SHA-256 de la respuesta para verificar equivalencia, y elimina su copia al terminar. El proceso de prueba comparte el bucle de eventos del servidor; `timerDelayMs` muestra cuánto se retrasó su temporizador, mientras que el diagnóstico del VPS se ejecuta en un proceso separado.
+
 - Esquema relacional PostgreSQL:
   - `docs/COPETIN_POSTGRESQL_SCHEMA.sql`
 - Mapa de modulos y relaciones:
