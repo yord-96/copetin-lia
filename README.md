@@ -46,6 +46,19 @@ npm run dev:server
 
 ## Scripts
 
+### Portal de eventos de Lincoln
+
+- En el espacio Lincoln, abre **Portal de eventos**. Un usuario `developer`, `super_admin` o `admin` con acceso a Lincoln debe ingresar con su contraseña para administrar el portal.
+- Selecciona un contrato, crea el usuario y contraseña del cliente y comparte el enlace `/lincoln/mi-evento`. Cada acceso queda vinculado a un único evento. Puedes revocarlo o cambiar su contraseña; ambas acciones invalidan sus sesiones anteriores.
+- El cliente y Lincoln comparten actividades, revisión de proveedores, especificaciones, protocolo, invitados, proveedores y notas. La ficha toma la estructura del Excel de referencia, sin cargar sus datos personales en otros eventos.
+- El croquis permite agregar y mover figuras de mesas, sillas, escenario, pista, barra, entrada y mesa dulce; cambiar tamaño, rotación, etiquetas y plazas; duplicar, eliminar y descargar SVG. Las unidades son orientativas, no medidas reales del salón.
+- Pulsa **Guardar cambios** para guardar ficha y croquis. Si otra persona guardó antes, se debe recargar la ficha para evitar sobrescribirla.
+- Los datos se guardan en `LINCOLN_PORTAL_FILE` (por defecto `data/lincoln-portal.json`), separado de la caja y los contratos. Incluye este archivo en las copias de seguridad. Las contraseñas de clientes usan bcrypt y las sesiones expiran a las ocho horas.
+- Para desarrollo, inicia Vite y `npm run dev:server` (puerto 4000). Vite redirige las rutas de Lincoln al backend. Si usas `VITE_API_URL`, se usa ese servidor.
+- Verificación: `node --test server/services/lincoln/lincolnPortal.test.js`. Prueba de navegador aislada: `npm run build` y `node scripts/verify-lincoln-portal.mjs` (requiere Chrome; ruta configurable con `CHROME_PATH`).
+
+El portal incorpora autenticación propia. Las APIs internas previas del sistema mantienen su mecanismo de clave interna; este cambio no moderniza su autenticación. Revisa esa protección antes de habilitar el acceso público en producción.
+
 - `npm run dev`: inicia en modo web con Vite.
 - `npm run dev:web`: inicia en modo web con Vite.
 - `npm run dev:server`: inicia la API Node con recarga en desarrollo.

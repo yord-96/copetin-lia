@@ -12,6 +12,7 @@ import documentRoutes from './routes/documents.js';
 import contractTransactionRoutes from './routes/contractTransactions.js';
 import publicCatalogRoutes from './routes/publicCatalog.js';
 import lincolnRoutes from './routes/lincoln.js';
+import lincolnPortalRoutes from './routes/lincolnPortal.js';
 import { getDatabaseMode, isPostgresMode } from './database/mode.js';
 import { ensureStateStore, getStateStoreInfo } from './storage/fileStateStore.js';
 import { runLegacyGuaranteeRefundRepair } from './migrations/repairLegacyGuaranteeRefunds.js';
@@ -140,6 +141,7 @@ app.use(publicCatalogRoutes);
 app.use(documentRoutes);
 app.use(contractTransactionRoutes);
 app.use(lincolnRoutes);
+app.use(lincolnPortalRoutes);
 
 app.get('/health', async (_req, res, next) => {
   try {

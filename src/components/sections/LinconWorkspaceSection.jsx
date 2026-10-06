@@ -7,6 +7,7 @@ import LincolnSettlements from '../lincoln/settlements/LincolnSettlements';
 import LincolnReports from '../lincoln/reports/LincolnReports';
 import LincolnCommercialWorkspace from '../lincoln/commercial/LincolnCommercialWorkspace';
 import LincolnClients from '../lincoln/clients/LincolnClients';
+import LincolnEventPortalAdmin from '../lincoln/portal/LincolnEventPortalAdmin';
 import LincolnMeetings from '../lincoln/meetings/LincolnMeetings';
 import LincolnRooms from '../lincoln/rooms/LincolnRooms';
 import LincolnPackages from '../lincoln/packages/LincolnPackages';
@@ -1817,6 +1818,7 @@ Escribe RESET ECONOMICO para continuar:`);
             />
           ) : null}
           {activeView === 'reuniones' ? <LincolnMeetings state={state} revision={snapshot?.revision} actor={actor} onRefresh={loadLincoln} /> : null}
+          {activeView === 'portal-eventos' ? <LincolnEventPortalAdmin state={state} currentUser={currentUser} /> : null}
           {activeView === 'caja' ? <CajaView state={state} onNewExpense={() => setModal({ mode: 'expense', record: null })} onEditExpense={(record) => setModal({ mode: 'expense', record })} onOpenEvent={(eventId) => { setEconomicEventId(eventId); setActiveView('comercial'); }} onPrintReceipt={printReceipt} /> : null}
           {activeView === 'rendiciones' ? <LincolnSettlements refreshKey={snapshot?.revision} revision={snapshot?.revision} actor={actor} onNewExpense={(eventId) => setModal({ mode: 'expense', record: { eventId } })} /> : null}
           {activeView === 'reportes' ? <LincolnReports events={state.events} refreshKey={snapshot?.revision} /> : null}

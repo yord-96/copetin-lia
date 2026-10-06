@@ -4,6 +4,7 @@ export const lincolnSidebarItems = [
   { id: 'comercial', label: 'Reservas y Contratos', icon: 'bookmark' },
   { id: 'reuniones', label: 'Reuniones', icon: 'calendar' },
   { id: 'clientes', label: 'Clientes', icon: 'users' },
+  { id: 'portal-eventos', label: 'Portal de eventos', icon: 'bookmark' },
   { id: 'salones', label: 'Salones', icon: 'home' },
   { id: 'paquetes', label: 'Paquetes', icon: 'star' },
   { id: 'caja', label: 'Caja Lincoln', icon: 'wallet' },

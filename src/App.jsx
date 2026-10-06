@@ -13,6 +13,7 @@ import SystemResetPanel from './components/common/SystemResetPanel';
 import LoginScreen from './components/auth/LoginScreen';
 import PublicCatalogPage from './components/public/PublicCatalogPage';
 import PublicQuoteBuilder from './components/public/PublicQuoteBuilder';
+import ClientEventPortal from './components/lincoln/portal/ClientEventPortal';
 import {
   canAccessCompany,
   isAttendanceOnlyUser,
@@ -1046,6 +1047,10 @@ function App() {
 
   if (publicPath === '/catalogo/cotizar') {
     return <PublicQuoteBuilder />;
+  }
+
+  if (publicPath === '/lincoln/mi-evento') {
+    return <ClientEventPortal />;
   }
 
   if (publicPath === '/catalogo/montado') {

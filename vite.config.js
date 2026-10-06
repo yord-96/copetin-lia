@@ -864,6 +864,10 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.RESET_SECURITY_CODE': JSON.stringify(env.RESET_SECURITY_CODE ?? ''),
     },
     server: {
+      proxy: {
+        '/api/lincoln-portal': 'http://localhost:4000',
+        '/__lincoln_db': 'http://localhost:4000',
+      },
       watch: {
         ignored: [
           '**/data/**',
