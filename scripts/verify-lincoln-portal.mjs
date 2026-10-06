@@ -26,7 +26,7 @@ try {
     const fetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
       const url = new URL(String(input), window.location.origin);
-      return fetch(url.pathname.startsWith('/api/lincoln-portal') ? `${origin}${url.pathname}${url.search}` : input, init);
+      return fetch(url.pathname.startsWith('/api/lincoln-portal') || url.pathname.startsWith('/__lincoln_db/portal') ? `${origin}${url.pathname}${url.search}` : input, init);
     };
   }, `http://127.0.0.1:${server.address().port}`);
   const errors = []; page.on('pageerror', (error) => errors.push(error.message));

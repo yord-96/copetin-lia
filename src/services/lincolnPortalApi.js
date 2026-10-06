@@ -7,7 +7,7 @@ export const forgetPortalSession = (staff = false) => {
   if (staff) sessionStorage.removeItem('lincoln-portal-staff-user');
 };
 export const portalRequest = async (path, { staff = false, method = 'GET', body } = {}) => {
-  const response = await fetch(`${base}/api/lincoln-portal${path}`, {
+  const response = await fetch(`${base}/__lincoln_db/portal${path}`, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${portalSession(staff)}` },
     ...(body ? { body: JSON.stringify(body) } : {}),

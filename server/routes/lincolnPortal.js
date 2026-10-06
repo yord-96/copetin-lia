@@ -8,9 +8,9 @@ import { starterPlan } from '../../src/components/lincoln/portal/portalModel.js'
 
 const router = Router();
 const wrap = (handler) => async (req, res, next) => { try { await handler(req, res); } catch (error) { if (error.statusCode) res.status(error.statusCode).json({ error: error.message }); else next(error); } };
-router.use('/api/lincoln-portal', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+router.use('/', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, message: { error: 'Demasiados intentos. Intenta nuevamente en 15 minutos.' } });
-router.post('/api/lincoln-portal/login', loginLimit, wrap(async (req, res) => {
+router.post('/login', loginLimit, wrap(async (req, res) => {
   const { username, password, staff } = req.body ?? {};
   if (typeof username !== 'string' || typeof password !== 'string' || password.length > 128) throw portalError('Credenciales inválidas.', 401);
   let subject;
@@ -43,16 +43,16 @@ const authorize = async (req, staffOnly = false) => {
   if (!account) throw portalError('Acceso revocado. Contacta a Lincoln.', 401);
   return { session, state, account, name: account.name };
 };
-router.post('/api/lincoln-portal/logout', wrap(async (req, res) => {
+router.post('/logout', wrap(async (req, res) => {
   const hash = tokenHash(String(req.get('Authorization') ?? '').replace(/^Bearer /, ''));
   await mutatePortal((state) => { state.sessions = state.sessions.filter((row) => row.tokenHash !== hash); });
   res.json({ ok: true });
 }));
-router.get('/api/lincoln-portal/accounts', wrap(async (req, res) => {
+router.get('/accounts', wrap(async (req, res) => {
   const { state } = await authorize(req, true);
   res.json({ accounts: state.accounts.map(publicAccount) });
 }));
-router.post('/api/lincoln-portal/accounts', wrap(async (req, res) => {
+router.post('/accounts', wrap(async (req, res) => {
   await authorize(req, true);
   const { eventId, username, password, name } = req.body ?? {};
   await getPortalEvent(String(eventId));
@@ -69,7 +69,7 @@ router.post('/api/lincoln-portal/accounts', wrap(async (req, res) => {
   });
   res.status(201).json({ account });
 }));
-router.patch('/api/lincoln-portal/accounts/:id', wrap(async (req, res) => {
+router.patch('/accounts/:id', wrap(async (req, res) => {
   await authorize(req, true);
   const { active, password } = req.body ?? {};
   if (active !== undefined && typeof active !== 'boolean') throw portalError('Estado inválido.');
@@ -92,13 +92,13 @@ const resolveEvent = (auth, requested) => {
   if (!id) throw portalError('Selecciona un evento.');
   return id;
 };
-router.get('/api/lincoln-portal/plan', wrap(async (req, res) => {
+router.get('/plan', wrap(async (req, res) => {
   const auth = await authorize(req);
   const id = resolveEvent(auth, req.query.eventId);
   const event = await getPortalEvent(id);
   res.json({ event, ...(auth.state.plans[id] || { revision: 0, plan: starterPlan(), updatedAt: null }), viewer: auth.name });
 }));
-router.put('/api/lincoln-portal/plan', wrap(async (req, res) => {
+router.put('/plan', wrap(async (req, res) => {
   const auth = await authorize(req);
   const id = resolveEvent(auth, req.body?.eventId);
   await getPortalEvent(id);
@@ -114,4 +114,6 @@ router.put('/api/lincoln-portal/plan', wrap(async (req, res) => {
   });
   res.json(saved);
 }));
-export default router;
+const portalRoutes = Router();
+portalRoutes.use(['/api/lincoln-portal', '/__lincoln_db/portal'], router);
+export default portalRoutes;

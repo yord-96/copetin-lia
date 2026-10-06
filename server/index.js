@@ -140,8 +140,8 @@ app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 app.use(publicCatalogRoutes);
 app.use(documentRoutes);
 app.use(contractTransactionRoutes);
-app.use(lincolnRoutes);
 app.use(lincolnPortalRoutes);
+app.use(lincolnRoutes);
 
 app.get('/health', async (_req, res, next) => {
   try {

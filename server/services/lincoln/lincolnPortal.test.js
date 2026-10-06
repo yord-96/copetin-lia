@@ -23,6 +23,8 @@ before(async () => {
   await fs.writeFile(process.env.LINCOLN_STATE_FILE, JSON.stringify({ state: { events: [{ id: 'event-1', clientName: 'Cliente uno', code: '001', eventDate: '2026-10-24', totalBs: 9000, privateNotes: 'INTERNAL-SECRET' }, { id: 'event-2', clientName: 'Cliente dos' }] }, version: 1 }));
   const { default: routes } = await import('../../routes/lincolnPortal.js');
   const app = express(); app.use(express.json()); app.use(routes);
+  // Portal authentication runs before the legacy Lincoln internal-key middleware.
+  app.use((await import('../../routes/lincoln.js')).default);
   app.use((error, _req, res, _next) => res.status(500).json({ error: error.message }));
   server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -82,4 +84,14 @@ test('legacy staff authentication remains compatible', async () => {
   const user = { status: 'active', role: 'developer', passwordHash: `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}` };
   assert.equal(await verifyStaffPassword(user, password), true);
   assert.equal(await verifyStaffPassword(user, 'wrong'), false);
+});
+
+test('portal is reachable through the existing Lincoln reverse proxy prefix', async () => {
+  const response = await fetch(`${base}/__lincoln_db/portal/accounts`, { headers: { Authorization: `Bearer ${staffToken}` } });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('Content-Type'), /application\/json/);
+  assert.equal((await response.json()).accounts[0].id, accountId);
+  const unauthenticated = await fetch(`${base}/__lincoln_db/portal/accounts`);
+  assert.equal(unauthenticated.status, 401);
+  assert.match((await unauthenticated.json()).error, /sesión/);
 });

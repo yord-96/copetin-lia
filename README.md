@@ -55,6 +55,7 @@ npm run dev:server
 - Pulsa **Guardar cambios** para guardar ficha y croquis. Si otra persona guardó antes, se debe recargar la ficha para evitar sobrescribirla.
 - Los datos se guardan en `LINCOLN_PORTAL_FILE` (por defecto `data/lincoln-portal.json`), separado de la caja y los contratos. Incluye este archivo en las copias de seguridad. Las contraseñas de clientes usan bcrypt y las sesiones expiran a las ocho horas.
 - Para desarrollo, inicia Vite y `npm run dev:server` (puerto 4000). Vite redirige las rutas de Lincoln al backend. Si usas `VITE_API_URL`, se usa ese servidor.
+- El frontend del portal usa `/__lincoln_db/portal`, aprovechando la ruta de Lincoln ya enviada al backend por Nginx. El backend también acepta `/api/lincoln-portal` para compatibilidad. El ingreso del cliente usa la autenticación del portal y no requiere la clave interna del sistema.
 - Verificación: `node --test server/services/lincoln/lincolnPortal.test.js`. Prueba de navegador aislada: `npm run build` y `node scripts/verify-lincoln-portal.mjs` (requiere Chrome; ruta configurable con `CHROME_PATH`).
 
 El portal incorpora autenticación propia. Las APIs internas previas del sistema mantienen su mecanismo de clave interna; este cambio no moderniza su autenticación. Revisa esa protección antes de habilitar el acceso público en producción.
