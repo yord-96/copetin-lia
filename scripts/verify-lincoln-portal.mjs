@@ -58,12 +58,30 @@ createRoot(document.getElementById('root')).render(React.createElement(Admin,{cu
   await page.screenshot({ path: path.join(temporary, 'overview.png'), fullPage: true });
   await page.setViewport({ width: 1920, height: 1000 });
   await clickText('Especificaciones');
-  assert.ok(await page.$eval('.lp-tab-content', (node) => node.getBoundingClientRect().width <= 1160));
-  assert.ok(await page.$eval('.lp-record-table textarea', (node) => node.getBoundingClientRect().height < 60));
+  assert.ok(await page.$eval('.lp-record-board', (node) => node.scrollWidth <= node.clientWidth + 1));
+  assert.ok(await page.$eval('.lp-record-fields textarea', (node) => node.getBoundingClientRect().height < 60));
   await page.screenshot({ path: path.join(temporary, 'compact-specifications.png'), fullPage: true });
+  for (const width of [390, 1024, 1440, 1920]) {
+    await page.setViewport({ width, height: 1000 });
+    for (const label of ['Actividades', 'Revisión de proveedores', 'Especificaciones', 'Protocolo', 'Invitados', 'Proveedores']) {
+      await clickText(label);
+      const overflow = await page.evaluate(() => [...document.querySelectorAll('.lp-workspace-main, .lp-workspace-content, .lp-record-board, .lp-record-list, .lp-record-detail, .lp-record-fields')].some((node) => node.scrollWidth > node.clientWidth + 1));
+      assert.equal(overflow, false, `${label} at ${width}px must not scroll horizontally`);
+      assert.equal(await page.$$('table').then((nodes) => nodes.length), 0);
+    }
+  }
   await page.setViewport({ width: 1440, height: 1000 });
   await clickText('Actividades');
-  assert.equal(await page.$$eval('.lp-table-wrap tbody tr', (rows) => rows.length), 5);
+  await page.screenshot({ path: path.join(temporary, 'record-workspace.png'), fullPage: true });
+  assert.equal(await page.$$eval('.lp-record-list > button', (rows) => rows.length), 5);
+  await page.type('textarea[aria-label="Observaciones"]', '\n'.repeat(8) + 'Texto largo para comprobar crecimiento del campo');
+  assert.equal(await page.$eval('textarea[aria-label="Observaciones"]', (node) => node.scrollHeight <= node.clientHeight + 1), true);
+  await page.$eval('textarea[aria-label="Observaciones"]', (node) => node.focus());
+  await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control'); await page.keyboard.press('Backspace');
+  await page.emulateMediaType('print');
+  assert.equal(await page.$$eval('.lp-record-print article', (nodes) => nodes.length), 5);
+  assert.equal(await page.$eval('.lp-record-board', (node) => getComputedStyle(node).display), 'none');
+  await page.emulateMediaType('screen');
   await clickText('Invitados'); await clickText('+ Agregar'); await page.type('textarea[aria-label="Nombre completo"]', 'Invitado de prueba');
   await page.select('select[aria-label="Confirmación"]', 'Sí');
   await clickText('Croquis del salón'); await clickText('+ Mesa redonda'); await clickText('+ Escenario'); await clickText('+ Pista de baile');
@@ -86,7 +104,7 @@ createRoot(document.getElementById('root')).render(React.createElement(Admin,{cu
   await page.screenshot({ path: path.join(temporary, 'mobile.png'), fullPage: true });
   await clickText('Invitados');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
-  assert.equal(await page.$eval('.lp-record-table tbody tr', (node) => getComputedStyle(node).display), 'grid');
+  assert.equal(await page.$eval('.lp-record-fields', (node) => getComputedStyle(node).display), 'grid');
   await page.screenshot({ path: path.join(temporary, 'compact-mobile-guests.png'), fullPage: true });
   await page.setViewport({ width: 1440, height: 1000 });
   await page.goto(`http://127.0.0.1:${server.address().port}/__portal-admin-test`);

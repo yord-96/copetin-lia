@@ -19,10 +19,9 @@ const dateLabel = (value) => value ? new Intl.DateTimeFormat('es-BO', { day: 'nu
 
 function CompactText({ value, onChange, ...props }) {
   const ref = useRef(null);
-  useEffect(() => { const node = ref.current; if (node) { node.style.height = 'auto'; node.style.height = `${Math.min(120, Math.max(38, node.scrollHeight))}px`; } }, [value]);
+  useEffect(() => { const node = ref.current; if (node) { node.style.height = 'auto'; node.style.height = `${Math.max(42, node.scrollHeight + 2)}px`; } }, [value]);
   return <textarea {...props} ref={ref} rows="1" placeholder="Completar" value={value} onChange={onChange} />;
 }
-const columnWidth = (field, kind) => Array.isArray(kind) ? 138 : kind === 'number' ? 82 : ['category', 'time', 'table', 'phone', 'side', 'relation'].includes(field) ? 130 : ['notes', 'detail', 'specifications', 'music'].includes(field) ? 260 : 190;
 
 function CroquisPreview({ layout }) {
   return <svg className="lp-croquis-preview" viewBox={`0 0 ${layout.width} ${layout.height}`} aria-label="Vista previa del croquis guardado en la ficha">
@@ -44,6 +43,8 @@ export default function EventPlanEditor({ eventId, staff = false, onExpired, onB
   const [message, setMessage] = useState('');
   const [conflict, setConflict] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState('');
+  const [recordPage, setRecordPage] = useState(0);
   const contentRef = useRef(null);
   const load = async () => {
     setError('');
@@ -66,7 +67,7 @@ export default function EventPlanEditor({ eventId, staff = false, onExpired, onB
   }, [dirty]);
   const change = (value) => { setPlan(value); setDirty(true); setMessage(''); };
   const updateRow = (id, field, value) => change({ ...plan, [tab]: plan[tab].map((row) => row.id === id ? { ...row, [field]: value } : row) });
-  const openSection = (id) => { setTab(id); setSearch(''); contentRef.current?.scrollTo({ top: 0, left: 0 }); };
+  const openSection = (id) => { setTab(id); setSearch(''); setSelectedRecord(''); setRecordPage(0); contentRef.current?.scrollTo({ top: 0, left: 0 }); };
   const goBack = () => {
     if (dirty && !window.confirm('Hay cambios sin guardar. ¿Quieres salir de la planificación y descartarlos?')) return;
     onBack?.();
@@ -88,6 +89,9 @@ export default function EventPlanEditor({ eventId, staff = false, onExpired, onB
   const completedSuppliers = plan.suppliers.filter((row) => row.status === 'Confirmado').length;
   const progress = plan.activities.length ? Math.round(done / plan.activities.length * 100) : 0;
   const filtered = section ? plan[tab].filter((row) => Object.values(row).some((value) => String(value).toLowerCase().includes(search.toLowerCase()))) : [];
+  const activeRecord = filtered.find((row) => row.id === selectedRecord) || filtered[0];
+  const recordTitle = (row) => row.name || row.activity || row.item || row.service || row.category || 'Nuevo registro';
+  const visibleRecords = filtered.slice(recordPage * 8, recordPage * 8 + 8);
   const pending = plan.activities.filter((row) => row.status !== 'Realizado');
   const tables = plan.layout.objects.filter((item) => ['round', 'rectangle', 'square', 'cocktail', 'main'].includes(item.type)).length;
   const seats = plan.layout.objects.reduce((sum, item) => sum + Number(item.seats || 0), 0);
@@ -114,11 +118,20 @@ export default function EventPlanEditor({ eventId, staff = false, onExpired, onB
             <article className="lp-overview-card lp-layout-preview"><div className="lp-layout-illustration">{plan.layout.objects.length ? <CroquisPreview layout={plan.layout} /> : <div aria-hidden="true"><div className="lp-mini-stage">ESCENARIO</div><div className="lp-mini-table t1" /><div className="lp-mini-table t2" /><div className="lp-mini-floor">PISTA</div><div className="lp-mini-table t3" /><div className="lp-mini-table t4" /></div>}</div><div><small>DISTRIBUCIÓN DEL SALÓN</small><h3>{plan.layout.objects.length ? 'Tu propuesta de montaje' : 'Diseña el montaje'}</h3><p>{tables} {tables === 1 ? 'mesa' : 'mesas'} · {seats} plazas previstas</p><button onClick={() => openSection('layout')}>Abrir croquis <ArrowUpRight size={16} /></button></div></article>
           </div>
           <div className="lp-overview-shortcuts">{[['guests', UsersRound, 'Lista de invitados', 'Confirmaciones y mesas asignadas'], ['confirmations', FileCheck2, 'Detalles del evento', 'Menú, decoración y música'], ['protocol', CalendarDays, 'Protocolo', 'Momentos y responsables']].map(([id, Icon, label, detail]) => <button key={id} onClick={() => openSection(id)}><span className="lp-shortcut-icon">{createElement(Icon, { size: 21 })}</span><div><strong>{label}</strong><small>{detail}</small></div><ArrowUpRight size={17} /></button>)}</div>
-        </> : <div className="lp-card lp-tab-content" inert={busy}>
+        </> : <div className={`lp-card lp-tab-content ${section ? 'lp-record-section' : ''}`} inert={busy}>
           {tab === 'layout' ? <><div className="lp-section-heading"><small>MONTAJE Y DISTRIBUCIÓN</small><h2>Croquis del salón</h2><p>Ubica los elementos y ajusta el montaje de tu evento.</p></div><CroquisEditor layout={plan.layout} onChange={(layout) => change({ ...plan, layout })} /></> : tab === 'notes' ? <><div className="lp-section-heading"><h2>Notas generales</h2><p>Indicaciones que deben conocer el cliente y el equipo de Lincoln.</p></div><label>Indicaciones del evento<textarea rows="7" maxLength="10000" value={plan.notes} onChange={(e) => change({ ...plan, notes: e.target.value })} /></label></> : <>
-            <div className="lp-table-toolbar"><div><small className="lp-section-eyebrow">PLANIFICACIÓN</small><h2>{section.label}</h2><p>{plan[tab].length} registros{tab === 'guests' ? ' · Personas incluye acompañantes y niños' : ''}</p></div><div className="lp-table-controls"><input aria-label="Buscar registros" placeholder="Buscar en esta sección…" value={search} onChange={(e) => setSearch(e.target.value)} /><button disabled={busy || plan[tab].length >= 2000} onClick={() => change({ ...plan, [tab]: [...plan[tab], { id: crypto.randomUUID(), ...Object.fromEntries(section.fields.map(([field, , kind]) => [field, Array.isArray(kind) ? kind[0] : kind === 'number' ? field === 'people' ? 1 : 0 : ''])) }] })}>+ Agregar</button></div></div>
-            <div className="lp-table-wrap lp-record-table"><table><colgroup>{section.fields.map(([field, , kind]) => <col key={field} style={{ width: columnWidth(field, kind) }} />)}<col style={{ width: 86 }} /></colgroup><thead><tr>{section.fields.map(([id, label]) => <th key={id}>{label}</th>)}<th>Acción</th></tr></thead><tbody>{filtered.map((row) => <tr key={row.id}>{section.fields.map(([field, label, kind]) => <td key={field} data-label={label}>{Array.isArray(kind) ? <select disabled={busy} aria-label={label} value={row[field] || kind[0]} onChange={(e) => updateRow(row.id, field, e.target.value)}>{kind.map((option) => <option key={option}>{option}</option>)}</select> : kind === 'number' ? <input disabled={busy} aria-label={label} type="number" min={field === 'people' ? 1 : 0} max="10000" value={row[field] ?? 0} onChange={(e) => updateRow(row.id, field, Number(e.target.value))} /> : <CompactText disabled={busy} aria-label={label} maxLength="3000" value={row[field] || ''} onChange={(e) => updateRow(row.id, field, e.target.value)} />}</td>)}<td data-label="Acciones"><button disabled={busy} className="lp-delete" aria-label="Eliminar fila" onClick={() => { if (window.confirm('¿Eliminar este registro?')) change({ ...plan, [tab]: plan[tab].filter((item) => item.id !== row.id) }); }}>Eliminar</button></td></tr>)}</tbody></table></div>
-            {!filtered.length ? <div className="lp-empty"><current.icon size={30} /><h3>{search ? 'Sin resultados' : 'Todavía no hay registros'}</h3><p>{search ? 'Prueba con otro texto.' : 'Agrega los detalles que necesitas coordinar para tu evento.'}</p></div> : null}
+            <div className="lp-table-toolbar"><div><small className="lp-section-eyebrow">PLANIFICACIÓN</small><h2>{section.label}</h2><p>{plan[tab].length} registros{tab === 'guests' ? ' · Personas incluye acompañantes y niños' : ''}</p></div><div className="lp-table-controls"><input aria-label="Buscar registros" placeholder="Buscar en esta sección…" value={search} onChange={(e) => { setSearch(e.target.value); setRecordPage(0); }} /><button disabled={busy || plan[tab].length >= 2000} onClick={() => { const row = { id: crypto.randomUUID(), ...Object.fromEntries(section.fields.map(([field, , kind]) => [field, Array.isArray(kind) ? kind[0] : kind === 'number' ? field === 'people' ? 1 : 0 : ''])) }; change({ ...plan, [tab]: [...plan[tab], row] }); setSelectedRecord(row.id); setSearch(''); setRecordPage(Math.floor(plan[tab].length / 8)); }}>+ Agregar</button></div></div>
+            <div className="lp-record-print">{filtered.map((row) => <article key={row.id}><h3>{recordTitle(row)}</h3><dl>{section.fields.map(([field, label]) => <div key={field}><dt>{label}</dt><dd>{String(row[field] ?? '') || '—'}</dd></div>)}</dl></article>)}</div>
+            {activeRecord ? <div className="lp-record-board">
+              <aside className="lp-record-list" aria-label="Registros de la sección"><div className="lp-record-list-heading"><strong>Registros</strong><span>{filtered.length}</span></div>
+                {visibleRecords.map((row, index) => <button key={row.id} className={activeRecord.id === row.id ? 'is-selected' : ''} aria-pressed={activeRecord.id === row.id} onClick={() => setSelectedRecord(row.id)}><span className="lp-record-number">{String(recordPage * 8 + index + 1).padStart(2, '0')}</span><span className="lp-record-summary"><strong>{recordTitle(row)}</strong><small>{row.category || row.group || row.responsible || row.phone || 'Sin detalle adicional'}</small></span>{row.status ? <span className="lp-record-status">{row.status}</span> : <ArrowUpRight size={15} />}</button>)}
+                {filtered.length > 8 ? <div className="lp-record-pagination"><button className="lp-secondary" disabled={!recordPage} onClick={() => setRecordPage(recordPage - 1)}>Anterior</button><span>{recordPage + 1} / {Math.ceil(filtered.length / 8)}</span><button className="lp-secondary" disabled={(recordPage + 1) * 8 >= filtered.length} onClick={() => setRecordPage(recordPage + 1)}>Siguiente</button></div> : null}
+              </aside>
+              <article className="lp-record-detail"><header><div><small>DETALLE DEL REGISTRO</small><h3>{recordTitle(activeRecord)}</h3></div><button disabled={busy} className="lp-delete" aria-label="Eliminar fila" onClick={() => { if (window.confirm('¿Eliminar este registro?')) { change({ ...plan, [tab]: plan[tab].filter((item) => item.id !== activeRecord.id) }); setSelectedRecord(''); setRecordPage(0); } }}>Eliminar</button></header>
+                <div className="lp-record-fields">{section.fields.map(([field, label, kind]) => <label key={field} className={['notes', 'detail', 'specifications', 'music'].includes(field) ? 'lp-field-wide' : ''}>{label}{Array.isArray(kind) ? <select disabled={busy} aria-label={label} value={activeRecord[field] || kind[0]} onChange={(e) => updateRow(activeRecord.id, field, e.target.value)}>{kind.map((option) => <option key={option}>{option}</option>)}</select> : kind === 'number' ? <input disabled={busy} aria-label={label} type="number" min={field === 'people' ? 1 : 0} max="10000" value={activeRecord[field] ?? 0} onChange={(e) => updateRow(activeRecord.id, field, Number(e.target.value))} /> : <CompactText disabled={busy} aria-label={label} maxLength="3000" value={activeRecord[field] || ''} onChange={(e) => updateRow(activeRecord.id, field, e.target.value)} />}</label>)}</div>
+              </article>
+            </div> : <div className="lp-record-empty"><current.icon size={26} /><div><h3>{search ? 'Sin resultados' : 'Empieza a organizar esta sección'}</h3><p>{search ? 'Prueba con otro texto.' : 'Usa Agregar para crear tu primer registro.'}</p></div></div>}
+
           </>}
         </div>}
       </div>
