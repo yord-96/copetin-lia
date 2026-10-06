@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import puppeteer from 'puppeteer-core';
+import { build } from 'vite';
+import react from '@vitejs/plugin-react';
+import { createRequire } from 'node:module';
 
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'lincoln-portal-ui-'));
 process.env.APP_STATE_FILE = path.join(temporary, 'app.json');
@@ -13,11 +16,25 @@ process.env.LINCOLN_STATE_FILE = path.join(temporary, 'lincoln.json');
 process.env.LINCOLN_PORTAL_FILE = path.join(temporary, 'portal.json');
 let browser, server;
 try {
-  await fs.writeFile(process.env.APP_STATE_FILE, JSON.stringify({ state: { users: [] }, version: 1 }));
+  await fs.writeFile(process.env.APP_STATE_FILE, JSON.stringify({ state: { users: [{ id: 'staff-demo', username: 'admin', fullName: 'Coordinación Lincoln', role: 'developer', status: 'active', passwordHash: await bcrypt.hash('staff-password', 4) }] }, version: 1 }));
   await fs.writeFile(process.env.LINCOLN_STATE_FILE, JSON.stringify({ state: { events: [{ id: 'demo', code: '0024', clientName: 'Evento de prueba', eventType: 'Boda', roomName: 'Salón Grande', eventDate: '2026-10-24' }] }, version: 1 }));
   await fs.writeFile(process.env.LINCOLN_PORTAL_FILE, JSON.stringify({ accounts: [{ id: 'client-demo', username: 'demo', name: 'Cliente de prueba', eventId: 'demo', credentialVersion: 1, active: true, passwordHash: await bcrypt.hash('demo-password', 4) }], plans: {}, sessions: [] }));
   const { default: routes } = await import('../server/routes/lincolnPortal.js');
-  const app = express(); app.use(express.json()); app.use(routes); app.use(express.static(path.resolve('dist'))); app.get('/lincoln/mi-evento', (_req, res) => res.sendFile(path.resolve('dist/index.html')));
+  // Mount the actual admin component in an isolated fixture to verify screen transitions.
+  const require = createRequire(import.meta.url);
+  const modulePath = (file) => JSON.stringify(file.replaceAll('\\', '/'));
+  const entry = path.join(temporary, 'admin-entry.mjs');
+  await fs.writeFile(entry, `import React from ${modulePath(require.resolve('react'))};
+import {createRoot} from ${modulePath(require.resolve('react-dom/client'))};
+import Admin from ${modulePath(path.resolve('src/components/lincoln/portal/LincolnEventPortalAdmin.jsx'))};
+createRoot(document.getElementById('root')).render(React.createElement(Admin,{currentUser:{id:'staff-demo',username:'admin'},state:{events:[{id:'demo',code:'0024',clientName:'Evento de prueba',eventDate:'2026-10-24'}]}}));`);
+  const fixtureDist = path.join(temporary, 'admin-dist');
+  await build({ configFile: false, plugins: [react()], base: '/admin-fixture/', logLevel: 'error', build: { outDir: fixtureDist, emptyOutDir: false, rollupOptions: { input: entry, output: { entryFileNames: 'admin.js', assetFileNames: '[name][extname]' } } } });
+  const fixtureCss = (await fs.readdir(fixtureDist)).filter((file) => file.endsWith('.css')).map((file) => `<link rel="stylesheet" href="/admin-fixture/${file}">`).join('');
+  const app = express(); app.use(express.json()); app.use(routes);
+  app.use('/admin-fixture', express.static(fixtureDist));
+  app.get('/__portal-admin-test', (_req, res) => res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1">${fixtureCss}</head><body style="margin:0"><div id="root"></div><script type="module" src="/admin-fixture/admin.js"></script></body></html>`));
+  app.use(express.static(path.resolve('dist'))); app.get('/lincoln/mi-evento', (_req, res) => res.sendFile(path.resolve('dist/index.html')));
   server = app.listen(0, '127.0.0.1'); await new Promise((resolve) => server.once('listening', resolve));
   browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
   const page = await browser.newPage(); await page.setViewport({ width: 1440, height: 1000 });
@@ -32,12 +49,14 @@ try {
   const errors = []; page.on('pageerror', (error) => errors.push(error.message));
   const clickText = async (text) => {
     const handles = await page.$$('button');
-    for (const handle of handles) { if ((await handle.evaluate((node) => node.textContent)).trim() === text) { await handle.click(); return; } }
+    for (const handle of handles) { if (await handle.evaluate((node, label) => node.textContent.trim() === label || node.querySelector('span')?.textContent.trim() === label, text)) { await handle.click(); return; } }
     throw new Error(`Button not found: ${text}`);
   };
   await page.goto(`http://127.0.0.1:${server.address().port}/lincoln/mi-evento`);
   await page.type('input[autocomplete=username]', 'demo'); await page.type('input[type=password]', 'demo-password'); await clickText('Ingresar');
   await page.waitForSelector('.lp-editor', { timeout: 10000 }).catch(async (error) => { console.log(await page.$eval('body', (node) => node.innerText)); throw error; });
+  await page.screenshot({ path: path.join(temporary, 'overview.png'), fullPage: true });
+  await clickText('Actividades');
   assert.equal(await page.$$eval('.lp-table-wrap tbody tr', (rows) => rows.length), 5);
   await clickText('Invitados'); await clickText('+ Agregar'); await page.type('textarea[aria-label="Nombre completo"]', 'Invitado de prueba');
   await page.select('select[aria-label="Confirmación"]', 'Sí');
@@ -59,8 +78,30 @@ try {
   await page.setViewport({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
   await page.screenshot({ path: path.join(temporary, 'mobile.png'), fullPage: true });
+  await page.setViewport({ width: 1440, height: 1000 });
+  await page.goto(`http://127.0.0.1:${server.address().port}/__portal-admin-test`);
+  await page.waitForSelector('input[type=password]'); await page.type('input[type=password]', 'staff-password'); await clickText('Ingresar');
+  await page.waitForSelector('.lp-admin select'); await page.select('.lp-admin select', 'demo'); await clickText('Abrir planificación');
+  await page.waitForSelector('.lp-planner-screen .lp-workspace');
+  assert.equal(await page.$$('.lp-access-form').then((nodes) => nodes.length), 0);
+  assert.equal(await page.$eval('#root', (node) => node.inert), true);
+  assert.equal(await page.$eval('.lp-planner-screen', (node) => node.getBoundingClientRect().height), 1000);
+  await page.screenshot({ path: path.join(temporary, 'admin-workspace.png'), fullPage: true });
+  await clickText('Notas generales'); await page.type('.lp-tab-content textarea', 'Nota sin guardar');
+  const rejectExit = (dialog) => dialog.dismiss(); page.once('dialog', rejectExit); await clickText('Portal de eventos');
+  assert.ok(await page.$('.lp-planner-screen'));
+  assert.equal(await page.$eval('.lp-tab-content textarea', (node) => node.value), 'Nota sin guardar');
+  await clickText('Guardar cambios'); await page.waitForSelector('.lp-success'); await clickText('Portal de eventos');
+  await page.waitForSelector('.lp-access-form'); assert.equal(await page.$('.lp-planner-screen'), null);
+  assert.equal(await page.$eval('.lp-admin select', (node) => node.value), 'demo');
+  assert.equal(await page.evaluate(() => document.body.style.overflow), '');
+  assert.equal(await page.$eval('#root', (node) => node.inert), false);
+  await clickText('Abrir planificación'); await page.waitForSelector('.lp-planner-screen .lp-workspace');
+  await page.setViewport({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
+  await page.screenshot({ path: path.join(temporary, 'admin-mobile.png'), fullPage: true });
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ result: 'Login, guests, drag, save, reload and mobile layout verified', screenshots: temporary }));
+  console.log(JSON.stringify({ result: 'Client editing, admin fullscreen workspace, unsaved-change protection, return to access management and mobile layout verified', screenshots: temporary }));
 } finally {
   if (browser) await browser.close();
   if (server) await new Promise((resolve) => server.close(resolve));

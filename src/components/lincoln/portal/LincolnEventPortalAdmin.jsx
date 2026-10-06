@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { forgetPortalSession, portalRequest, portalSession, portalStaffUser } from '../../../services/lincolnPortalApi';
 import PortalLogin from './PortalLogin';
 import EventPlanEditor from './EventPlanEditor';
@@ -21,6 +22,18 @@ export default function LincolnEventPortalAdmin({ state, currentUser }) {
     catch (err) { setError(err.message); if (err.status === 401) expired(); }
   }, [expired]);
   useEffect(() => { if (authenticated) load(); }, [authenticated, load]);
+  useEffect(() => {
+    if (!editing) return undefined;
+    const previous = document.body.style.overflow;
+    const appRoot = document.getElementById('root');
+    const previousInert = appRoot?.inert;
+    document.body.style.overflow = 'hidden';
+    if (appRoot) appRoot.inert = true;
+    return () => {
+      document.body.style.overflow = previous;
+      if (appRoot) appRoot.inert = previousInert;
+    };
+  }, [editing]);
   const events = state.events.filter((row) => row.status !== 'cancelled');
   const mutate = async (path, method, body) => {
     setBusy(true); setError(''); setMessage('');
@@ -30,6 +43,11 @@ export default function LincolnEventPortalAdmin({ state, currentUser }) {
   };
   const portalUrl = `${window.location.origin}/lincoln/mi-evento`;
   if (!authenticated) return <div className="lp-root lp-admin"><PortalLogin staff username={currentUser?.username || ''} onLogin={() => { setAuthenticated(true); setError(''); }} /></div>;
+  if (editing) return createPortal(
+    <main className="lp-root lp-planner-screen" aria-label="Planificación del evento">
+      <EventPlanEditor key={eventId} eventId={eventId} staff onExpired={expired} onBack={() => setEditing(false)} />
+    </main>, document.body,
+  );
   return <div className="lp-root lp-admin">
     <header className="lp-admin-header"><div><small>Gestión de clientes</small><h1>Portal de eventos</h1><p>Habilita el acceso de cada cliente y coordina su evento desde una ficha compartida.</p></div><button className="lp-secondary" onClick={async () => { if (!window.confirm('¿Cerrar la sesión de administración del portal? Los cambios sin guardar se perderán.')) return; await portalRequest('/logout', { staff: true, method: 'POST' }).catch(() => {}); forgetPortalSession(true); expired(); }}>Cerrar sesión del portal</button></header>
     <div className="lp-link lp-card"><div><strong>Acceso para tus clientes</strong><a href={portalUrl} target="_blank" rel="noreferrer">{portalUrl}</a></div><button className="lp-secondary" onClick={async () => { try { await navigator.clipboard.writeText(portalUrl); setMessage('Enlace copiado.'); } catch { setError('No se pudo copiar. Puedes seleccionar el enlace y copiarlo.'); } }}>Copiar enlace</button></div>
@@ -37,7 +55,7 @@ export default function LincolnEventPortalAdmin({ state, currentUser }) {
     <div className="lp-card"><label>Evento<select value={eventId} disabled={editing || busy} onChange={(e) => setEventId(e.target.value)}><option value="">Selecciona un contrato / evento</option>{events.map((row) => <option key={row.id} value={row.id}>{row.contractCode || row.code} · {row.clientName || row.contractor1Name} · {row.eventDate}</option>)}</select></label>{!events.length ? <p>Registra un contrato en Reservas y Contratos para habilitar su portal.</p> : null}
     </div>
     {eventId ? <>
-      <div className="lp-card"><div className="lp-table-toolbar"><div><h3>Accesos del evento</h3><p>Varios clientes del mismo evento pueden trabajar sobre la misma ficha.</p></div><button onClick={() => { if (editing && !window.confirm('¿Cerrar la ficha? Los cambios sin guardar se perderán.')) return; setEditing(!editing); }}>{editing ? 'Cerrar ficha' : 'Abrir ficha y croquis'}</button></div>
+      <div className="lp-card"><div className="lp-table-toolbar"><div><h3>Accesos del evento</h3><p>Varios clientes del mismo evento pueden trabajar sobre la misma ficha.</p></div><button onClick={() => setEditing(true)}>Abrir planificación</button></div>
         <form className="lp-access-form" onSubmit={async (e) => { e.preventDefault(); if (await mutate('/accounts', 'POST', { ...form, eventId })) { setForm({ username: '', password: '', name: '' }); setMessage('Acceso creado. Comparte el enlace, usuario y contraseña con el cliente.'); } }}>
           <label>Nombre del cliente<input required maxLength="100" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           <label>Usuario<input required pattern="[a-zA-Z0-9._\-]{3,50}" autoComplete="off" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></label>
@@ -47,7 +65,6 @@ export default function LincolnEventPortalAdmin({ state, currentUser }) {
         {!accounts.some((row) => row.eventId === eventId) ? <p className="lp-empty">Este evento todavía no tiene accesos de clientes.</p> : null}
         {resetId ? <form className="lp-access-form" onSubmit={async (e) => { e.preventDefault(); if (await mutate(`/accounts/${resetId}`, 'PATCH', { password: resetPassword })) { setResetId(''); setResetPassword(''); setMessage('Contraseña cambiada. Las sesiones anteriores se cerraron.'); } }}><label>Nueva contraseña para {accounts.find((row) => row.id === resetId)?.username}<input required type="password" minLength="10" maxLength="128" autoComplete="new-password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /></label><button disabled={busy}>Guardar contraseña</button><button type="button" className="lp-secondary" onClick={() => setResetId('')}>Cancelar</button></form> : null}
       </div>
-      {editing ? <EventPlanEditor key={eventId} eventId={eventId} staff onExpired={expired} /> : null}
     </> : null}
   </div>;
 }
