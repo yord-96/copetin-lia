@@ -3,6 +3,40 @@ import assert from 'node:assert/strict';
 import {reconcileContractDocumentPayments} from './contractDocumentPayments.js';
 import {buildContractDocumentHtml} from '../services/webBridge.js';
 
+test('1836: el historial inicial y RC-0327 representan un solo ingreso de 440', () => {
+  const contract = { id: '1836-id', contractCode: '1836', totals: { totalBs: 940 }, items: [],
+    economicLedger: [{ id: 'initial-payment-1836-id', type: 'deposit', amountBs: 440,
+      createdAt: '2026-07-21', paymentMethod: 'efectivo', note: 'PAGO INICIAL' }] };
+  const cash = [{ id: 'cash', linkedContractId: contract.id, cashBoxType: 'BIG_CASH',
+    type: 'ingreso_alquiler', amountBs: 440, receiptCode: 'RC-0327',
+    accountingTag: 'initial_rental_payment', createdAt: '2026-07-21T23:06:15.330Z' }];
+  const result = reconcileContractDocumentPayments(contract, {}, cash);
+  assert.equal(result.ledger.length, 1);
+  assert.equal(result.ledger[0].cashReceiptCode, 'RC-0327');
+  assert.equal(result.receivedBs, 440);
+  assert.equal(result.appliedBs, 440);
+  assert.equal(940 - result.appliedBs, 500);
+  assert.equal(contract.economicLedger[0].cashMovementId, undefined);
+  // Editing the initial receipt date or amount retains its identity.
+  const edited = reconcileContractDocumentPayments(contract, {}, [{ ...cash[0], amountBs: 450,
+    receiptIssuedAt: '2025-07-21' }]);
+  assert.equal(edited.ledger.length, 1);
+  assert.equal(edited.receivedBs, 450);
+});
+
+test('pagos iguales en otros dias y recibos explicitamente enlazados no se fusionan', () => {
+  const contract = { id: 'contract', economicLedger: [
+    { id: 'legacy', type: 'deposit', amountBs: 440, createdAt: '2026-07-20' },
+    { id: 'linked', type: 'deposit', amountBs: 440, createdAt: '2026-07-21', cashMovementId: 'cash' },
+  ] };
+  const cash = [{ id: 'cash', linkedContractId: 'contract', cashBoxType: 'BIG_CASH',
+    type: 'abono', amountBs: 440, receiptCode: 'RC-1', createdAt: '2026-07-21' }];
+  const result = reconcileContractDocumentPayments(contract, {}, cash);
+  assert.equal(result.ledger.length, 2);
+  assert.equal(result.ledger[0].cashMovementId, undefined);
+  assert.equal(result.receivedBs, 440);
+});
+
 test('1179: tres recibos suman 30000, garantía 3000 y abono comercial 27000 sin duplicar el primer pago editado', () => {
   const contract={id:'contract',contractCode:'1179',totals:{totalBs:34253.5,itemsNetSubtotalBs:31053.5,guaranteeBs:3000},items:[],economicLedger:[
     {id:'first',type:'deposit',amountBs:20000,cashMovementId:'cash1',isCashRegistered:true,guaranteeAllocationBs:3000},
