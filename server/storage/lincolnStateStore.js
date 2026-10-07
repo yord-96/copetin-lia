@@ -575,6 +575,7 @@ export const createLincolnRecord = async (collection, payload, expectedRevision,
       createdByName: String(actor?.name ?? '').trim() || null,
     };
     rows.unshift(record);
+    if (collection === "events") syncContractAdvance(state,record,actor);
     appendLincolnAudit(state, { action: `${collection}.create`, entityType: collection, entityId: record.id, entityCode: record.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });
     return { record };
   });
@@ -624,6 +625,7 @@ export const updateLincolnRecord = async (collection, id, payload, expectedRevis
       updatedByName: String(actor?.name ?? '').trim() || null,
     };
     rows[index] = record;
+    if (collection === "events") syncContractAdvance(state,record,actor);
     appendLincolnAudit(state, { action: `${collection}.update`, entityType: collection, entityId: record.id, entityCode: record.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });
     return { record };
   });
@@ -713,6 +715,7 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
     const normalizedEvent = normalizeOrganizerEvent(event, state, { excludeReservationId: reservation.id });
     Object.assign(event, normalizedEvent);
     state.events.unshift(event);
+    syncContractAdvance(state,event,actor);
     state.reservations[reservationIndex] = { ...reservation, status: 'converted', eventId: event.id, updatedAt: createdAt };
     appendLincolnAudit(state, { action: 'reservations.convert_to_event', entityType: 'events', entityId: event.id, entityCode: event.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });
     return { record: event, reservation: state.reservations[reservationIndex] };
@@ -841,8 +844,7 @@ const appendIncomeForPayment = (state, payment, actor) => {
   return income;
 };
 
-export const registerLincolnEventPayment = async (eventId, payload, expectedRevision, actor = {}) =>
-  mutateLincolnState(expectedRevision, (state) => {
+const registerPaymentInState = (state, eventId, payload, actor = {}) => {
     const event = findLincolnEvent(state, eventId);
     const type = String(payload?.type ?? 'deposit').trim().toLowerCase();
     if (!Object.prototype.hasOwnProperty.call(PAYMENT_TYPE_LABELS, type)) {
@@ -956,7 +958,20 @@ export const registerLincolnEventPayment = async (eventId, payload, expectedRevi
       eventId: event.id, receiptCode: receipt.code, amountBs,
     });
     return { payment, receipt, income, ledgerEntry, eventFinancial: event.financial };
-  });
+  };
+
+export const registerLincolnEventPayment = async (eventId, payload, expectedRevision, actor = {}) =>
+  mutateLincolnState(expectedRevision, state => registerPaymentInState(state,eventId,payload,actor));
+
+const syncContractAdvance = (state,event,actor) => {
+  const advance = roundMoney(event.contractDocumentSnapshot?.advanceBs);
+  if (advance <= roundMoney(event.contractAdvanceRecordedBs)) { event.financial = buildEventFinancialSummary(state,event); return; }
+  const paid = buildEventFinancialSummary(state,event).servicePaidBs;
+  const missing = roundMoney(Math.max(0,advance-paid));
+  if (missing > 0) registerPaymentInState(state,event.id,{type:"advance",amountBs:missing,description:"Anticipo registrado en el contrato",date:event.contractDocumentSnapshot?.contractDate?.slice(0,10),method:event.contractDocumentSnapshot?.advanceMethod || "cash",destination:event.contractDocumentSnapshot?.advanceDestination || "CAJA CHICA"},actor);
+  event.contractAdvanceRecordedBs = advance;
+  event.financial = buildEventFinancialSummary(state,event);
+};
 
 export const voidLincolnPayment = async (paymentId, payload, expectedRevision, actor = {}) =>
   mutateLincolnState(expectedRevision, (state) => {

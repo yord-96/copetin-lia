@@ -45,7 +45,8 @@ try {
   await page.$eval('.lincoln-contract-flow-modal input[type=date]', (node) => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(node, '2026-10-24'); node.dispatchEvent(new Event('input', {bubbles:true})); node.dispatchEvent(new Event('change', {bubbles:true})); });
   await page.$$eval('.lincoln-contract-flow-grid select', (nodes) => { const node=nodes[2]; node.value='room'; node.dispatchEvent(new Event('change',{bubbles:true})); });
   const numbers = await page.$$('.lincoln-contract-flow-grid input[type=number]'); await numbers[1].click({clickCount:3}); await numbers[1].type('10');
-  await click('Siguiente'); await click('Seleccionar');
+  await click('Siguiente'); await click('Seleccionar'); await click('+ Crear costo extra');
+  for (const [selector,value] of [['[aria-label="Concepto personalizado 1"]','20 niños'],['[aria-label="Cantidad personalizada 1"]','20'],['[aria-label="Precio personalizado 1"]','100']]) await page.$eval(selector,(node,value)=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}));},value);
   assert.equal(await page.$eval('.lincoln-contract-flow-backdrop', node => node.parentElement === document.body), true);
   assert.equal(await page.$eval('#root', node => node.inert), true);
   await page.evaluate(() => { window.wizardNode=document.querySelector('.lincoln-contract-flow-modal'); window.priceInput=document.querySelector('.lincoln-contract-pricing-groups input[type=number]'); window.priceInput.focus(); window.refreshPresence(); });
@@ -61,7 +62,7 @@ try {
   assert.equal(await page.$eval('#root', node => node.inert), false);
   assert.equal(await page.evaluate(() => document.body.style.overflow), '');
   const created = await page.evaluate(() => window.fixture.events[0]);
-  assert.equal(created.clientName, 'Cliente de prueba'); assert.equal(created.roomId, 'room'); assert.equal(created.totalBs, 1000); assert.equal(created.contractDocumentSnapshot.clauses[0], 'Clausula personalizada de prueba');
+  assert.equal(created.clientName, 'Cliente de prueba'); assert.equal(created.roomId, 'room'); assert.equal(created.totalBs, 3000); assert.equal(created.contractDocumentSnapshot.clauses[0], 'Clausula personalizada de prueba');
   await page.waitForSelector('.lincoln-commercial-dots'); await page.$eval('.lincoln-commercial-dots',node=>node.click()); await click('Editar datos'); await page.waitForSelector('.lincoln-contract-flow-modal');
   assert.equal(await page.$eval('.lincoln-contract-flow-modal h2', (node) => node.textContent), 'Editar contrato');
   await click('Siguiente'); await click('Siguiente');
