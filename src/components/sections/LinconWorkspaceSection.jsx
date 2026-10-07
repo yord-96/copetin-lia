@@ -424,7 +424,7 @@ const contractDefaultClauses = (draft) => [
   `En conformidad con todas las cláusulas del presente contrato, las partes firman en fecha ${contractDateLong(draft.contractDate)} en señal de aceptación.`,
 ];
 
-const buildContractDraft = (reservation) => {
+const buildContractDraft = (reservation, mode = 'convert') => {
   const snapshot = reservation?.packageSnapshot && typeof reservation.packageSnapshot === 'object' ? reservation.packageSnapshot : {};
   const variant = snapshot.selectedVariant ?? null;
   const variantId = reservation?.packageVariantId ?? variant?.id ?? '';
@@ -450,7 +450,7 @@ const buildContractDraft = (reservation) => {
   }));
   const advanceBs = Number(reservation?.reservationPaymentBs ?? 0) + Number(reservation?.accountPaymentBs ?? 0);
   const base = {
-    sourceReservationId: reservation?.id ?? '', sourceReservationCode: reservation?.code ?? '',
+    sourceReservationId: mode === 'convert' ? reservation?.id ?? '' : reservation?.sourceReservationId ?? '', sourceReservationCode: mode === 'convert' ? reservation?.code ?? '' : reservation?.sourceReservationCode ?? '',
     contractor1Name: reservation?.contractor1Name ?? reservation?.clientName ?? '', contractor1Ci: reservation?.contractor1Ci ?? reservation?.clientCi ?? '', contractor1Phone: reservation?.contractor1Phone ?? reservation?.clientPhone ?? '',
     contractor2Name: reservation?.contractor2Name ?? reservation?.secondContractorName ?? '', contractor2Ci: reservation?.contractor2Ci ?? reservation?.secondContractorCi ?? '', contractor2Phone: reservation?.contractor2Phone ?? reservation?.secondContractorPhone ?? '',
     eventType: reservation?.eventType ?? '', eventDate: reservation?.eventDate ?? '', startTime: reservation?.startTime ?? '', durationHours: Number(reservation?.durationHours ?? 8), roomName: reservation?.roomName ?? '', roomId: reservation?.roomId ?? '',
@@ -458,7 +458,8 @@ const buildContractDraft = (reservation) => {
     pricePerPersonBs, services: includedServices, extras, discountPercent: 0, advanceBs, guaranteeBs: Number(reservation?.guaranteeBs ?? 0), balanceDueDays: 7,
     contractDate: lincolnTodayKey(), notes: reservation?.notes ?? '',
   };
-  return { ...base, clauses: contractDefaultClauses(base), clausesCustomized: false };
+  const saved = reservation?.contractDocumentSnapshot;
+  return saved && typeof saved === 'object' ? { ...base, ...saved, clauses: Array.isArray(saved.clauses) ? saved.clauses : contractDefaultClauses(base), clausesCustomized: Array.isArray(saved.clauses) } : { ...base, clauses: contractDefaultClauses(base), clausesCustomized: false };
 };
 
 const contractPackagePatch = (pkg, guestCount = 0, preferredVariantId = '') => {
@@ -568,9 +569,9 @@ function ContractDocumentSheet({ document, compact = false }) {
   </div>;
 }
 
-function ContractConversionModal({ reservation, packages = [], saving, onClose, onConfirm }) {
+function ContractConversionModal({ reservation, packages = [], rooms = [], clients = [], mode = 'convert', saving, onClose, onConfirm }) {
   const [step, setStep] = useState(1);
-  const [draft, setDraft] = useState(() => buildContractDraft(reservation));
+  const [draft, setDraft] = useState(() => buildContractDraft(reservation, mode));
   const set = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const totals = contractTotals(draft);
   const updateExtra = (id, patch) => setDraft((current) => ({ ...current, extras: current.extras.map((line) => line.id === id ? { ...line, ...patch } : line) }));
@@ -623,19 +624,23 @@ function ContractConversionModal({ reservation, packages = [], saving, onClose, 
     };
     const documentDraft = { ...finalDraft };
     delete documentDraft.clausesCustomized;
-    const contractDocumentSnapshot = { ...documentDraft, totals, version: 1, generatedAt: new Date().toISOString(), sourceReservationCode: reservation?.code ?? '' };
+    const contractDocumentSnapshot = { ...documentDraft, totals, generatedAt: new Date().toISOString(), sourceReservationCode: draft.sourceReservationCode || '', version: Number(reservation?.contractDocumentVersion || 0) + 1 };
     onConfirm({
+      clientId: draft.clientId || reservation?.clientId || '', clientName: draft.contractor1Name.trim(), clientCi: draft.contractor1Ci, clientPhone: draft.contractor1Phone,
+      contractor1Name: draft.contractor1Name.trim(), contractor1Ci: draft.contractor1Ci, contractor1Phone: draft.contractor1Phone,
+      contractor2Name: draft.contractor2Name, contractor2Ci: draft.contractor2Ci, contractor2Phone: draft.contractor2Phone, secondContractorName: draft.contractor2Name, secondContractorCi: draft.contractor2Ci,
+      eventType: draft.eventType, eventDate: draft.eventDate, startTime: draft.startTime, durationHours: draft.durationHours, roomId: draft.roomId, roomName: draft.roomName,
       guaranteeBs: Number(draft.guaranteeBs || 0), guestCount: Number(totals.guestCount || 0), estimatedTotalBs: totals.totalBs, totalBs: totals.totalBs,
       packageId: draft.packageId, packageName: draft.packageName, packageVariantId: draft.packageVariantId, packageVariantName: draft.packageVariantName,
       packagePricePerPersonBs: Number(draft.pricePerPersonBs || 0), packageSnapshot: draft.packageSnapshot,
-      contractDocumentSnapshot, contractDocumentVersion: 1, status: 'contracted', contractedAt: new Date().toISOString(), notes: draft.notes,
+      contractDocumentSnapshot, contractDocumentVersion: contractDocumentSnapshot.version, status: mode === 'edit' ? reservation?.status || 'contracted' : 'contracted', contractedAt: reservation?.contractedAt || new Date().toISOString(), notes: draft.notes,
     });
   };
   return <div className="lincoln-contract-flow-backdrop"><section className="lincoln-contract-flow-modal">
-    <header><div><small>RESERVA CONFIRMADA · {reservation?.code}</small><h2>Preparar contrato</h2><p>Completa la propuesta comercial y revisa las dos páginas antes de formalizar.</p></div><button type="button" aria-label="Cerrar" onClick={onClose}>×</button></header>
+    <header><div><small>{mode === 'convert' ? 'RESERVA CONFIRMADA' : 'CONTRATO'} · {reservation?.code || 'NUEVO'}</small><h2>{mode === 'edit' ? 'Editar contrato' : mode === 'create' ? 'Nuevo contrato' : 'Preparar contrato'}</h2><p>Completa la propuesta comercial y revisa las dos páginas antes de formalizar.</p></div><button type="button" aria-label="Cerrar" onClick={onClose}>×</button></header>
     <nav className="lincoln-contract-flow-steps">{[['1','Cliente y evento','Datos legales'],['2','Paquete y servicios','Propuesta comercial'],['3','Pagos y condiciones','Acuerdos'],['4','Revisar y generar','2 páginas']].map(([number,label,detail]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => Number(number) <= step && setStep(Number(number))}><b>{step > Number(number) ? '✓' : number}</b><span><strong>{label}</strong><small>{detail}</small></span></button>)}</nav>
     <div className="lincoln-contract-flow-body">
-      {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Vienen desde la reserva; puedes completar lo necesario antes de confirmar.</p></div><div className="lincoln-contract-flow-grid"><Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><input value={draft.roomName} onChange={(e) => set('roomName', e.target.value)} /></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
+      {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Completa los datos del cliente, los titulares y el evento antes de continuar.</p></div><div className="lincoln-contract-flow-grid">{mode !== 'convert' ? <Field label="Cliente registrado" wide><select value={draft.clientId || reservation?.clientId || ''} onChange={(e) => { const client = clients.find((row) => row.id === e.target.value); setDraft((current) => ({ ...current, clientId: e.target.value, ...(client ? { contractor1Name: client.fullName || client.name || '', contractor1Ci: client.ci || '', contractor1Phone: client.phone || client.mobile || '' } : {}) })); }}><option value="">Seleccionar cliente o completar titular</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.fullName || client.name}</option>)}</select></Field> : null}<Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><select value={draft.roomId || ''} onChange={(e) => { const room = rooms.find((row) => row.id === e.target.value); setDraft((current) => ({ ...current, roomId: e.target.value, roomName: room?.name || '' })); }}><option value="">{draft.roomName || 'Seleccionar salón'}</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
       {step === 2 ? <section className="lincoln-contract-flow-section">
         <div className="lincoln-contract-flow-title"><small>PASO 2 DE 4 · PROPUESTA</small><h3>Elige el paquete que irá en el contrato</h3><p>Activa uno o varios niveles y distribuye los invitados, por ejemplo 70 Jóvenes y 80 Adultos.</p></div>
         <div className="lincoln-contract-package-picker">{activePackages.map((pkg) => { const variants = Array.isArray(pkg.variants) && pkg.variants.length ? pkg.variants.filter((variant) => variant?.status !== 'inactive') : [{ name: 'BASE', pricePerPersonBs: pkg.pricePerPersonBs }]; const selected = String(pkg.id) === String(draft.packageId); return <button type="button" key={pkg.id} className={selected ? 'is-selected' : ''} onClick={() => choosePackage(pkg)}><span>{selected ? '✓ Seleccionado' : 'Seleccionar'}</span><strong>{pkg.name}</strong><small>{pkg.roomName || 'Todos los salones'} · mínimo {pkg.minimumGuests || 0} personas</small><div>{variants.map((variant) => <em key={variant.id || variant.name}>{variant.name} <b>{contractMoney(variant.pricePerPersonBs)}</b></em>)}</div></button>; })}{!activePackages.length ? <div className="lincoln-contract-picker-empty"><strong>No hay paquetes activos</strong><span>Crea o activa una plantilla desde el módulo Paquetes.</span></div> : null}</div>
@@ -654,7 +659,7 @@ function ContractConversionModal({ reservation, packages = [], saving, onClose, 
       {step === 3 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 3</small><h3>Condiciones y cláusulas</h3><p>Los montos permanecen separados para no mezclar servicio y garantía.</p></div><div className="lincoln-contract-condition-grid"><Field label="Anticipo / a cuenta Bs"><input type="number" min="0" step="0.01" value={draft.advanceBs} onChange={(e) => set('advanceBs', toNumber(e.target.value))} /></Field><Field label="Garantía Bs"><input type="number" min="0" step="0.01" value={draft.guaranteeBs} onChange={(e) => set('guaranteeBs', toNumber(e.target.value))} /></Field><Field label="Descuento %"><input type="number" min="0" max="100" step="0.01" value={draft.discountPercent} onChange={(e) => set('discountPercent', toNumber(e.target.value))} /></Field><Field label="Saldo antes del evento (días)"><input type="number" min="0" value={draft.balanceDueDays} onChange={(e) => set('balanceDueDays', toNumber(e.target.value))} /></Field></div><div className="lincoln-contract-clause-editor">{draft.clauses.map((clause,index) => <label key={index}><span>Cláusula {index + 1}</span><textarea value={clause} onChange={(e) => setDraft((current) => ({ ...current, clausesCustomized: true, clauses: current.clauses.map((item,i) => i === index ? e.target.value : item) }))} /></label>)}</div><Field label="Observaciones / acuerdos" wide><textarea value={draft.notes} onChange={(e) => set('notes', e.target.value)} /></Field></section> : null}
       {step === 4 ? <section className="lincoln-contract-flow-section is-document"><div className="lincoln-contract-flow-title"><small>PASO 4</small><h3>Vista previa del documento</h3><p>Así quedará congelado el contrato y su hoja de costos.</p></div><ContractDocumentSheet document={{ ...draft, guestCount: totals.guestCount, clauses: draft.clausesCustomized ? draft.clauses : contractDefaultClauses({ ...draft, guestCount: totals.guestCount }), totals }} compact /></section> : null}
     </div>
-    <footer><button type="button" className="is-secondary" onClick={step === 1 ? onClose : goBack}>{step === 1 ? 'Cancelar' : '← Atrás'}</button><div><span>Total: <b>{contractMoney(totals.totalBs)}</b></span>{step < 4 ? <button type="button" onClick={goNext}>Siguiente →</button> : <button type="button" disabled={saving} onClick={confirm}>{saving ? 'Creando contrato...' : 'Confirmar contrato'}</button>}</div></footer>
+    <footer><button type="button" className="is-secondary" onClick={step === 1 ? onClose : goBack}>{step === 1 ? 'Cancelar' : '← Atrás'}</button><div><span>Total: <b>{contractMoney(totals.totalBs)}</b></span>{step < 4 ? <button type="button" onClick={goNext}>Siguiente →</button> : <button type="button" disabled={saving} onClick={confirm}>{saving ? 'Guardando contrato...' : mode === 'edit' ? 'Guardar contrato' : 'Confirmar contrato'}</button>}</div></footer>
   </section></div>;
 }
 
@@ -1703,7 +1708,8 @@ Escribe RESET ECONOMICO para continuar:`);
       {modal?.mode === 'payment' ? <PaymentModal eventRecord={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => savePayment(modal.record, form)} /> : null}
       {modal?.mode === 'expense' ? <ExpenseModal record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={saveExpense} /> : null}
       {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
-      {modal?.mode === 'contractConvert' ? <ContractConversionModal reservation={modal.record} packages={state.packages} saving={saving} onClose={() => setModal(null)} onConfirm={(eventPayload) => convertReservation(modal.record, eventPayload)} /> : null}
+      {modal?.mode === 'contractConvert' ? <ContractConversionModal reservation={modal.record} packages={state.packages} rooms={state.rooms} clients={state.clients} saving={saving} onClose={() => setModal(null)} onConfirm={(eventPayload) => convertReservation(modal.record, eventPayload)} /> : null}
+      {modal?.mode === 'events' ? <ContractConversionModal key={modal.record?.id || 'new-contract'} reservation={modal.record} packages={state.packages} rooms={state.rooms} clients={state.clients} mode={modal.record ? 'edit' : 'create'} saving={saving} onClose={() => setModal(null)} onConfirm={(payload) => saveRecord('events', { ...modal.record, ...payload })} /> : null}
       {modal?.mode === 'contractDocument' ? <ContractDocumentModal eventRecord={modal.record} onClose={() => setModal(null)} /> : null}
       {modal?.mode === 'commercialDetail' ? <CommercialRecordDetailModal
         kind={modal.kind}
@@ -1723,7 +1729,7 @@ Escribe RESET ECONOMICO para continuar:`);
         onGenerateContract={() => setModal({ mode: 'contractConvert', record: modal.record })}
         onOpenDocument={() => setModal({ mode: 'contractDocument', record: modal.record })}
       /> : null}
-      {modal && !['economicEntry', 'payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+      {modal && !['events', 'economicEntry', 'payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
       {isResetDialogOpen ? (
         <SystemResetPanel
           onClose={() => setIsResetDialogOpen(false)}

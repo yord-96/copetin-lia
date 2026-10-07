@@ -1,0 +1,60 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { build } from 'vite';
+import react from '@vitejs/plugin-react';
+import express from 'express';
+import puppeteer from 'puppeteer-core';
+
+const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lincoln-contract-wizard-'));
+const require = createRequire(import.meta.url);
+const modulePath = (value) => JSON.stringify(value.replaceAll('\\', '/'));
+const entry = path.join(directory, 'entry.mjs');
+await fs.writeFile(entry, `import React from ${modulePath(require.resolve('react'))};
+import {createRoot} from ${modulePath(require.resolve('react-dom/client'))};
+import Workspace from ${modulePath(path.resolve('src/components/sections/LinconWorkspaceSection.jsx'))};
+import {api} from ${modulePath(path.resolve('src/services/api.js'))};
+const state={events:[],reservations:[],clients:[{id:'client',name:'Cliente de prueba',ci:'123',phone:'70000000'}],rooms:[{id:'room',name:'Salon de prueba'}],packages:[{id:'package',name:'Paquete de prueba',pricePerPersonBs:100,variants:[{id:'base',name:'Base',pricePerPersonBs:100}]}]};
+window.fixture=state; window.mutations=[];
+api.lincoln.getCommercialOverview=async()=>({summary:{contracts:state.events.length},rows:state.events.map(row=>({...row,key:row.id,kind:'contract',eventId:row.id,statusLabel:'Contratado'}))});
+api.presence.heartbeat=async()=>({}); api.lincoln.getState=async()=>({state,revision:1+window.mutations.length});
+api.lincoln.createRecord=async(payload)=>{window.mutations.push(payload);state.events.push({...payload.record,id:'event',code:'CON-TEST'});};
+api.lincoln.updateRecord=async(payload)=>{window.mutations.push(payload);Object.assign(state.events.find(row=>row.id===payload.id),payload.record);};
+createRoot(document.getElementById('root')).render(React.createElement(Workspace,{currentUser:{id:'staff',name:'Coordinador',role:'developer'}}));`);
+const dist = path.join(directory, 'dist');
+await build({ configFile: false, plugins: [react()], logLevel: 'error', build: { outDir: dist, rollupOptions: { input: entry, output: { entryFileNames: 'entry.js', assetFileNames: '[name][extname]' } } } });
+const css = (await fs.readdir(dist)).filter((file) => file.endsWith('.css')).map((file) => `<link rel="stylesheet" href="/${file}">`).join('');
+const app = express(); app.use(express.static(dist)); app.get('/', (_req, res) => res.send(`<html><head>${css}</head><body><div id="root"></div><script type="module" src="/entry.js"></script></body></html>`));
+const server = app.listen(0, '127.0.0.1'); await new Promise((resolve) => server.once('listening', resolve));
+let browser;
+try {
+  browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const page = await browser.newPage(); await page.setViewport({ width: 1440, height: 1000 });
+  const errors = []; page.on('dialog',async(dialog)=>{console.log('Dialog:',dialog.message());await dialog.dismiss();}); page.on('pageerror', (error) => errors.push(error.message));
+  const click = async (label) => {
+    for (const button of await page.$$('button')) if (await button.evaluate((node, text) => node.textContent.trim().startsWith(text), label)) { await button.evaluate(node=>node.click()); return; }
+    throw new Error(`Button missing: ${label}`);
+  };
+  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.waitForSelector('.lincon-sidebar'); await click('Reservas y Contratos'); await click('+ Nuevo contrato');
+  await page.waitForSelector('.lincoln-contract-flow-modal', {timeout:5000}).catch(async(error)=>{console.log(errors, await page.$eval('body',node=>node.innerText));throw error;});
+  assert.equal(await page.$eval('.lincoln-contract-flow-modal h2', (node) => node.textContent), 'Nuevo contrato');
+  await page.select('.lincoln-contract-flow-grid select', 'client');
+  await page.$eval('.lincoln-contract-flow-modal input[type=date]', (node) => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(node, '2026-10-24'); node.dispatchEvent(new Event('input', {bubbles:true})); node.dispatchEvent(new Event('change', {bubbles:true})); });
+  await page.$$eval('.lincoln-contract-flow-grid select', (nodes) => { const node=nodes[1]; node.value='room'; node.dispatchEvent(new Event('change',{bubbles:true})); });
+  const numbers = await page.$$('.lincoln-contract-flow-grid input[type=number]'); await numbers[1].click({clickCount:3}); await numbers[1].type('10');
+  await click('Siguiente'); await click('Seleccionar'); await click('Siguiente');
+  await page.$eval('.lincoln-contract-clause-editor textarea', (node) => node.focus()); await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control'); await page.keyboard.type('Clausula personalizada de prueba');
+  await click('Siguiente'); await click('Confirmar contrato'); await page.waitForSelector('.lincoln-commercial-table');
+  const created = await page.evaluate(() => window.fixture.events[0]);
+  assert.equal(created.clientName, 'Cliente de prueba'); assert.equal(created.roomId, 'room'); assert.equal(created.totalBs, 1000); assert.equal(created.contractDocumentSnapshot.clauses[0], 'Clausula personalizada de prueba');
+  await page.waitForSelector('.lincoln-commercial-dots'); await page.$eval('.lincoln-commercial-dots',node=>node.click()); await click('Editar datos'); await page.waitForSelector('.lincoln-contract-flow-modal');
+  assert.equal(await page.$eval('.lincoln-contract-flow-modal h2', (node) => node.textContent), 'Editar contrato');
+  await click('Siguiente'); await click('Siguiente');
+  assert.equal(await page.$eval('.lincoln-contract-clause-editor textarea', (node) => node.value), 'Clausula personalizada de prueba');
+  await click('Siguiente'); await click('Guardar contrato'); await page.waitForSelector('.lincoln-commercial-table');
+  const updated = await page.evaluate(() => window.fixture.events[0]); assert.equal(updated.id, created.id); assert.equal(updated.contractDocumentVersion, 2); assert.equal(updated.totalBs, created.totalBs);
+  assert.deepEqual(errors, []); console.log('Verified new contract and three-dot edit use wizard; saved legal details, prices and custom clauses survive reopening.');
+} finally { if (browser) await browser.close(); await new Promise((resolve) => server.close(resolve)); }
