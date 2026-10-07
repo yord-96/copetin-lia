@@ -1,0 +1,24 @@
+const safe = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const money = value => new Intl.NumberFormat('es-BO', { style: 'currency', currency: 'BOB' }).format(value || 0);
+
+export function cashDocumentHtml(document, rendition = false) {
+  const title = rendition ? (document.mode === 'delivery' ? 'Entrega de fondos y rendición' : 'Rendición de cuentas') : document.direction === 'expense' ? 'Comprobante de egreso' : 'Ingreso de fondos';
+  const rows = rendition ? document.movements : [document];
+  const table = rows.map(row => `<tr><td>${safe(row.date)}</td><td>${safe(row.receiptCode || row.code)}</td><td>${safe(row.description || row.concept)}</td><td>${money(row.incomeBs ?? (row.direction === 'income' ? row.amountBs : 0))}</td><td>${money(row.expenseBs ?? (row.direction === 'expense' ? row.amountBs : 0))}</td></tr>`).join('');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${safe(document.code)}</title><style>
+  *{box-sizing:border-box}body{margin:0;background:#f4f5f2;font:16px/1.5 Arial,sans-serif;color:#243c36}.actions{display:flex;justify-content:center;gap:12px;padding:18px}button{padding:12px 18px;border:1px solid #cfd8d3;border-radius:8px;background:white;font-size:16px;cursor:pointer}button:first-child{background:#861623;color:white}main{max-width:900px;margin:0 auto 24px;background:white;padding:36px;border:1px solid #dce3de}header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #861623;padding-bottom:20px}.brand{font:700 32px Georgia;color:#861623}.brand small{display:block;font:12px Arial;letter-spacing:2px}h1{font:700 27px Georgia;margin:24px 0 12px}h2{font-size:18px}p{margin:8px 0}table{border-collapse:collapse;width:100%;margin:24px 0;font-size:14px}th{background:#24504d;color:white;text-align:left}th,td{padding:10px;border:1px solid #d7dfd9}td:nth-last-child(-n+2){text-align:right;white-space:nowrap}.totals{margin-left:auto;max-width:450px;border:1px solid #d7dfd9;padding:16px}.totals p{display:flex;justify-content:space-between;gap:20px}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:70px;margin-top:70px;text-align:center}.signatures p{border-top:1px solid #33483f;padding-top:12px}footer{margin-top:28px;color:#62756c;font-size:12px}@page{size:A4;margin:14mm}@media print{body{background:white}.actions{display:none}main{border:0;margin:0;padding:0;max-width:none}thead{display:table-header-group}tr,.totals,.signatures{break-inside:avoid}th{print-color-adjust:exact}}
+  </style></head><body><nav class="actions"><button onclick="window.print()">Imprimir / guardar PDF</button><button onclick="window.close()">Cerrar</button></nav><main>
+  <header><div class="brand"><small>CENTRO DE EVENTOS</small>LINCOLN</div><div><strong>${safe(document.code)}</strong><p>${safe(document.date)}</p></div></header>
+  <h1>${title}</h1><p><b>Caja:</b> ${safe(document.destination)}</p><p><b>${rendition ? 'Recibido por' : document.direction === 'expense' ? 'Entregado a' : 'Entregado por'}:</b> ${safe(document.recipientName || document.payerName || document.supplierName || document.clientName)}</p>
+  <p><b>Registrado por:</b> ${safe(document.createdByName || '—')}</p>${document.notes || document.reference ? `<p><b>Referencia:</b> ${safe(document.notes || document.reference)}</p>` : ''}
+  <table><thead><tr><th>Fecha</th><th>Documento</th><th>Concepto</th><th>Ingresos</th><th>Egresos</th></tr></thead><tbody>${table || '<tr><td colspan="5">Entrega de fondos disponibles, sin movimientos pendientes seleccionados.</td></tr>'}</tbody></table>
+  <section class="totals">${rendition ? `<p>Ingresos rendidos <b>${money(document.incomeBs)}</b></p><p>Egresos rendidos <b>${money(document.expenseBs)}</b></p><p>Entregado en efectivo <b>${money(document.deliveredCashBs)}</b></p><p>Entregado digital <b>${money(document.deliveredDigitalBs)}</b></p><p>Fondo efectivo restante <b>${money(document.balanceAfter.cashBs)}</b></p><p>Fondo digital restante <b>${money(document.balanceAfter.digitalBs)}</b></p>` : `<p>Total ${document.direction === 'expense' ? 'egresado' : 'ingresado'} <b>${money(document.amountBs)}</b></p>`}</section>
+  <section class="signatures"><p>${safe(document.createdByName || 'Responsable de caja')}<br>Entregué</p><p>${safe(document.recipientName || document.payerName || document.supplierName || 'Responsable')}<br>Recibí / conformidad</p></section><footer>${safe(document.code)} · Caja Lincoln · Documento conservado en el histórico.</footer></main></body></html>`;
+}
+
+export function printCashDocument(document, rendition = false) {
+  const popup = window.open('', '_blank', 'width=1000,height=850');
+  if (!popup) { window.alert('Habilita ventanas emergentes para ver el documento.'); return; }
+  popup.document.write(cashDocumentHtml(document, rendition));
+  popup.document.close();
+}

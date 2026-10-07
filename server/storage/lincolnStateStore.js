@@ -1,4 +1,5 @@
 import { normalizeOrganizerEvent } from '../services/lincoln/lincolnOrganizerService.js';
+import { buildLincolnCashLedger, cashDate, cashMoney } from '../../shared/lincolnCash.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -42,6 +43,7 @@ const createEmptyLincolnState = () => ({
   expenseEntries: [],
   eventSettlements: [],
   economicLedgerEntries: [],
+  cashRenditions: [],
   settings: {
     eventTypes: ['BODA', '15 AÑOS', 'CUMPLEAÑOS', 'EVENTO CORPORATIVO', 'OTRO'],
     paymentDestinations: ['CAJA CHICA', 'SRA. LIA'],
@@ -447,7 +449,7 @@ const normalizeLincolnStateShape = (state) => {
     company: { ...base.company, ...(source.company ?? {}), id: 'lincoln' },
     settings: { ...base.settings, ...(source.settings ?? {}) },
   };
-  ['reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'economicLedgerEntries', 'auditLog'].forEach((key) => {
+  ['reservations', 'leads', 'events', 'rooms', 'packages', 'packageServices', 'packageExtras', 'clients', 'meetings', 'suppliers', 'inventory', 'payments', 'receipts', 'incomeEntries', 'expenseEntries', 'eventSettlements', 'economicLedgerEntries', 'cashRenditions', 'auditLog'].forEach((key) => {
     next[key] = Array.isArray(source[key]) ? source[key] : [];
   });
   next.schemaVersion = Math.max(6, Number(source.schemaVersion ?? 1));
@@ -1009,6 +1011,7 @@ const syncContractMoney = (state,event,actor) => {
 
 const voidPaymentInState = (state,paymentId,payload,actor = {}) => {
     const payment = state.payments.find((row) => String(row?.id ?? '') === String(paymentId ?? ''));
+    assertCashRowsUnrendered(state, row => row.paymentId === paymentId);
     if (!payment) {
       const error = new Error('Pago Lincoln no encontrado.');
       error.statusCode = 404;
@@ -1167,6 +1170,7 @@ const findEconomicMovement = (state,id) => {
 
 export const updateLincolnEconomicMovement = async (id,payload,revision,actor={}) => mutateLincolnState(revision,state=>{
   const {entry,payment,event}=findEconomicMovement(state,id);
+  if (payment) assertCashRowsUnrendered(state, row => row.paymentId === payment.id);
   const before=structuredClone({entry,payment,receipt:state.receipts.find(row=>row.id===payment?.receiptId)});
   const updatedAt=nowIso();
   if (payment) {
@@ -1211,6 +1215,7 @@ export const deleteLincolnEconomicMovement = async (id,payload,revision,actor={}
 });
 
 export const deleteLincolnContract = async (eventId,payload,revision,actor={}) => mutateLincolnState(revision,state=>{
+  assertCashRowsUnrendered(state, row => row.eventId === eventId);
   const event=findLincolnEvent(state,eventId);
   const archived=structuredClone(event);
   for (const payment of activeEventPayments(state,eventId)) voidPaymentInState(state,payment.id,{reason:payload.reason || 'CONTRATO ELIMINADO'},actor);
@@ -1223,6 +1228,7 @@ export const deleteLincolnContract = async (eventId,payload,revision,actor={}) =
 
 export const resetLincolnEventEconomics = async (eventId, payload, expectedRevision, actor = {}) =>
   mutateLincolnState(expectedRevision, (state) => {
+    assertCashRowsUnrendered(state, row => row.eventId === eventId);
     const event = findLincolnEvent(state, eventId);
     const role = String(actor?.role ?? '').trim().toLowerCase();
     if (role !== 'developer') {
@@ -1277,7 +1283,7 @@ export const createLincolnExpense = async (payload, expectedRevision, actor = {}
       code: nextLincolnCode('EGR', state.expenseEntries),
       eventId: event?.id ?? null,
       eventCode: event?.code ?? null,
-      date: String(payload?.date ?? '').trim() || createdAt.slice(0, 10),
+      date: requireCashDate(payload?.date),
       category: String(payload?.category ?? 'OTROS').trim().toUpperCase() || 'OTROS',
       description: String(payload?.description ?? '').trim(),
       method: String(payload?.method ?? 'cash').trim().toLowerCase(),
@@ -1290,17 +1296,19 @@ export const createLincolnExpense = async (payload, expectedRevision, actor = {}
       createdByName: String(actor?.name ?? '').trim() || null,
     };
     state.expenseEntries.unshift(expense);
+    const receipt = appendCashDocument(state, expense, 'expense', actor);
     if (event) event.updatedAt = createdAt;
     appendLincolnAudit(state, {
       action: 'expenses.create', entityType: 'expenseEntries', entityId: expense.id, entityCode: expense.code,
       actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null,
       eventId: event?.id ?? null, amountBs,
     });
-    return { expense };
+    return { expense, receipt };
   });
 
 export const updateLincolnExpense = async (expenseId, payload, expectedRevision, actor = {}) =>
   mutateLincolnState(expectedRevision, (state) => {
+    assertCashRowsUnrendered(state, row => row.id === expenseId);
     const expense = state.expenseEntries.find((row) => String(row?.id ?? '') === String(expenseId ?? ''));
     if (!expense || expense?.voidedAt) {
       const error = new Error('Egreso Lincoln no encontrado o anulado.');
@@ -1314,7 +1322,7 @@ export const updateLincolnExpense = async (expenseId, payload, expectedRevision,
     Object.assign(expense, {
       eventId: event?.id ?? null,
       eventCode: event?.code ?? null,
-      date: String(payload?.date ?? expense.date ?? '').trim() || updatedAt.slice(0, 10),
+      date: requireCashDate(payload?.date ?? expense.date),
       category: String(payload?.category ?? expense.category ?? 'OTROS').trim().toUpperCase() || 'OTROS',
       description: String(payload?.description ?? expense.description ?? '').trim(),
       method: String(payload?.method ?? expense.method ?? 'cash').trim().toLowerCase(),
@@ -1326,6 +1334,8 @@ export const updateLincolnExpense = async (expenseId, payload, expectedRevision,
       updatedById: String(actor?.id ?? '').trim() || null,
       updatedByName: String(actor?.name ?? '').trim() || null,
     });
+    const receipt = state.receipts.find(row => row.id === expense.receiptId);
+    if (receipt) Object.assign(receipt, { date: expense.date, amountBs: expense.amountBs, method: expense.method, destination: expense.destination, clientName: expense.supplierName, payerName: expense.supplierName, concept: expense.description, reference: expense.reference, eventId: expense.eventId, eventCode: expense.eventCode });
     appendLincolnAudit(state, {
       action: 'expenses.update', entityType: 'expenseEntries', entityId: expense.id, entityCode: expense.code,
       actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null,
@@ -1379,5 +1389,111 @@ export const setLincolnSettlementStatus = async (eventId, payload, expectedRevis
     });
     return { settlement };
   });
+
+function assertCashRowsUnrendered(state, predicate) {
+  if ([...state.incomeEntries, ...state.expenseEntries].some(row => predicate(row) && row.cashRenditionId)) {
+    throw economicMutationError('Este movimiento ya fue rendido. Su comprobante histórico debe conservarse sin cambios.');
+  }
+}
+
+const requireCashDate = value => {
+  const date = String(value || cashDate());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) throw economicMutationError('Fecha de caja inválida.');
+  return date;
+};
+const cashText = value => String(value || '').trim();
+
+function appendCashDocument(state, entry, direction, actor) {
+  const receipt = {
+    id: makeLincolnId('RCL'), code: nextLincolnCode('RCL', state.receipts),
+    cashEntryId: entry.id, direction, type: entry.cashOperation || 'expense',
+    date: entry.date, amountBs: entry.amountBs, method: entry.method, destination: entry.destination,
+    eventId: entry.eventId || null, eventCode: entry.eventCode || '',
+    clientName: entry.payerName || entry.supplierName || 'Caja Lincoln', payerName: entry.payerName || entry.supplierName || '',
+    concept: entry.description, reference: entry.reference || '', status: 'active',
+    createdAt: entry.createdAt, createdById: actor.id || null, createdByName: actor.name || null,
+  };
+  entry.receiptId = receipt.id;
+  entry.receiptCode = receipt.code;
+  state.receipts.unshift(receipt);
+  return receipt;
+}
+
+export const registerLincolnCashFunds = (payload, revision, actor = {}) => mutateLincolnState(revision, state => {
+  const amountBs = requirePositiveMoney(payload?.amountBs, 'ingreso de fondos');
+  const description = cashText(payload?.description);
+  const payerName = cashText(payload?.payerName);
+  if (!description || !payerName) throw economicMutationError('Indica el concepto y quién entrega los fondos.');
+  const method = cashText(payload?.method) || 'cash';
+  if (!['cash', 'qr', 'transfer'].includes(method)) throw economicMutationError('Medio de pago inválido.');
+  const entry = {
+    id: makeLincolnId('ING'), code: nextLincolnCode('ING', state.incomeEntries),
+    cashOperation: 'fund_income', category: 'INGRESO DE FONDOS', eventId: null,
+    date: requireCashDate(payload?.date), amountBs, method, destination: cashText(payload?.destination) || 'CAJA CHICA',
+    description, payerName, reference: cashText(payload?.reference), createdAt: nowIso(),
+    createdById: actor.id || null, createdByName: actor.name || null,
+  };
+  state.incomeEntries.unshift(entry);
+  const receipt = appendCashDocument(state, entry, 'income', actor);
+  appendLincolnAudit(state, { action: 'cash.funds.create', entityType: 'incomeEntries', entityId: entry.id, amountBs, actorId: actor.id || null, actorName: actor.name || null });
+  return { entry, receipt };
+});
+
+export const registerLincolnCashRendition = (payload, revision, actor = {}) => mutateLincolnState(revision, state => {
+  const mode = cashText(payload?.mode);
+  if (!['accounting', 'delivery'].includes(mode)) throw economicMutationError('Selecciona rendición o entrega de fondos.');
+  const date = requireCashDate(payload?.date);
+  const recipientName = cashText(payload?.recipientName);
+  const destination = cashText(payload?.destination) || 'CAJA CHICA';
+  if (!recipientName) throw economicMutationError('Indica quién recibe la rendición o los fondos.');
+  const keys = [...new Set(Array.isArray(payload?.movementKeys) ? payload.movementKeys.map(String) : [])];
+  const allRows = buildLincolnCashLedger(state).rows;
+  const rows = keys.map(key => {
+    const row = allRows.find(item => item.key === key);
+    if (!row || row.cashRenditionId) throw economicMutationError('Algún movimiento ya fue rendido o dejó de estar disponible. Actualiza la caja.');
+    if (row.destination !== destination) throw economicMutationError('Rinde movimientos de una misma caja o destino.');
+    if (row.date > date) throw economicMutationError('La fecha de rendición debe ser igual o posterior a los movimientos seleccionados.');
+    return row;
+  });
+  const cashBs = cashMoney(payload?.cashBs), digitalBs = cashMoney(payload?.digitalBs);
+  if (cashBs < 0 || digitalBs < 0) throw economicMutationError('Los montos de entrega no pueden ser negativos.');
+  if (mode === 'accounting' && !rows.length) throw economicMutationError('Selecciona los movimientos que se rendirán.');
+  if (mode === 'accounting' && (cashBs || digitalBs)) throw economicMutationError('La rendición sin entrega no retira dinero de caja.');
+  if (mode === 'delivery' && cashBs + digitalBs <= 0) throw economicMutationError('Indica el monto efectivo o digital a entregar.');
+  const balance = buildLincolnCashLedger(state, { destination, to: date }).closing;
+  if (mode === 'delivery' && (cashBs > Math.max(0, balance.cashBs) || digitalBs > Math.max(0, balance.digitalBs))) throw economicMutationError('La entrega supera el fondo disponible para esa fecha y caja.');
+  const rendition = {
+    id: makeLincolnId('RCJ'), code: nextLincolnCode('RCJ', state.cashRenditions), mode, date, destination, recipientName,
+    notes: cashText(payload?.notes), movementKeys: keys, movements: structuredClone(rows),
+    incomeBs: cashMoney(rows.reduce((sum, row) => sum + row.incomeBs, 0)),
+    expenseBs: cashMoney(rows.reduce((sum, row) => sum + row.expenseBs, 0)),
+    deliveredCashBs: mode === 'delivery' ? cashBs : 0, deliveredDigitalBs: mode === 'delivery' ? digitalBs : 0,
+    balanceBefore: balance, balanceAfter: { cashBs: cashMoney(balance.cashBs - cashBs), digitalBs: cashMoney(balance.digitalBs - digitalBs) },
+    createdAt: nowIso(), createdById: actor.id || null, createdByName: actor.name || null, receipts: [],
+  };
+  for (const row of rows) {
+    const entry = state[row.direction === 'income' ? 'incomeEntries' : 'expenseEntries'].find(item => item.id === row.id);
+    Object.assign(entry, { cashRenditionId: rendition.id, cashRenditionCode: rendition.code, cashRenderedAt: rendition.createdAt });
+    const receipt = state.receipts.find(item => item.id === row.receiptId);
+    if (receipt) Object.assign(receipt, { cashRenditionId: rendition.id, cashRenditionCode: rendition.code });
+  }
+  for (const [method, amountBs] of [['cash', cashBs], ['transfer', digitalBs]]) {
+    if (mode !== 'delivery' || amountBs <= 0) continue;
+    const entry = {
+      id: makeLincolnId('EGR'), code: nextLincolnCode('EGR', state.expenseEntries), cashOperation: 'fund_delivery',
+      cashRenditionId: rendition.id, cashRenditionCode: rendition.code, cashRenderedAt: rendition.createdAt,
+      eventId: null, category: 'ENTREGA DE FONDOS', date, amountBs, method, destination,
+      supplierName: recipientName, description: `Entrega de fondos a ${recipientName} · ${rendition.code}`, reference: rendition.notes,
+      createdAt: rendition.createdAt, createdById: actor.id || null, createdByName: actor.name || null,
+    };
+    state.expenseEntries.unshift(entry);
+    const receipt = appendCashDocument(state, entry, 'expense', actor);
+    Object.assign(receipt, { cashRenditionId: rendition.id, cashRenditionCode: rendition.code });
+    rendition.receipts.push(receipt.id);
+  }
+  state.cashRenditions.unshift(rendition);
+  appendLincolnAudit(state, { action: 'cash.rendition.create', entityType: 'cashRenditions', entityId: rendition.id, entityCode: rendition.code, actorId: actor.id || null, actorName: actor.name || null, movementKeys: keys, cashBs, digitalBs });
+  return { rendition };
+});
 
 export const getLincolnStateStoreInfo = () => ({ storage: 'file', stateFilePath });

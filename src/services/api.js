@@ -4473,6 +4473,8 @@ export const api = {
     createRecord: (payload) => createAttendanceRecordDirect(payload),
   },
   lincoln: {
+    createCashFunds: ({funds,revision,actor}) => callLincolnMutation('/__lincoln_db/cash/funds',{body:{funds,revision,actor},fallback:'No se pudo registrar el ingreso de fondos.'}),
+    createCashRendition: ({rendition,revision,actor}) => callLincolnMutation('/__lincoln_db/cash/renditions',{body:{rendition,revision,actor},fallback:'No se pudo guardar la rendición de caja.'}),
     updateEconomicMovement: ({id,movement,revision,actor}) => callLincolnMutation(`/__lincoln_db/economic-movements/${encodeURIComponent(id)}`,{method:'PUT',body:{movement,revision,actor},fallback:'No se pudo editar el movimiento y su recibo.'}),
     deleteEconomicMovement: ({id,reason,revision,actor}) => callLincolnMutation(`/__lincoln_db/economic-movements/${encodeURIComponent(id)}`,{method:'DELETE',body:{reason,revision,actor},fallback:'No se pudo eliminar el movimiento.'}),
     deleteContract: ({eventId,reason,revision,actor}) => callLincolnMutation(`/__lincoln_db/events/${encodeURIComponent(eventId)}`,{method:'DELETE',body:{reason,revision,actor},fallback:'No se pudo eliminar el contrato.'}),

@@ -9,6 +9,7 @@ import AttendanceSection from './AttendanceSection';
 import SystemResetPanel from '../common/SystemResetPanel';
 import LincolnAgenda from '../lincoln/agenda/LincolnAgenda';
 import LincolnSettlements from '../lincoln/settlements/LincolnSettlements';
+import LincolnCash from '../lincoln/cash/LincolnCash';
 import LincolnReports from '../lincoln/reports/LincolnReports';
 import LincolnCommercialWorkspace from '../lincoln/commercial/LincolnCommercialWorkspace';
 import LincolnClients from '../lincoln/clients/LincolnClients';
@@ -44,6 +45,7 @@ const emptyState = {
   expenseEntries: [],
   eventSettlements: [],
   economicLedgerEntries: [],
+  cashRenditions: [],
   auditLog: [],
   settings: {},
 };
@@ -1060,53 +1062,6 @@ function EventEconomicView({ state, eventRecord, canReset, saving, onRepairAdvan
   );
 }
 
-function CajaView({ state, onNewExpense, onEditExpense, onOpenEvent, onPrintReceipt }) {
-  const [tab, setTab] = useState('movimientos');
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [eventId, setEventId] = useState('all');
-  const activeIncome = activeRows(state.incomeEntries);
-  const activeExpenses = activeRows(state.expenseEntries);
-  const filterRow = (row) => (!month || String(row.date ?? '').startsWith(month)) && (eventId === 'all' || row.eventId === eventId);
-  const income = activeIncome.filter(filterRow);
-  const expenses = activeExpenses.filter(filterRow);
-  const incomeTotal = sum(income, (row) => row.amountBs);
-  const expenseTotal = sum(expenses, (row) => row.amountBs);
-  const receipts = state.receipts.filter((row) => row.status !== 'voided' && filterRow(row));
-  const movements = [
-    ...income.map((row) => ({ ...row, movementKind: 'Ingreso' })),
-    ...expenses.map((row) => ({ ...row, movementKind: 'Egreso' })),
-  ].sort((a, b) => `${b.date ?? ''}${b.createdAt ?? ''}`.localeCompare(`${a.date ?? ''}${a.createdAt ?? ''}`));
-  return (
-    <div className="lincoln-content">
-      <section className="lincoln-kpi-grid">
-        <KpiCard icon="wallet" label="Ingresos" value={formatBs(incomeTotal)} detail="Periodo filtrado" />
-        <KpiCard icon="chart" label="Egresos" value={formatBs(expenseTotal)} detail="Periodo filtrado" />
-        <KpiCard icon="wallet" label="Saldo de caja" value={formatBs(incomeTotal - expenseTotal)} detail="Ingresos menos egresos" />
-        <KpiCard icon="bookmark" label="Recibos activos" value={String(receipts.length)} detail="Periodo filtrado" />
-      </section>
-      <article className="lincoln-card">
-        <header><div><small>Economía independiente</small><h2>Caja Lincoln</h2></div><button type="button" onClick={onNewExpense}>+ Nuevo egreso</button></header>
-        <div className="lincoln-cash-toolbar"><div className="lincoln-tabs"><button type="button" className={tab === 'movimientos' ? 'is-active' : ''} onClick={() => setTab('movimientos')}>Movimientos</button><button type="button" className={tab === 'egresos' ? 'is-active' : ''} onClick={() => setTab('egresos')}>Egresos</button><button type="button" className={tab === 'recibos' ? 'is-active' : ''} onClick={() => setTab('recibos')}>Recibos</button></div><div className="lincoln-filters"><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} /><select value={eventId} onChange={(e) => setEventId(e.target.value)}><option value="all">Todos los eventos</option>{state.events.map((event) => <option key={event.id} value={event.id}>{event.code} · {event.clientName || event.eventType}</option>)}</select></div></div>
-        {tab === 'movimientos' ? <DataTable rows={movements} emptyText="Los pagos de eventos y los egresos aparecerán aquí." columns={[
-          { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) },
-          { key: 'kind', label: 'Tipo', render: (row) => <span className={`lincoln-movement-pill is-${row.movementKind === 'Ingreso' ? 'income' : 'expense'}`}>{row.movementKind}</span> },
-          { key: 'event', label: 'Evento', render: (row) => row.eventCode ? <button type="button" className="lincoln-link-action" onClick={() => onOpenEvent(row.eventId)}>{row.eventCode}</button> : 'GENERAL' },
-          { key: 'category', label: 'Categoría' },
-          { key: 'description', label: 'Detalle' },
-          { key: 'destination', label: 'Destino / caja' },
-          { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
-        ]} /> : null}
-        {tab === 'egresos' ? <DataTable rows={expenses} onSelect={(row) => !row.paymentId && onEditExpense(row)} emptyText="Registra el primer egreso de Lincoln." columns={[
-          { key: 'code', label: 'Egreso' }, { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) }, { key: 'event', label: 'Evento', render: (row) => row.eventCode || 'GENERAL' }, { key: 'category', label: 'Categoría' }, { key: 'description', label: 'Descripción' }, { key: 'supplierName', label: 'Proveedor / beneficiario' }, { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
-        ]} /> : null}
-        {tab === 'recibos' ? <DataTable rows={receipts} emptyText="Cada ingreso de un evento generará automáticamente su recibo Lincoln." columns={[
-          { key: 'code', label: 'Recibo', render: (row) => <button type="button" className="lincoln-link-action" onClick={() => onPrintReceipt(row.id)}>{row.code}</button> }, { key: 'date', label: 'Fecha', render: (row) => formatDate(row.date) }, { key: 'eventCode', label: 'Evento' }, { key: 'clientName', label: 'Cliente' }, { key: 'concept', label: 'Concepto' }, { key: 'method', label: 'Medio', render: (row) => paymentMethodLabel(row.method) }, { key: 'destination', label: 'Destino' }, { key: 'amount', label: 'Monto', render: (row) => <strong>{formatBs(row.amountBs)}</strong> },
-        ]} /> : null}
-      </article>
-    </div>
-  );
-}
-
 function SimpleCollectionView({ title, eyebrow, rows, columns, onNew, onEdit, emptyText }) {
   return (
     <div className="lincoln-content">
@@ -1542,9 +1497,10 @@ Escribe RESET ECONOMICO para continuar:`);
 
     const safe = (value) => String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
     const isExpense = receipt.direction === 'expense';
-    const title = isExpense ? 'COMPROBANTE DE DEVOLUCIÓN' : 'RECIBO DE INGRESO';
-    const totalLabel = isExpense ? 'TOTAL DEVUELTO' : 'TOTAL RECIBIDO';
-    const partyLabel = isExpense ? 'DEVUELTO A' : 'PAGADO POR';
+    const isRefund = isExpense && receipt.type === 'guarantee_return';
+    const title = isExpense ? (isRefund ? 'COMPROBANTE DE DEVOLUCIÓN' : 'COMPROBANTE DE EGRESO') : 'RECIBO DE INGRESO';
+    const totalLabel = isExpense ? (isRefund ? 'TOTAL DEVUELTO' : 'TOTAL ENTREGADO') : 'TOTAL RECIBIDO';
+    const partyLabel = isExpense ? (isRefund ? 'DEVUELTO A' : 'ENTREGADO A') : 'PAGADO POR';
     const staffLabel = isExpense ? 'ENTREGADO POR' : 'RECIBIDO POR';
     const logoUrl = `${window.location.origin}/imagenes/lincoln-logo-recibo-crop.png`;
 
@@ -1616,7 +1572,7 @@ Escribe RESET ECONOMICO para continuar:`);
 
         <section class="receipt-info-grid">
           <div class="receipt-info-box">
-            <div><i></i><small>TIPO DE MOVIMIENTO</small><strong>${safe(isExpense ? 'Devolución / egreso' : 'Ingreso')}</strong></div>
+            <div><i></i><small>TIPO DE MOVIMIENTO</small><strong>${safe(isExpense ? (isRefund ? 'Devolución garantía' : 'Egreso') : 'Ingreso')}</strong></div>
             <div><i></i><small>${partyLabel}</small><strong>${safe(receipt.payerName || receipt.clientName || '—')}</strong></div>
             <div><i></i><small>MEDIO DE PAGO</small><strong>${safe(paymentMethodLabel(receipt.method))}</strong></div>
           </div>
@@ -1880,7 +1836,7 @@ Escribe RESET ECONOMICO para continuar:`);
           ) : null}
           {activeView === 'reuniones' ? <LincolnMeetings state={state} revision={snapshot?.revision} actor={actor} onRefresh={loadLincoln} /> : null}
           {activeView === 'portal-eventos' ? <LincolnEventPortalAdmin state={state} currentUser={currentUser} /> : null}
-          {activeView === 'caja' ? <CajaView state={state} onNewExpense={() => setModal({ mode: 'expense', record: null })} onEditExpense={(record) => setModal({ mode: 'expense', record })} onOpenEvent={(eventId) => { setEconomicEventId(eventId); setActiveView('comercial'); }} onPrintReceipt={printReceipt} /> : null}
+          {activeView === 'caja' ? <LincolnCash state={state} revision={snapshot?.revision} actor={actor} onReload={loadLincoln} onNewExpense={() => setModal({ mode: 'expense', record: null })} onEditExpense={(record) => setModal({ mode: 'expense', record })} onOpenEvent={(eventId) => { setEconomicEventId(eventId); setActiveView('comercial'); }} onPrintReceipt={printReceipt} /> : null}
           {activeView === 'rendiciones' ? <LincolnSettlements refreshKey={snapshot?.revision} revision={snapshot?.revision} actor={actor} onNewExpense={(eventId) => setModal({ mode: 'expense', record: { eventId } })} /> : null}
           {activeView === 'reportes' ? <LincolnReports events={state.events} refreshKey={snapshot?.revision} /> : null}
           {activeView === 'clientes' ? (

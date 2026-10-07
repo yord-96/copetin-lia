@@ -22,6 +22,8 @@ import {
   deleteLincolnEconomicMovement,
   deleteLincolnContract,
   createLincolnExpense,
+  registerLincolnCashFunds,
+  registerLincolnCashRendition,
   createLincolnRecord,
   getLincolnStateSnapshot,
   registerLincolnEventPayment,
@@ -481,6 +483,18 @@ router.put('/__lincoln_db/settlements/:eventId/status', async (req, res, next) =
   } catch (error) {
     handleLincolnMutationError(error, res, next);
   }
+});
+
+router.post('/__lincoln_db/cash/funds', async (req, res, next) => {
+  try {
+    res.status(201).json(await registerLincolnCashFunds(req.body?.funds, req.body?.revision, actorFromRequest(req)));
+  } catch (error) { handleLincolnMutationError(error, res, next); }
+});
+
+router.post('/__lincoln_db/cash/renditions', async (req, res, next) => {
+  try {
+    res.status(201).json(await registerLincolnCashRendition(req.body?.rendition, req.body?.revision, actorFromRequest(req)));
+  } catch (error) { handleLincolnMutationError(error, res, next); }
 });
 
 router.post('/__lincoln_db/cash/expenses', async (req, res, next) => {

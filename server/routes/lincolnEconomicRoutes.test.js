@@ -17,6 +17,24 @@ app.use(router);
 const server = await new Promise(resolve => {
   const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
 });
+
+test('cash HTTP endpoints register funds, render movements and create a delivery expense document', async () => {
+  const post = async (route, body) => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/__lincoln_db/cash/${route}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Internal-Key': 'route-test-key' }, body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 201, JSON.stringify(result));
+    return result;
+  };
+  const funds = await post('funds', { funds: { amountBs: 1000, date: '2026-10-07', payerName: 'Propietaria', description: 'Fondo de caja', destination: 'CAJA CHICA' }, revision: (await store.getLincolnStateSnapshot()).revision });
+  assert.equal(funds.receipt.direction, 'income');
+  const delivered = await post('renditions', { rendition: { mode: 'delivery', date: '2026-10-07', recipientName: 'Propietaria', destination: 'CAJA CHICA', cashBs: 400, movementKeys: [`income:${funds.entry.id}`] }, revision: funds.revision });
+  const { state } = await store.getLincolnStateSnapshot();
+  assert.equal(delivered.rendition.incomeBs, 1000);
+  assert.equal(state.incomeEntries.find(row => row.id === funds.entry.id).cashRenditionId, delivered.rendition.id);
+  assert.equal(state.receipts.find(row => row.id === delivered.rendition.receipts[0]).direction, 'expense');
+});
 after(async () => {
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   await fs.rm(directory, { recursive: true, force: true });
@@ -27,7 +45,7 @@ test('HTTP receipt edit accepts a previous-year payment date without changing th
   await store.replaceLincolnStateSnapshot({
     ...initial.state,
     events: [{ id: 'event', code: 'EVE-2026-TEST', clientName: 'Cliente', date: '2026-10-10', createdAt: '2026-10-07T12:00:00.000Z', totalBs: 10000 }],
-    payments: [], receipts: [], incomeEntries: [], expenseEntries: [], economicLedgerEntries: [], auditLog: [],
+    payments: [], receipts: [], incomeEntries: [], expenseEntries: [], economicLedgerEntries: [], cashRenditions: [], auditLog: [],
   }, initial.revision);
   const created = await store.registerLincolnEventPayment('event', {
     type: 'advance', amountBs: 5000, date: '2026-10-07',
