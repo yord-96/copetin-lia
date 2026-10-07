@@ -107,11 +107,17 @@ try {
   await page.evaluate(()=>{const event=window.fixture.events.at(-1);window.fixture.payments=[{id:'payment',receiptId:'receipt',receiptCode:'RCL-TEST',eventId:event.id,type:'advance',amountBs:500,date:'2026-10-07',method:'cash',destination:'CAJA CHICA',payerName:'Cliente',clientName:'Cliente',description:'Anticipo'}];window.fixture.receipts=[{id:'receipt',code:'RCL-TEST',eventId:event.id,status:'active'}];window.fixture.economicLedgerEntries=[{id:'movement',code:'ECO-TEST',eventId:event.id,paymentId:'payment',receiptId:'receipt',receiptCode:'RCL-TEST',type:'deposit',subtype:'advance',amountBs:500,serviceAllocationBs:500,isCashRegistered:true,date:'2026-10-07',note:'Anticipo'}];window.refreshPresence();});
   await page.$$eval('.lincoln-commercial-table tbody tr',rows=>rows.find(row=>row.textContent.includes('20/11/2026')).querySelector('.lincoln-commercial-dots').click());await click('Económico');
   await page.waitForSelector('.lincoln-economic-dots');await page.$eval('.lincoln-economic-dots',node=>node.click());await click('Editar recibo completo');
+  assert.equal(await page.$$eval('.lincoln-modal',nodes=>nodes.length),1,'Receipt edit must open exactly one modal');
+  assert.equal(await page.$('.lincoln-contract-flow-modal'),null);
+  assert.equal(await page.$$eval('.lincoln-form-field>span',nodes=>nodes.some(node=>node.textContent==='Tipo de evento')),false);
   assert.ok(await page.$eval('.lincoln-modal h2',node=>node.textContent.includes('Editar recibo completo')));
+  const contractBeforeReceiptEdit=await page.evaluate(()=>JSON.stringify(window.fixture.events));
+  await page.screenshot({path:path.join(directory,'receipt-editor.png')});
   const fillLabel=async(label,value)=>page.$$eval('.lincoln-form-field',(nodes,label,value)=>{const node=nodes.find(node=>node.querySelector('span')?.textContent===label)?.querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}));},label,value);
   await fillLabel('Monto recibido (Bs)','750');await fillLabel('Concepto','Recibo corregido');await fillLabel('Número de recibo','RCL-EDITADO');await click('Guardar');
   await page.waitForFunction(()=>window.fixture.payments[0].amountBs===750);
   assert.equal(await page.evaluate(()=>window.fixture.receipts[0].code),'RCL-EDITADO');
+  assert.equal(await page.evaluate(()=>JSON.stringify(window.fixture.events)),contractBeforeReceiptEdit,'Receipt edit must preserve contract data');
   await page.$eval('.lincoln-economic-dots',node=>node.click());await click('Eliminar movimiento');await page.waitForFunction(()=>!!window.fixture.payments[0].voidedAt);
   await page.waitForFunction(()=>!document.querySelector('.lincoln-economic-dots'));await click('← Volver');
   await page.waitForSelector('.lincoln-commercial-dots');await page.$$eval('.lincoln-commercial-table tbody tr',rows=>rows.find(row=>row.textContent.includes('20/11/2026')).querySelector('.lincoln-commercial-dots').click());await click('Eliminar contrato');

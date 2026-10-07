@@ -1783,7 +1783,7 @@ Escribe RESET ECONOMICO para continuar:`);
         onGenerateContract={() => setModal({ mode: 'contractConvert', record: modal.record })}
         onOpenDocument={() => setModal({ mode: 'contractDocument', record: modal.record })}
       /> : null}
-      {modal && !['events', 'economicEntry', 'payment', 'expense', 'guaranteeReturn', 'contractConvert', 'contractDocument', 'commercialDetail'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
+      {modal && ['clients', 'rooms', 'reservations'].includes(modal.mode) ? <RecordModal mode={modal.mode} record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => saveRecord(modal.mode, form)} /> : null}
       {isResetDialogOpen ? (
         <SystemResetPanel
           onClose={() => setIsResetDialogOpen(false)}
