@@ -88,3 +88,25 @@ test('charges a per-person extra only to the selected group in a mixed package',
   assert.equal(document.totals.totalBs, 28500);
   assert.match(buildLincolnContractDocumentHtml({ event: mixedEvent }), /Bar para jóvenes<small>JÓVENES<\/small>/);
 });
+
+test('uses live economic payments in the contract document and keeps running balances coherent', () => {
+  const paidEvent = structuredClone(event);
+  paidEvent.contractDocumentSnapshot.discountPercent = 0;
+  paidEvent.contractDocumentSnapshot.advanceBs = 5000;
+  paidEvent.documentPayments = [
+    { id:'P1', type:'advance', date:'2026-08-27', amountBs:5000, serviceAllocationBs:5000, receiptCode:'RCL-0001' },
+    { id:'P2', type:'installment', date:'2026-09-01', amountBs:3000, serviceAllocationBs:3000, receiptCode:'RCL-0002' },
+    { id:'P3', type:'installment', date:'2026-09-05', amountBs:2000, serviceAllocationBs:2000, receiptCode:'RCL-0003' },
+  ];
+  const document = normalizeLincolnContractDocument(paidEvent);
+  assert.equal(document.servicePaidBs, 10000);
+  assert.equal(document.economicMovements.length, 3);
+  assert.equal(document.economicMovements[0].serviceBalanceBs, 25350);
+  assert.equal(document.economicMovements[1].serviceBalanceBs, 22350);
+  assert.equal(document.economicMovements[2].serviceBalanceBs, 20350);
+  assert.equal(document.totals.balanceBs, 20350);
+  const html = buildLincolnContractDocumentHtml({ event: paidEvent });
+  assert.match(html, /MOVIMIENTO ECONÓMICO DEL CONTRATO/);
+  assert.match(html, /RCL-0002/);
+  assert.match(html, /TOTAL PAGADO SERVICIO/);
+});

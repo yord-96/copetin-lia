@@ -284,7 +284,10 @@ router.get('/__lincoln_db/contracts/:id/pdf', async (req, res, next) => {
       res.status(404).json({ error: 'Contrato Lincoln no encontrado.' });
       return;
     }
-    const html = buildLincolnContractDocumentHtml({ event });
+    const documentPayments = (snapshot?.state?.payments ?? []).filter((row) => (
+      String(row?.eventId ?? '') === String(event.id) && !row?.voidedAt
+    ));
+    const html = buildLincolnContractDocumentHtml({ event: { ...event, documentPayments } });
     const result = await renderHtmlDocumentToPdf({
       html,
       baseUrl: `${req.protocol}://${req.get('host')}`,
