@@ -54,6 +54,7 @@ try {
   assert.equal(await page.$eval('.lincoln-contract-flow-steps .is-active b', node => node.textContent), '2');
   assert.equal(await page.$eval('.lincoln-contract-pricing-groups input[type=number]', node => node.value), '10');
   await click('Siguiente');
+  await page.screenshot({path:path.join(directory,'wizard-conditions.png')});
   await page.$eval('.lincoln-contract-clause-editor textarea', (node) => node.focus()); await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control'); await page.keyboard.type('Clausula personalizada de prueba');
   await click('Siguiente'); await click('Confirmar contrato'); await page.waitForSelector('.lincoln-commercial-table');
   await page.waitForFunction(() => !document.querySelector('.lincoln-contract-flow-modal'));
