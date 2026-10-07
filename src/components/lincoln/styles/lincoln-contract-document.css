@@ -45,3 +45,7 @@
 .lincoln-contract-flow-modal>footer{padding:.9rem 1.35rem;box-shadow:0 -8px 28px rgba(49,25,26,.05)}.lincoln-contract-flow-modal>footer button{min-height:2.75rem;padding:0 1.2rem}.lincoln-contract-flow-modal>footer>div>span b{color:#8c1520;font-size:.92rem}
 @media(max-width:850px){.lincoln-contract-flow-modal{width:100%;height:calc(100vh - .8rem)}.lincoln-contract-flow-steps{padding:0 .4rem}.lincoln-contract-flow-steps button{justify-content:center;min-height:3.2rem;padding:.4rem}.lincoln-contract-flow-steps button>span{display:none}.lincoln-contract-flow-steps button:not(:last-child)::after{top:.65rem;height:1.8rem}.lincoln-contract-package-picker{grid-template-columns:1fr}.lincoln-contract-flow-body{padding:.9rem .7rem}.lincoln-contract-matrix{overflow-x:auto}.lincoln-contract-matrix .is-head,.lincoln-contract-matrix .is-cost,.lincoln-contract-matrix section>div{min-width:520px}}
 .lincoln-contract-extras span em{display:block;margin-top:.15rem;color:#8c1520;font-size:.54rem;font-style:normal;font-weight:800;text-transform:uppercase}
+/* Keep the wizard independent of background presence and panel redraws. */
+.lincoln-contract-flow-backdrop{backdrop-filter:none;overscroll-behavior:contain}
+.lincoln-contract-flow-modal{isolation:isolate;outline:none}
+.lincoln-contract-flow-body{overscroll-behavior:contain;scrollbar-gutter:stable}

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../services/api';
 import AttendanceSection from './AttendanceSection';
 import SystemResetPanel from '../common/SystemResetPanel';
@@ -572,6 +573,25 @@ function ContractDocumentSheet({ document, compact = false }) {
 function ContractConversionModal({ reservation, packages = [], rooms = [], clients = [], mode = 'convert', saving, onClose, onConfirm }) {
   const [step, setStep] = useState(1);
   const [draft, setDraft] = useState(() => buildContractDraft(reservation, mode));
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    const root = document.getElementById('root');
+    const previousInert = root?.inert;
+    document.body.style.overflow = 'hidden';
+    if (root) root.inert = true;
+    dialogRef.current?.focus();
+    const trapFocus = (event) => {
+      if (event.key !== 'Tab') return;
+      const controls = [...dialogRef.current.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter((node) => node.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => { document.body.style.overflow = previousOverflow; if (root) root.inert = previousInert; document.removeEventListener('keydown', trapFocus); if (previousFocus?.isConnected) previousFocus.focus(); };
+  }, []);
   const set = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const totals = contractTotals(draft);
   const updateExtra = (id, patch) => setDraft((current) => ({ ...current, extras: current.extras.map((line) => line.id === id ? { ...line, ...patch } : line) }));
@@ -636,8 +656,8 @@ function ContractConversionModal({ reservation, packages = [], rooms = [], clien
       contractDocumentSnapshot, contractDocumentVersion: contractDocumentSnapshot.version, status: mode === 'edit' ? reservation?.status || 'contracted' : 'contracted', contractedAt: reservation?.contractedAt || new Date().toISOString(), notes: draft.notes,
     });
   };
-  return <div className="lincoln-contract-flow-backdrop"><section className="lincoln-contract-flow-modal">
-    <header><div><small>{mode === 'convert' ? 'RESERVA CONFIRMADA' : 'CONTRATO'} · {reservation?.code || 'NUEVO'}</small><h2>{mode === 'edit' ? 'Editar contrato' : mode === 'create' ? 'Nuevo contrato' : 'Preparar contrato'}</h2><p>Completa la propuesta comercial y revisa las dos páginas antes de formalizar.</p></div><button type="button" aria-label="Cerrar" onClick={onClose}>×</button></header>
+  return createPortal(<div className="lincoln-contract-flow-backdrop"><section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="lincoln-contract-wizard-title" className="lincoln-contract-flow-modal">
+    <header><div><small>{mode === 'convert' ? 'RESERVA CONFIRMADA' : 'CONTRATO'} · {reservation?.code || 'NUEVO'}</small><h2 id="lincoln-contract-wizard-title">{mode === 'edit' ? 'Editar contrato' : mode === 'create' ? 'Nuevo contrato' : 'Preparar contrato'}</h2><p>Completa la propuesta comercial y revisa las dos páginas antes de formalizar.</p></div><button type="button" aria-label="Cerrar" onClick={onClose}>×</button></header>
     <nav className="lincoln-contract-flow-steps">{[['1','Cliente y evento','Datos legales'],['2','Paquete y servicios','Propuesta comercial'],['3','Pagos y condiciones','Acuerdos'],['4','Revisar y generar','2 páginas']].map(([number,label,detail]) => <button type="button" key={number} className={step === Number(number) ? 'is-active' : step > Number(number) ? 'is-done' : ''} onClick={() => Number(number) <= step && setStep(Number(number))}><b>{step > Number(number) ? '✓' : number}</b><span><strong>{label}</strong><small>{detail}</small></span></button>)}</nav>
     <div className="lincoln-contract-flow-body">
       {step === 1 ? <section className="lincoln-contract-flow-section"><div className="lincoln-contract-flow-title"><small>PASO 1</small><h3>Datos que irán al contrato</h3><p>Completa los datos del cliente, los titulares y el evento antes de continuar.</p></div><div className="lincoln-contract-flow-grid">{mode !== 'convert' ? <Field label="Cliente registrado" wide><select value={draft.clientId || reservation?.clientId || ''} onChange={(e) => { const client = clients.find((row) => row.id === e.target.value); setDraft((current) => ({ ...current, clientId: e.target.value, ...(client ? { contractor1Name: client.fullName || client.name || '', contractor1Ci: client.ci || '', contractor1Phone: client.phone || client.mobile || '' } : {}) })); }}><option value="">Seleccionar cliente o completar titular</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.fullName || client.name}</option>)}</select></Field> : null}<Field label="Contratante 1"><input value={draft.contractor1Name} onChange={(e) => set('contractor1Name', e.target.value)} /></Field><Field label="C.I. 1"><input value={draft.contractor1Ci} onChange={(e) => set('contractor1Ci', e.target.value)} /></Field><Field label="Contratante 2"><input value={draft.contractor2Name} onChange={(e) => set('contractor2Name', e.target.value)} /></Field><Field label="C.I. 2"><input value={draft.contractor2Ci} onChange={(e) => set('contractor2Ci', e.target.value)} /></Field><Field label="Tipo de evento"><input value={draft.eventType} onChange={(e) => set('eventType', e.target.value)} /></Field><Field label="Fecha"><input type="date" value={draft.eventDate} onChange={(e) => set('eventDate', e.target.value)} /></Field><Field label="Hora"><input type="time" value={draft.startTime} onChange={(e) => set('startTime', e.target.value)} /></Field><Field label="Duración (h)"><input type="number" min="1" value={draft.durationHours} onChange={(e) => set('durationHours', toNumber(e.target.value))} /></Field><Field label="Salón"><select value={draft.roomId || ''} onChange={(e) => { const room = rooms.find((row) => row.id === e.target.value); setDraft((current) => ({ ...current, roomId: e.target.value, roomName: room?.name || '' })); }}><option value="">{draft.roomName || 'Seleccionar salón'}</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}</select></Field><Field label="Invitados"><input type="number" min="1" value={draft.guestCount} onChange={(e) => set('guestCount', toNumber(e.target.value))} /></Field></div></section> : null}
@@ -660,7 +680,7 @@ function ContractConversionModal({ reservation, packages = [], rooms = [], clien
       {step === 4 ? <section className="lincoln-contract-flow-section is-document"><div className="lincoln-contract-flow-title"><small>PASO 4</small><h3>Vista previa del documento</h3><p>Así quedará congelado el contrato y su hoja de costos.</p></div><ContractDocumentSheet document={{ ...draft, guestCount: totals.guestCount, clauses: draft.clausesCustomized ? draft.clauses : contractDefaultClauses({ ...draft, guestCount: totals.guestCount }), totals }} compact /></section> : null}
     </div>
     <footer><button type="button" className="is-secondary" onClick={step === 1 ? onClose : goBack}>{step === 1 ? 'Cancelar' : '← Atrás'}</button><div><span>Total: <b>{contractMoney(totals.totalBs)}</b></span>{step < 4 ? <button type="button" onClick={goNext}>Siguiente →</button> : <button type="button" disabled={saving} onClick={confirm}>{saving ? 'Guardando contrato...' : mode === 'edit' ? 'Guardar contrato' : 'Confirmar contrato'}</button>}</div></footer>
-  </section></div>;
+  </section></div>, document.body);
 }
 
 function ContractDocumentModal({ eventRecord, onClose }) {
