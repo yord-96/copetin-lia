@@ -575,7 +575,7 @@ export const createLincolnRecord = async (collection, payload, expectedRevision,
       createdByName: String(actor?.name ?? '').trim() || null,
     };
     rows.unshift(record);
-    if (collection === "events") syncContractAdvance(state,record,actor);
+    if (collection === "events") syncContractMoney(state,record,actor);
     appendLincolnAudit(state, { action: `${collection}.create`, entityType: collection, entityId: record.id, entityCode: record.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });
     return { record };
   });
@@ -625,7 +625,7 @@ export const updateLincolnRecord = async (collection, id, payload, expectedRevis
       updatedByName: String(actor?.name ?? '').trim() || null,
     };
     rows[index] = record;
-    if (collection === "events") syncContractAdvance(state,record,actor);
+    if (collection === "events") syncContractMoney(state,record,actor);
     appendLincolnAudit(state, { action: `${collection}.update`, entityType: collection, entityId: record.id, entityCode: record.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });
     return { record };
   });
@@ -715,7 +715,7 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
     const normalizedEvent = normalizeOrganizerEvent(event, state, { excludeReservationId: reservation.id });
     Object.assign(event, normalizedEvent);
     state.events.unshift(event);
-    syncContractAdvance(state,event,actor);
+    syncContractMoney(state,event,actor);
     state.reservations[reservationIndex] = { ...reservation, status: 'converted', eventId: event.id, updatedAt: createdAt };
     appendLincolnAudit(state, { action: 'reservations.convert_to_event', entityType: 'events', entityId: event.id, entityCode: event.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });
     return { record: event, reservation: state.reservations[reservationIndex] };
@@ -971,6 +971,40 @@ const syncContractAdvance = (state,event,actor) => {
   if (missing > 0) registerPaymentInState(state,event.id,{type:"advance",amountBs:missing,description:"Anticipo registrado en el contrato",date:event.contractDocumentSnapshot?.contractDate?.slice(0,10),method:event.contractDocumentSnapshot?.advanceMethod || "cash",destination:event.contractDocumentSnapshot?.advanceDestination || "CAJA CHICA"},actor);
   event.contractAdvanceRecordedBs = advance;
   event.financial = buildEventFinancialSummary(state,event);
+};
+
+const syncContractGuarantee = (state,event,actor) => {
+  const snapshot = event.contractDocumentSnapshot && typeof event.contractDocumentSnapshot === 'object' ? event.contractDocumentSnapshot : {};
+  const guarantee = roundMoney(snapshot.guaranteeBs ?? event.guaranteeBs);
+  const guaranteeStatus = String(snapshot.guaranteeStatus ?? event.guaranteeStatus ?? 'due').trim().toLowerCase() === 'paid' ? 'paid' : 'due';
+  event.guaranteeBs = guarantee;
+  event.guaranteeStatus = guaranteeStatus;
+  if (guaranteeStatus !== 'paid' || guarantee <= 0) {
+    event.financial = buildEventFinancialSummary(state,event);
+    return;
+  }
+  const recorded = roundMoney(event.contractGuaranteeRecordedBs);
+  if (guarantee <= recorded) {
+    event.financial = buildEventFinancialSummary(state,event);
+    return;
+  }
+  const collected = buildEventFinancialSummary(state,event).guaranteeCollectedBs;
+  const missing = roundMoney(Math.max(0, guarantee - collected));
+  if (missing > 0) registerPaymentInState(state,event.id,{
+    type:'guarantee',
+    amountBs:missing,
+    description:'Garantía pagada al formalizar el contrato',
+    date:snapshot.contractDate?.slice(0,10),
+    method:snapshot.guaranteeMethod || snapshot.advanceMethod || 'cash',
+    destination:snapshot.guaranteeDestination || snapshot.advanceDestination || 'CAJA CHICA',
+  },actor);
+  event.contractGuaranteeRecordedBs = Math.max(roundMoney(event.contractGuaranteeRecordedBs), guarantee);
+  event.financial = buildEventFinancialSummary(state,event);
+};
+
+const syncContractMoney = (state,event,actor) => {
+  syncContractAdvance(state,event,actor);
+  syncContractGuarantee(state,event,actor);
 };
 
 export const voidLincolnPayment = async (paymentId, payload, expectedRevision, actor = {}) =>

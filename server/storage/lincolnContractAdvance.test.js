@@ -32,3 +32,34 @@ test('saving an older contract repairs its unregistered advance, considering pay
   assert.deepEqual(saved.state.payments.map(row=>row.amountBs).sort((a,b)=>a-b),[2000,3000]);
   assert.equal(saved.state.events[0].financial.servicePaidBs,5000);
 });
+
+test('guarantee marked PAGADO generates its own receipt and is not duplicated on save',async()=>{
+  let saved=await store.getLincolnStateSnapshot();
+  const created=await store.createLincolnRecord('events',{
+    clientName:'Cliente garantía',totalBs:10000,guaranteeBs:700,
+    contractDocumentSnapshot:{advanceBs:0,guaranteeBs:700,guaranteeStatus:'paid',guaranteeMethod:'cash',guaranteeDestination:'CAJA CHICA',contractDate:'2026-10-07'}
+  },saved.revision,{id:'tester',name:'Prueba'});
+  saved=await store.getLincolnStateSnapshot();
+  const guaranteePayments=saved.state.payments.filter(row=>row.eventId===created.record.id && row.type==='guarantee');
+  assert.equal(guaranteePayments.length,1);
+  assert.equal(guaranteePayments[0].amountBs,700);
+  assert.equal(guaranteePayments[0].guaranteeAllocationBs,700);
+  assert.equal(saved.state.receipts.find(row=>row.id===guaranteePayments[0].receiptId)?.amountBs,700);
+  assert.equal(saved.state.events.find(row=>row.id===created.record.id)?.financial.guaranteePendingBs,0);
+  await store.updateLincolnRecord('events',created.record.id,{notes:'Guardar otra vez'},saved.revision);
+  saved=await store.getLincolnStateSnapshot();
+  assert.equal(saved.state.payments.filter(row=>row.eventId===created.record.id && row.type==='guarantee').length,1);
+});
+
+test('guarantee marked DEBE does not create receipt and remains segmented as pending',async()=>{
+  let saved=await store.getLincolnStateSnapshot();
+  const created=await store.createLincolnRecord('events',{
+    clientName:'Cliente deuda garantía',totalBs:10000,guaranteeBs:700,
+    contractDocumentSnapshot:{advanceBs:1000,guaranteeBs:700,guaranteeStatus:'due',contractDate:'2026-10-07'}
+  },saved.revision,{id:'tester',name:'Prueba'});
+  saved=await store.getLincolnStateSnapshot();
+  const event=saved.state.events.find(row=>row.id===created.record.id);
+  assert.equal(saved.state.payments.filter(row=>row.eventId===created.record.id && row.type==='guarantee').length,0);
+  assert.equal(event.financial.serviceBalanceBs,9000);
+  assert.equal(event.financial.guaranteePendingBs,700);
+});
