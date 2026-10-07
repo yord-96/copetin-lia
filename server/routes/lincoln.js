@@ -18,6 +18,9 @@ import {
 import { renderHtmlDocumentToPdf } from '../storage/documentPdfRenderer.js';
 import {
   convertLincolnReservationToEvent,
+  updateLincolnEconomicMovement,
+  deleteLincolnEconomicMovement,
+  deleteLincolnContract,
   createLincolnExpense,
   createLincolnRecord,
   getLincolnStateSnapshot,
@@ -431,6 +434,19 @@ router.post('/__lincoln_db/payments/:id/void', async (req, res, next) => {
   } catch (error) {
     handleLincolnMutationError(error, res, next);
   }
+});
+
+router.put('/__lincoln_db/economic-movements/:id',async(req,res,next)=>{
+  try {res.json(await updateLincolnEconomicMovement(req.params.id,req.body?.movement,req.body?.revision,actorFromRequest(req)));}
+  catch(error){handleLincolnMutationError(error,res,next);}
+});
+router.delete('/__lincoln_db/economic-movements/:id',async(req,res,next)=>{
+  try {res.json(await deleteLincolnEconomicMovement(req.params.id,req.body,req.body?.revision,actorFromRequest(req)));}
+  catch(error){handleLincolnMutationError(error,res,next);}
+});
+router.delete('/__lincoln_db/events/:id',async(req,res,next)=>{
+  try {res.json(await deleteLincolnContract(req.params.id,req.body,req.body?.revision,actorFromRequest(req)));}
+  catch(error){handleLincolnMutationError(error,res,next);}
 });
 
 router.post('/__lincoln_db/events/:id/guarantee-return', async (req, res, next) => {

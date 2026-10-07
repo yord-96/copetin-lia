@@ -4473,6 +4473,9 @@ export const api = {
     createRecord: (payload) => createAttendanceRecordDirect(payload),
   },
   lincoln: {
+    updateEconomicMovement: ({id,movement,revision,actor}) => callLincolnMutation(`/__lincoln_db/economic-movements/${encodeURIComponent(id)}`,{method:'PUT',body:{movement,revision,actor},fallback:'No se pudo editar el movimiento y su recibo.'}),
+    deleteEconomicMovement: ({id,reason,revision,actor}) => callLincolnMutation(`/__lincoln_db/economic-movements/${encodeURIComponent(id)}`,{method:'DELETE',body:{reason,revision,actor},fallback:'No se pudo eliminar el movimiento.'}),
+    deleteContract: ({eventId,reason,revision,actor}) => callLincolnMutation(`/__lincoln_db/events/${encodeURIComponent(eventId)}`,{method:'DELETE',body:{reason,revision,actor},fallback:'No se pudo eliminar el contrato.'}),
     getState: () => fetchLincolnState(),
     getCommercialOverview: (payload) => fetchLincolnCommercialOverview(payload),
     getContractPdf: (payload) => fetchLincolnContractPdf(payload),

@@ -36,6 +36,7 @@ export default function LincolnCommercialWorkspace({
   onOpenRecord,
   onEditReservation,
   onEditContract,
+  onDeleteContract,
   onConvertReservation,
   onOpenDocument,
   onOpenEconomic,
@@ -420,6 +421,7 @@ export default function LincolnCommercialWorkspace({
           ) : (
             <>
               <button type="button" onClick={() => act(onEditContract, activeMenuRow)}>Editar datos</button>
+              <button type="button" className="is-danger" onClick={() => act(onDeleteContract, activeMenuRow)}>Eliminar contrato</button>
               <button type="button" onClick={() => act(onOpenEconomic, activeMenuRow)}>Económico</button>
               <button type="button" className="is-emphasis" onClick={() => act(onOpenDocument, activeMenuRow)}>Abrir contrato PDF</button>
               <button type="button" onClick={() => act(onOpenRecord, activeMenuRow)}>Ver documentos</button>

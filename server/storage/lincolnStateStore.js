@@ -1007,8 +1007,7 @@ const syncContractMoney = (state,event,actor) => {
   syncContractGuarantee(state,event,actor);
 };
 
-export const voidLincolnPayment = async (paymentId, payload, expectedRevision, actor = {}) =>
-  mutateLincolnState(expectedRevision, (state) => {
+const voidPaymentInState = (state,paymentId,payload,actor = {}) => {
     const payment = state.payments.find((row) => String(row?.id ?? '') === String(paymentId ?? ''));
     if (!payment) {
       const error = new Error('Pago Lincoln no encontrado.');
@@ -1029,7 +1028,7 @@ export const voidLincolnPayment = async (paymentId, payload, expectedRevision, a
       receipt.voidedAt = voidedAt;
       receipt.voidReason = reason;
     }
-    const income = state.incomeEntries.find((row) => String(row?.paymentId ?? '') === String(payment.id));
+    const income = [...state.incomeEntries,...state.expenseEntries].find((row) => String(row?.paymentId ?? '') === String(payment.id));
     if (income) {
       income.voidedAt = voidedAt;
       income.voidReason = reason;
@@ -1050,7 +1049,9 @@ export const voidLincolnPayment = async (paymentId, payload, expectedRevision, a
       eventId: event.id, reason,
     });
     return { payment, eventFinancial: event.financial };
-  });
+  };
+
+export const voidLincolnPayment = async (paymentId,payload,expectedRevision,actor = {}) => mutateLincolnState(expectedRevision,state=>voidPaymentInState(state,paymentId,payload,actor));
 
 export const returnLincolnGuarantee = async (eventId, payload, expectedRevision, actor = {}) =>
   mutateLincolnState(expectedRevision, (state) => {
@@ -1148,6 +1149,77 @@ export const registerLincolnEconomicLedgerEntry = async (eventId, payload, expec
       actorId: entry.createdById, actorName: entry.createdByName, eventId: event.id, amountBs });
     return { ledgerEntry: entry, eventFinancial: event.financial };
   });
+
+const economicMutationError = (message,statusCode=400) => Object.assign(new Error(message),{statusCode,code:'LINCOLN_ECONOMIC_MUTATION_INVALID'});
+const checkEconomicConsistency = (state,event) => {
+  const financial=buildEventFinancialSummary(state,event);
+  if (financial.guaranteeReturnedBs+financial.guaranteeAppliedBs > financial.guaranteeCollectedBs+.009) throw economicMutationError('La garantía recibida no puede ser menor que lo ya devuelto o aplicado.');
+  if (financial.guaranteeAppliedBs > 0 && financial.guaranteeAppliedBs > financial.replacementChargedBs-financial.replacementCollectedBs+.009) throw economicMutationError('Los cargos deben cubrir la garantía ya aplicada.');
+  event.financial=financial;
+};
+const findEconomicMovement = (state,id) => {
+  const entry=state.economicLedgerEntries.find(row=>row.id===id && !row.voidedAt && !row.deletedAt);
+  const paymentId=entry?.paymentId || (String(id).startsWith('legacy-') ? String(id).slice(7) : '');
+  const payment=state.payments.find(row=>row.id===paymentId && !row.voidedAt);
+  if (!entry && !payment) throw economicMutationError('Movimiento no encontrado.',404);
+  return {entry,payment,event:findLincolnEvent(state,entry?.eventId || payment.eventId)};
+};
+
+export const updateLincolnEconomicMovement = async (id,payload,revision,actor={}) => mutateLincolnState(revision,state=>{
+  const {entry,payment,event}=findEconomicMovement(state,id);
+  const before=structuredClone({entry,payment,receipt:state.receipts.find(row=>row.id===payment?.receiptId)});
+  const updatedAt=nowIso();
+  if (payment) {
+    const refund=payment.type==='guarantee_return';
+    const type=refund ? 'guarantee_return' : String(payload.type || payment.type);
+    if (!refund && !Object.hasOwn(PAYMENT_TYPE_LABELS,type)) throw economicMutationError('Tipo de pago inválido.');
+    const amountBs=requirePositiveMoney(payload.amountBs,'monto del recibo');
+    const serviceAllocationBs=refund?0:type==='deposit'?roundMoney(payload.serviceAllocationBs):SERVICE_PAYMENT_TYPES.has(type)?amountBs:0;
+    const guaranteeAllocationBs=refund?0:type==='deposit'?roundMoney(payload.guaranteeAllocationBs):type==='guarantee'?amountBs:0;
+    const replacementAllocationBs=refund?0:type==='deposit'?roundMoney(payload.replacementAllocationBs):type==='replacement'?amountBs:0;
+    const allocated=roundMoney(serviceAllocationBs+guaranteeAllocationBs+replacementAllocationBs);
+    if (allocated>amountBs+.009) throw economicMutationError('La distribución supera el monto del recibo.');
+    const date=String(payload.date || payment.date || '').slice(0,10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0,10)!==date) throw economicMutationError('Fecha del recibo inválida.');
+    const receipt=state.receipts.find(row=>row.id===payment.receiptId);
+    if (!receipt) throw economicMutationError('El recibo vinculado no existe.');
+    const receiptCode=String(payload.receiptCode || receipt.code).trim();
+    if (state.receipts.some(row=>row.id!==receipt.id && row.code===receiptCode)) throw economicMutationError('Ese número de recibo ya existe.');
+    const fields={type,amountBs,date,serviceAllocationBs,guaranteeAllocationBs,replacementAllocationBs,surplusAllocationBs:refund?0:roundMoney(amountBs-allocated),method:String(payload.method || payment.method),destination:String(payload.destination ?? payment.destination),payerName:String(payload.payerName ?? payment.payerName),receivedByName:String(payload.receivedByName ?? receipt.receivedByName ?? receipt.createdByName ?? ''),clientName:String(payload.clientName ?? payment.clientName),description:String(payload.description ?? payment.description),reference:String(payload.reference ?? payment.reference),receiptCode,updatedAt,updatedById:actor.id || null,updatedByName:actor.name || null};
+    Object.assign(payment,fields);
+    Object.assign(receipt,fields,{code:receiptCode,concept:fields.description,direction:refund?'expense':'income'});
+    for (const cash of [...state.incomeEntries,...state.expenseEntries].filter(row=>row.paymentId===payment.id)) Object.assign(cash,fields,{category:refund?'DEVOLUCION GARANTIA':PAYMENT_TYPE_LABELS[type]});
+    for (const ledger of state.economicLedgerEntries.filter(row=>row.paymentId===payment.id)) Object.assign(ledger,fields,{type:refund?'refund':type==='guarantee'?'guarantee':'deposit',subtype:type,note:fields.description});
+  } else {
+    const type=String(payload.type || entry.type);
+    if (!['charge','note','guarantee_apply'].includes(type)) throw economicMutationError('Tipo de movimiento interno inválido.');
+    Object.assign(entry,{type,amountBs:type==='note'?0:requirePositiveMoney(payload.amountBs,'monto'),note:String(payload.note ?? ''),reference:String(payload.reference ?? ''),updatedAt,updatedById:actor.id || null,updatedByName:actor.name || null});
+  }
+  checkEconomicConsistency(state,event);
+  event.updatedAt=updatedAt;
+  appendLincolnAudit(state,{action:'events.economic.update',entityType:'economicLedgerEntries',entityId:id,eventId:event.id,actorId:actor.id || null,actorName:actor.name || null,before,after:structuredClone({entry,payment})});
+  return {ledgerEntry:entry,payment,eventFinancial:event.financial};
+});
+
+export const deleteLincolnEconomicMovement = async (id,payload,revision,actor={}) => mutateLincolnState(revision,state=>{
+  const {entry,payment,event}=findEconomicMovement(state,id);
+  if (payment) voidPaymentInState(state,payment.id,{reason:payload.reason || 'ELIMINACION DE MOVIMIENTO'},actor);
+  else Object.assign(entry,{deletedAt:nowIso(),deletedById:actor.id || null,deleteReason:payload.reason || 'ELIMINACION DE MOVIMIENTO'});
+  checkEconomicConsistency(state,event);
+  appendLincolnAudit(state,{action:'events.economic.delete',entityType:'economicLedgerEntries',entityId:id,eventId:event.id,actorId:actor.id || null,actorName:actor.name || null});
+  return {eventFinancial:event.financial};
+});
+
+export const deleteLincolnContract = async (eventId,payload,revision,actor={}) => mutateLincolnState(revision,state=>{
+  const event=findLincolnEvent(state,eventId);
+  const archived=structuredClone(event);
+  for (const payment of activeEventPayments(state,eventId)) voidPaymentInState(state,payment.id,{reason:payload.reason || 'CONTRATO ELIMINADO'},actor);
+  for (const collection of ['receipts','economicLedgerEntries','incomeEntries','expenseEntries','eventSettlements']) for (const row of state[collection] || []) if (row.eventId===eventId) Object.assign(row,{status:'voided',voidedAt:nowIso(),deletedAt:nowIso(),voidReason:'CONTRATO ELIMINADO'});
+  for (const reservation of state.reservations.filter(row=>row.eventId===eventId || row.id===event.reservationId)) Object.assign(reservation,{eventId:null,status:Number(reservation.reservationPaymentBs)>0?'confirmed':'lead',updatedAt:nowIso()});
+  state.events=state.events.filter(row=>row.id!==eventId);
+  appendLincolnAudit(state,{action:'events.delete',entityType:'events',entityId:eventId,entityCode:event.code,actorId:actor.id || null,actorName:actor.name || null,reason:payload.reason || '',archivedRecord:archived});
+  return {deletedId:eventId};
+});
 
 export const resetLincolnEventEconomics = async (eventId, payload, expectedRevision, actor = {}) =>
   mutateLincolnState(expectedRevision, (state) => {

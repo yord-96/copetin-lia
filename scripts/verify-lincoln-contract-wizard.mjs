@@ -22,6 +22,9 @@ api.lincoln.getCommercialOverview=async()=>({summary:{contracts:state.events.len
 api.presence.heartbeat=async()=>({}); api.lincoln.getState=async()=>({state,revision:1+window.mutations.length});
 api.lincoln.createRecord=async(payload)=>{window.mutations.push(payload);state.events.push({...payload.record,id:'event-'+state.events.length,code:'CON-TEST-'+state.events.length});};
 api.lincoln.updateRecord=async(payload)=>{window.mutations.push(payload);Object.assign(state.events.find(row=>row.id===payload.id),payload.record);};
+api.lincoln.updateEconomicMovement=async(payload)=>{window.mutations.push(payload);Object.assign(state.payments[0],payload.movement);Object.assign(state.receipts[0],payload.movement,{concept:payload.movement.description,code:payload.movement.receiptCode});Object.assign(state.economicLedgerEntries[0],payload.movement,{note:payload.movement.description});};
+api.lincoln.deleteEconomicMovement=async(payload)=>{window.mutations.push(payload);state.payments[0].voidedAt=new Date().toISOString();state.receipts[0].status='voided';state.economicLedgerEntries[0].voidedAt=new Date().toISOString();};
+api.lincoln.deleteContract=async(payload)=>{window.mutations.push(payload);state.events=state.events.filter(row=>row.id!==payload.eventId);};
 const root=createRoot(document.getElementById('root')); let heartbeat=0; window.refreshPresence=()=>root.render(React.createElement(Workspace,{currentUser:{id:'staff',name:'Coordinador',role:'developer',heartbeat:++heartbeat},userPresence:[{userId:'staff',activeTab:'lincoln_comercial',heartbeat}]}));window.refreshPresence();`);
 const dist = path.join(directory, 'dist');
 await build({ configFile: false, plugins: [react()], logLevel: 'error', build: { outDir: dist, rollupOptions: { input: entry, output: { entryFileNames: 'entry.js', assetFileNames: '[name][extname]' } } } });
@@ -32,7 +35,7 @@ let browser;
 try {
   browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
   const page = await browser.newPage(); await page.setViewport({ width: 1440, height: 1000 });
-  const errors = []; page.on('dialog',async(dialog)=>{console.log('Dialog:',dialog.message());await dialog.dismiss();}); page.on('pageerror', (error) => errors.push(error.message));
+  const errors = []; page.on('dialog',async(dialog)=>{console.log('Dialog:',dialog.message());if(dialog.type()==='confirm') await dialog.accept();else await dialog.dismiss();}); page.on('pageerror', (error) => errors.push(error.message));
   const click = async (label) => {
     for (const button of await page.$$('button')) if (await button.evaluate((node, text) => node.textContent.trim().startsWith(text), label)) { await button.evaluate(node=>node.click()); return; }
     throw new Error(`Button missing: ${label}`);
@@ -101,5 +104,17 @@ try {
   await click('Siguiente');await click('Siguiente');await click('Guardar contrato');
   await page.waitForFunction(()=>!document.querySelector('.lincoln-contract-flow-modal'));
   assert.equal(await page.evaluate(()=>window.fixture.events.at(-1).totalBs),15100);
-  assert.deepEqual(errors, []); console.log('Verified standard create/edit, organizer fixed fees, multiple days, custom prices, extras, 50% deposit and mobile layout. Screenshots:',directory);
+  await page.evaluate(()=>{const event=window.fixture.events.at(-1);window.fixture.payments=[{id:'payment',receiptId:'receipt',receiptCode:'RCL-TEST',eventId:event.id,type:'advance',amountBs:500,date:'2026-10-07',method:'cash',destination:'CAJA CHICA',payerName:'Cliente',clientName:'Cliente',description:'Anticipo'}];window.fixture.receipts=[{id:'receipt',code:'RCL-TEST',eventId:event.id,status:'active'}];window.fixture.economicLedgerEntries=[{id:'movement',code:'ECO-TEST',eventId:event.id,paymentId:'payment',receiptId:'receipt',receiptCode:'RCL-TEST',type:'deposit',subtype:'advance',amountBs:500,serviceAllocationBs:500,isCashRegistered:true,date:'2026-10-07',note:'Anticipo'}];window.refreshPresence();});
+  await page.$$eval('.lincoln-commercial-table tbody tr',rows=>rows.find(row=>row.textContent.includes('20/11/2026')).querySelector('.lincoln-commercial-dots').click());await click('Económico');
+  await page.waitForSelector('.lincoln-economic-dots');await page.$eval('.lincoln-economic-dots',node=>node.click());await click('Editar recibo completo');
+  assert.ok(await page.$eval('.lincoln-modal h2',node=>node.textContent.includes('Editar recibo completo')));
+  const fillLabel=async(label,value)=>page.$$eval('.lincoln-form-field',(nodes,label,value)=>{const node=nodes.find(node=>node.querySelector('span')?.textContent===label)?.querySelector('input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,value);node.dispatchEvent(new Event('input',{bubbles:true}));node.dispatchEvent(new Event('change',{bubbles:true}));},label,value);
+  await fillLabel('Monto recibido (Bs)','750');await fillLabel('Concepto','Recibo corregido');await fillLabel('Número de recibo','RCL-EDITADO');await click('Guardar');
+  await page.waitForFunction(()=>window.fixture.payments[0].amountBs===750);
+  assert.equal(await page.evaluate(()=>window.fixture.receipts[0].code),'RCL-EDITADO');
+  await page.$eval('.lincoln-economic-dots',node=>node.click());await click('Eliminar movimiento');await page.waitForFunction(()=>!!window.fixture.payments[0].voidedAt);
+  await page.waitForFunction(()=>!document.querySelector('.lincoln-economic-dots'));await click('← Volver');
+  await page.waitForSelector('.lincoln-commercial-dots');await page.$$eval('.lincoln-commercial-table tbody tr',rows=>rows.find(row=>row.textContent.includes('20/11/2026')).querySelector('.lincoln-commercial-dots').click());await click('Eliminar contrato');
+  await page.waitForFunction(()=>window.fixture.events.length===1);
+  assert.deepEqual(errors, []); console.log('Verified contract wizard, complete receipt edit, economic movement deletion and contract deletion. Screenshots:',directory);
 } finally { if (browser) await browser.close(); await new Promise((resolve) => server.close(resolve)); }

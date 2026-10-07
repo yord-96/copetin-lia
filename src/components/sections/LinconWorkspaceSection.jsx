@@ -1,3 +1,4 @@
+import EconomicMovementActions from '../lincoln/EconomicMovementActions';
 import ContractCustomExtras from '../lincoln/ContractCustomExtras';
 import OrganizerProposal from '../lincoln/OrganizerProposal';
 import { suggestedOrganizerRate, organizerTotals, organizerClauses } from '../../../shared/lincolnOrganizerContract';
@@ -853,12 +854,12 @@ function LinconPanelView({ state, onNavigate }) {
   );
 }
 
-function PaymentModal({ eventRecord, state, saving, onClose, onSave }) {
+function PaymentModal({ eventRecord, state, record, saving, onClose, onSave }) {
   const today = new Date().toISOString().slice(0, 10);
   const destinations = Array.isArray(state.settings?.paymentDestinations) ? state.settings.paymentDestinations : ['CAJA CHICA', 'SRA. LIA'];
   const [form, setForm] = useState({
     type: 'deposit', amountBs: '', serviceAllocationBs: '', guaranteeAllocationBs: '', replacementAllocationBs: '',
-    date: today, method: 'cash', destination: destinations[0] ?? 'CAJA CHICA', payerName: eventRecord?.clientName ?? '', description: '', reference: '',
+    date: today, method: 'cash', destination: destinations[0] ?? 'CAJA CHICA', payerName: eventRecord?.clientName ?? '', description: '', reference: '', ...(record || {}),
   });
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const amountBs = toNumber(form.amountBs);
@@ -876,8 +877,8 @@ function PaymentModal({ eventRecord, state, saving, onClose, onSave }) {
     onSave({ ...form, amountBs, serviceAllocationBs, guaranteeAllocationBs, replacementAllocationBs });
   };
   return (
-    <Modal title={`Registrar dinero · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={submit}>
-      <Field label="Tipo"><select value={form.type} onChange={(e) => set('type', e.target.value)}><option value="deposit">Ingreso flexible</option><option value="advance">Anticipo</option><option value="installment">A cuenta</option><option value="balance">Saldo</option><option value="guarantee">Garantía</option><option value="replacement">Reposición cobrada</option></select></Field>
+    <Modal title={record ? `Editar recibo completo · ${record.receiptCode}` : `Registrar dinero · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={submit}>
+      <Field label="Tipo"><select disabled={record?.type === 'guarantee_return'} value={form.type} onChange={(e) => set('type', e.target.value)}>{record?.type === 'guarantee_return' ? <option value="guarantee_return">Devolución de garantía</option> : null}<option value="deposit">Ingreso flexible</option><option value="advance">Anticipo</option><option value="installment">A cuenta</option><option value="balance">Saldo</option><option value="guarantee">Garantía</option><option value="replacement">Reposición cobrada</option></select></Field>
       <Field label="Monto recibido (Bs)"><input required type="number" min="0.01" step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field>
       {form.type === 'deposit' ? <div className="lincoln-economic-allocation is-wide">
         <strong>Distribuir este único ingreso</strong><p>Un solo recibo y un solo ingreso de Caja Lincoln, repartido internamente sin duplicar dinero.</p>
@@ -887,18 +888,18 @@ function PaymentModal({ eventRecord, state, saving, onClose, onSave }) {
       <Field label="Fecha"><input required type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></Field>
       <Field label="Medio de pago"><select value={form.method} onChange={(e) => set('method', e.target.value)}><option value="cash">Efectivo</option><option value="transfer">Transferencia</option><option value="qr">QR</option></select></Field>
       <Field label="Destino"><input list="lincoln-payment-destinations" value={form.destination} onChange={(e) => set('destination', e.target.value)} /><datalist id="lincoln-payment-destinations">{destinations.map((item) => <option key={item} value={item} />)}</datalist></Field>
-      <Field label="Pagado por"><input value={form.payerName} onChange={(e) => set('payerName', e.target.value)} /></Field>
+      <>{record ? <><Field label="Número de recibo"><input required value={form.receiptCode || ''} onChange={e=>set('receiptCode',e.target.value)}/></Field><Field label="Cliente del recibo"><input value={form.clientName || ''} onChange={e=>set('clientName',e.target.value)}/></Field><Field label="Recibido / entregado por"><input value={form.receivedByName || ''} onChange={e=>set('receivedByName',e.target.value)}/></Field></> : null}</><Field label="Pagado por"><input value={form.payerName} onChange={(e) => set('payerName', e.target.value)} /></Field>
       <Field label="Concepto" wide><input value={form.description} onChange={(e) => set('description', e.target.value)} placeholder="Detalle del dinero recibido" /></Field>
       <Field label="Referencia / respaldo" wide><input value={form.reference} onChange={(e) => set('reference', e.target.value)} placeholder="N° transferencia, QR, observación, etc." /></Field>
     </Modal>
   );
 }
 
-function EconomicEntryModal({ eventRecord, summary, saving, onClose, onSave }) {
-  const [form, setForm] = useState({ type: 'charge', amountBs: '', note: '', reference: '' });
+function EconomicEntryModal({ eventRecord, summary, record, saving, onClose, onSave }) {
+  const [form, setForm] = useState({ type: 'charge', amountBs: '', note: '', reference: '', ...(record || {}) });
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const isNote = form.type === 'note';
-  const maxApply = Math.max(0, Math.min(Number(summary?.guaranteeHeldBs ?? 0), Number(summary?.replacementPendingBs ?? 0)));
+  const maxApply = Math.max(0, Math.min(Number(summary?.guaranteeHeldBs ?? 0) + (record?.type === 'guarantee_apply' ? Number(record.amountBs) : 0), Number(summary?.replacementPendingBs ?? 0) + (record?.type === 'guarantee_apply' ? Number(record.amountBs) : 0)));
   return <Modal title={`Hoja económica · ${eventRecord?.code ?? 'Evento'}`} saving={saving} onClose={onClose} onSubmit={(e) => { e.preventDefault(); onSave({ ...form, amountBs: isNote ? 0 : toNumber(form.amountBs) }); }}>
     <Field label="Movimiento"><select value={form.type} onChange={(e) => set('type', e.target.value)}><option value="charge">Cargo / reposición pendiente</option><option value="guarantee_apply">Aplicar garantía a cargo</option><option value="note">Nota económica</option></select></Field>
     {!isNote ? <Field label="Monto (Bs)"><input required type="number" min="0.01" max={form.type === 'guarantee_apply' ? maxApply || undefined : undefined} step="0.01" value={form.amountBs} onChange={(e) => set('amountBs', e.target.value)} /></Field> : null}
@@ -990,7 +991,7 @@ const getEventFinancialSummary = (state, eventRecord) => {
 
 const economicEntryLabel = (row) => ({ deposit: 'Ingreso / depósito', guarantee: 'Garantía recibida', charge: 'Cargo / reposición', guarantee_apply: 'Aplicado desde garantía', refund: 'Devolución', note: 'Nota económica' }[row?.type] ?? paymentTypeLabel(row?.subtype || row?.type));
 
-function EventEconomicView({ state, eventRecord, canReset, saving, onRepairAdvance, onBack, onNewPayment, onNewEconomicEntry, onResetEconomic, onVoidPayment, onReturnGuarantee, onPrintReceipt }) {
+function EventEconomicView({ state, eventRecord, canReset, saving, onRepairAdvance, onBack, onNewPayment, onNewEconomicEntry, onResetEconomic, onEditMovement, onDeleteMovement, onReturnGuarantee, onPrintReceipt }) {
   const summary = getEventFinancialSummary(state, eventRecord);
   const linkedPaymentIds = new Set(summary.ledger.map((row) => String(row?.paymentId ?? '')).filter(Boolean));
   const legacyRows = summary.payments.filter((row) => !linkedPaymentIds.has(String(row.id))).map((row) => ({
@@ -1051,7 +1052,7 @@ function EventEconomicView({ state, eventRecord, canReset, saving, onRepairAdvan
           { key: 'destination', label: 'Destino', render: (row) => row.destination || '—' },
           { key: 'receipt', label: 'Recibo', render: (row) => row.receiptCode ? <button type="button" className="lincoln-link-action" onClick={(e) => { e.stopPropagation(); onPrintReceipt(row.receiptId); }}>{row.receiptCode}</button> : '—' },
           { key: 'amount', label: 'Monto', render: (row) => row.type === 'note' ? <strong>—</strong> : <strong>{formatBs(row.amountBs)}</strong> },
-          { key: 'action', label: '', render: (row) => row.paymentId && row.subtype !== 'guarantee_return' && row.type !== 'refund' ? <button type="button" className="lincoln-danger-action" onClick={(e) => { e.stopPropagation(); const payment = summary.payments.find((item) => item.id === row.paymentId); if (payment) onVoidPayment(payment); }}>Anular</button> : null },
+          { key: 'action', label: 'Acciones', render: row => <EconomicMovementActions row={row} onEdit={onEditMovement} onDelete={onDeleteMovement}/> },
           ]} />
         </section>
       </article>
@@ -1430,19 +1431,29 @@ function LinconWorkspaceSection({
     }
   };
 
-  const voidPayment = async (payment) => {
-    if (!snapshot?.revision || !payment?.id) return;
-    const reason = window.prompt(`Motivo de anulación para ${payment.code}:`, 'CORRECCION ADMINISTRATIVA');
-    if (reason === null) return;
+  const saveEditedMovement = async (row,movement) => {
     setSaving(true);
-    try {
-      await api.lincoln.voidEventPayment({ paymentId: payment.id, reason, revision: snapshot.revision, actor });
-      await loadLincoln();
-    } catch (error) {
-      await handleLincolnMutationError(error, 'No se pudo anular el pago.');
-    } finally {
-      setSaving(false);
-    }
+    try { await api.lincoln.updateEconomicMovement({id:row.id,movement,revision:snapshot.revision,actor});setModal(null);await loadLincoln(); }
+    catch(error){await handleLincolnMutationError(error,'No se pudo editar el recibo.');} finally{setSaving(false);}
+  };
+  const deleteMovement = async row => {
+    if(!window.confirm('Eliminar este movimiento y su recibo asociado. Caja Lincoln y los saldos del evento se actualizarán. ¿Continuar?')) return;
+    setSaving(true);
+    try{await api.lincoln.deleteEconomicMovement({id:row.id,reason:'ELIMINACION ADMINISTRATIVA',revision:snapshot.revision,actor});await loadLincoln();}
+    catch(error){await handleLincolnMutationError(error,'No se pudo eliminar el movimiento.');}finally{setSaving(false);}
+  };
+  const editMovement = row => {
+    const event=state.events.find(item=>item.id===row.eventId);
+    if(row.paymentId){const payment=state.payments.find(item=>item.id===row.paymentId);const receipt=state.receipts.find(item=>item.id===payment?.receiptId);if(payment) setModal({mode:'paymentEdit',record:event,movement:row,payment:{...payment,receiptCode:receipt?.code || payment.receiptCode,receivedByName:receipt?.receivedByName || receipt?.createdByName || payment.createdByName || ''}});}
+    else setModal({mode:'economicEdit',record:event,movement:row});
+  };
+  const deleteContract = async row => {
+    const event=state.events.find(item=>item.id===(row.eventId || row.id));if(!event) return;
+    const linked=event.reservationId ? ' La reserva asociada volverá a estar disponible para gestionar.' : '';
+    if(!window.confirm('Eliminar contrato '+event.code+' y retirar sus movimientos y recibos de Caja Lincoln.'+linked+' ¿Continuar?')) return;
+    setSaving(true);
+    try{await api.lincoln.deleteContract({eventId:event.id,reason:'ELIMINACION ADMINISTRATIVA',revision:snapshot.revision,actor});setEconomicEventId('');setModal(null);await loadLincoln();}
+    catch(error){await handleLincolnMutationError(error,'No se pudo eliminar el contrato.');}finally{setSaving(false);}
   };
 
   const returnGuarantee = async (eventRecord, refund) => {
@@ -1611,7 +1622,7 @@ Escribe RESET ECONOMICO para continuar:`);
           </div>
           <div class="receipt-info-box">
             <div><i></i><small>EVENTO</small><strong>${safe(receipt.eventCode || '—')}</strong></div>
-            <div><i></i><small>${staffLabel}</small><strong>${safe(receipt.createdByName || '—')}</strong></div>
+            <div><i></i><small>${staffLabel}</small><strong>${safe(receipt.receivedByName || receipt.createdByName || '—')}</strong></div>
             <div><i></i><small>DESTINO</small><strong>${safe(receipt.destination || '—')}</strong></div>
           </div>
         </section>
@@ -1746,6 +1757,8 @@ Escribe RESET ECONOMICO para continuar:`);
   const overlay = (
     <>
       {modal?.mode === 'economicEntry' ? <EconomicEntryModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} saving={saving} onClose={() => setModal(null)} onSave={(entry) => saveEconomicEntry(modal.record, entry)} /> : null}
+      {modal?.mode === 'paymentEdit' ? <PaymentModal eventRecord={modal.record} state={state} record={modal.payment} saving={saving} onClose={()=>setModal(null)} onSave={form=>saveEditedMovement(modal.movement,form)}/> : null}
+      {modal?.mode === 'economicEdit' ? <EconomicEntryModal eventRecord={modal.record} summary={getEventFinancialSummary(state,modal.record)} record={modal.movement} saving={saving} onClose={()=>setModal(null)} onSave={form=>saveEditedMovement(modal.movement,form)}/> : null}
       {modal?.mode === 'payment' ? <PaymentModal eventRecord={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => savePayment(modal.record, form)} /> : null}
       {modal?.mode === 'expense' ? <ExpenseModal record={modal.record} state={state} saving={saving} onClose={() => setModal(null)} onSave={saveExpense} /> : null}
       {modal?.mode === 'guaranteeReturn' ? <GuaranteeReturnModal eventRecord={modal.record} summary={getEventFinancialSummary(state, modal.record)} state={state} saving={saving} onClose={() => setModal(null)} onSave={(form) => returnGuarantee(modal.record, form)} /> : null}
@@ -1815,7 +1828,7 @@ Escribe RESET ECONOMICO para continuar:`);
         <>
           {activeView === 'panel' ? <LinconPanelView state={state} onNavigate={openView} /> : null}
           {activeView === 'agenda' ? <LincolnAgenda state={state} /> : null}
-          {activeView === 'comercial' && economicEvent ? <EventEconomicView state={state} eventRecord={economicEvent} saving={saving} onRepairAdvance={()=>saveRecord('events',{id:economicEvent.id,contractDocumentSnapshot:economicEvent.contractDocumentSnapshot})} canReset={canResetLincoln} onBack={() => setEconomicEventId('')} onNewPayment={() => setModal({ mode: 'payment', record: economicEvent })} onNewEconomicEntry={() => setModal({ mode: 'economicEntry', record: economicEvent })} onResetEconomic={() => resetEventEconomics(economicEvent)} onVoidPayment={voidPayment} onReturnGuarantee={() => setModal({ mode: 'guaranteeReturn', record: economicEvent })} onPrintReceipt={printReceipt} /> : null}
+          {activeView === 'comercial' && economicEvent ? <EventEconomicView state={state} eventRecord={economicEvent} saving={saving} onRepairAdvance={()=>saveRecord('events',{id:economicEvent.id,contractDocumentSnapshot:economicEvent.contractDocumentSnapshot})} canReset={canResetLincoln} onBack={() => setEconomicEventId('')} onNewPayment={() => setModal({ mode: 'payment', record: economicEvent })} onNewEconomicEntry={() => setModal({ mode: 'economicEntry', record: economicEvent })} onResetEconomic={() => resetEventEconomics(economicEvent)} onEditMovement={editMovement} onDeleteMovement={deleteMovement} onReturnGuarantee={() => setModal({ mode: 'guaranteeReturn', record: economicEvent })} onPrintReceipt={printReceipt} /> : null}
           {activeView === 'comercial' && !economicEvent ? (
             <LincolnCommercialWorkspace
               refreshKey={snapshot?.revision}
@@ -1831,6 +1844,7 @@ Escribe RESET ECONOMICO para continuar:`);
                 const record = state.reservations.find((item) => item.id === row.id);
                 if (record) setModal({ mode: 'reservations', record });
               }}
+              onDeleteContract={deleteContract}
               onEditContract={(row) => {
                 const record = state.events.find((item) => item.id === (row.eventId || row.id));
                 if (record) setModal({ mode: 'events', record });

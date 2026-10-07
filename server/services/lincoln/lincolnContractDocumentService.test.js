@@ -111,4 +111,7 @@ test('uses live economic payments in the contract document and keeps running bal
   assert.match(html, /MOVIMIENTO ECONÓMICO DEL CONTRATO/);
   assert.match(html, /RCL-0002/);
   assert.match(html, /TOTAL PAGADO SERVICIO/);
+  assert.doesNotMatch(html, /<th>SALDO SERVICIO<\/th>/);
+  const movementTable=html.match(/<section class="movements">[\s\S]*?<\/section>/)?.[0];
+  assert.equal((movementTable.match(/<th>/g) || []).length,3);
 });
