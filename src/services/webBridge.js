@@ -7968,6 +7968,33 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-financial-item.managed { background: #2e241a; }
   .rc-financial-item.managed span { color: #f5dfbe; }
   .rc-financial-item.managed strong { color: #fff; font-size: 12px; }
+  .rc-financial-item.pending {
+    background: #fff0e8;
+  }
+  .rc-financial-item.pending span,
+  .rc-financial-item.pending strong {
+    color: #a8401c;
+  }
+  .rc-financial-item.paid {
+    background: #edf8f0;
+  }
+  .rc-financial-item.paid span,
+  .rc-financial-item.paid strong {
+    color: #17643a;
+  }
+  .rc-financial-summary-coherent .rc-financial-item {
+    min-height: 9.4mm;
+  }
+  .rc-financial-summary-coherent .rc-financial-item span {
+    font-size: 6.5px;
+  }
+  .rc-financial-summary-coherent .rc-financial-item strong {
+    font-size: 10.4px;
+  }
+  .rc-financial-summary-coherent .rc-financial-item.total strong,
+  .rc-financial-summary-coherent .rc-financial-item.managed strong {
+    font-size: 11.6px;
+  }
   .rc-financial-item.manual { background: #fff; }
   .rc-financial-item.manual strong {
     width: 82%;
@@ -8125,7 +8152,75 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-economic-summary.is-main .is-pending { background: #fff0e8; border-color: #e9b59b; }
   .rc-economic-summary.is-main .is-pending strong { color: #b34219; }
   .rc-economic-summary.is-main .is-paid { background: #edf8f0; border-color: #a8d5b5; }
-  .rc-economic-explanation { margin: 1mm 0 2mm; color: #665b4e; font: 8px Arial, Helvetica, sans-serif; line-height: 1.4; }
+  .rc-economic-subtitle {
+    margin: .75mm 0 0;
+    color: #6b6258;
+    font: 7.1px Arial, Helvetica, sans-serif;
+    line-height: 1.25;
+  }
+  .rc-economic-section-label {
+    margin: 1.25mm 0 .75mm;
+    color: #6f4a20;
+    font: 900 6.9px Arial, Helvetica, sans-serif;
+    letter-spacing: .18px;
+    text-transform: uppercase;
+  }
+  .rc-economic-summary.is-guarantee {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .rc-economic-summary.is-guarantee span {
+    min-height: 10.8mm;
+    background: #fff9ef;
+    border-color: #e6cfaa;
+    border-radius: 1.1mm;
+  }
+  .rc-economic-summary.is-guarantee .is-pending {
+    background: #fff2ea;
+    border-color: #e6ad8f;
+  }
+  .rc-economic-summary.is-guarantee .is-pending strong { color: #a83f1c; }
+  .rc-economic-summary.is-guarantee .is-paid {
+    background: #eef8f1;
+    border-color: #add3b7;
+  }
+  .rc-economic-summary.is-guarantee .is-paid strong { color: #17643a; }
+  .rc-economic-summary.is-secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rc-economic-summary.is-secondary span {
+    min-height: 9mm;
+    border-radius: 1mm;
+  }
+  .rc-economic-summary.is-secondary .is-pending {
+    background: #fff0eb;
+    border-color: #e0a08d;
+  }
+  .rc-economic-summary.is-secondary .is-pending strong { color: #a33120; }
+  .rc-economic-explanation {
+    margin: 1.2mm 0 1.8mm;
+    padding: 1mm 1.2mm;
+    border-left: .7mm solid #d7b27d;
+    background: #fffaf2;
+    color: #665b4e;
+    font: 7.6px Arial, Helvetica, sans-serif;
+    line-height: 1.35;
+  }
+  .rc-economic-history-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 3mm;
+    margin: 1.1mm 0 .8mm;
+    color: #633c12;
+    font: 900 7.1px Arial, Helvetica, sans-serif;
+    text-transform: uppercase;
+  }
+  .rc-economic-history-head small {
+    color: #7d7165;
+    font-size: 6.4px;
+    font-weight: 700;
+    text-transform: none;
+  }
   .rc-economic-lines {
     display: grid;
     border: .2mm solid #e4d3bb;
@@ -8931,7 +9026,6 @@ export const buildContractDocumentHtml = ({
     documentItemsSubtotalBs + servicesSubtotalBs - Number(discountBs ?? 0) + deliveryFeeBs,
   ).toFixed(2));
   const printedTotalBs = Math.max(Number(totalBs ?? 0), computedContractTotalBs);
-  const printedManagedBs = printedTotalBs + Math.max(0, Number(guaranteeBs ?? 0));
   const effectiveDocumentPaidBs = Math.max(
     0,
     documentPayments.hasPayments ? documentPayments.appliedBs : Number(paidBs ?? 0),
@@ -9140,19 +9234,26 @@ export const buildContractDocumentHtml = ({
       economicPendingBs - economicPendingItemsBs,
     ),
   );
+  const guaranteePaidBs = Math.max(0, Number((Number(guaranteeBs ?? 0) - pendingGuaranteeBs).toFixed(2)));
+  const totalPendingNowBs = Math.max(
+    0,
+    Number((economicPendingBs + pendingGuaranteeBs).toFixed(2)),
+  );
+  const servicePaidForDocumentBs = Math.max(
+    0,
+    Number((effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0))).toFixed(2)),
+  );
   const economicStatusLabel = customerCreditBs > 0.005
-    ? `SALDO A FAVOR DEL CLIENTE ${formatBs(customerCreditBs)}`
-    : economicPendingBs > 0.005
-    ? `PENDIENTE TOTAL ${formatBs(economicPendingBs)}`
-    : economicTotalsForDocument.refundsBs > 0
-      ? 'LIQUIDADO Y DEVUELTO'
-      : economicTotalsForDocument.guaranteeBs > economicTotalsForDocument.refundsBs + 0.005
-        ? 'PAGADO · GARANTIA RETENIDA'
+    ? `SALDO A FAVOR ${formatBs(customerCreditBs)}`
+    : totalPendingNowBs > 0.005
+      ? `TOTAL PENDIENTE ${formatBs(totalPendingNowBs)}`
+      : economicTotalsForDocument.refundsBs > 0
+        ? 'LIQUIDADO Y DEVUELTO'
         : 'PAGADO';
-  const economicStatusDetailHtml = economicPendingBs > 0.005
-    ? `<small>Items ${formatBs(economicPendingItemsBs)} · Daños / faltantes ${formatBs(economicPendingDamageBs)}</small>`
+  const economicStatusDetailHtml = totalPendingNowBs > 0.005
+    ? `<small>Servicio ${formatBs(economicPendingItemsBs)} · Garantía ${formatBs(pendingGuaranteeBs)}${economicPendingDamageBs > 0.005 ? ` · Daños ${formatBs(economicPendingDamageBs)}` : ''}</small>`
     : '';
-  const economicStatusClass = economicPendingBs > 0.005 ? 'is-pending' : 'is-paid';
+  const economicStatusClass = totalPendingNowBs > 0.005 ? 'is-pending' : 'is-paid';
   const economicTypeLabel = (entry) => ({
     deposit: 'Deposito / pago',
     guarantee: 'Garantia apartada',
@@ -9189,23 +9290,42 @@ export const buildContractDocumentHtml = ({
     : '<div class="rc-economic-empty">Sin movimientos economicos registrados</div>';
   const economicControlHtml = `
     <div class="rc-economic-head">
-      <h3 class="rc-bottom-title">Estado economico del contrato</h3>
+      <div>
+        <h3 class="rc-bottom-title">Estado economico del contrato</h3>
+        <p class="rc-economic-subtitle">Servicio, garantía y movimientos separados para mostrar con claridad cuánto se pagó y cuánto falta.</p>
+      </div>
       <span class="rc-economic-status ${economicStatusClass}">
         <b>${escapeHtml(economicStatusLabel)}</b>
         ${economicStatusDetailHtml}
       </span>
     </div>
+
+    <div class="rc-economic-section-label">Servicio contratado</div>
     <div class="rc-economic-summary is-main">
-      <span><small>Total del alquiler y transporte</small><strong>${formatBs(printedTotalBs)}</strong></span>
-      <span><small>Pagado a cuenta del contrato</small><strong>${formatBs(effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0)))}</strong></span>
-      <span class="${currentCommercialPendingBs > 0.005 ? 'is-pending' : 'is-paid'}"><small>${customerCreditBs > 0.005 ? 'Saldo a favor del cliente' : 'Falta pagar del contrato'}</small><strong>${formatBs(customerCreditBs > 0.005 ? customerCreditBs : currentCommercialPendingBs)}</strong></span>
+      <span><small>Total servicio</small><strong>${formatBs(printedTotalBs)}</strong></span>
+      <span><small>Pagado al servicio</small><strong>${formatBs(servicePaidForDocumentBs)}</strong></span>
+      <span class="${currentCommercialPendingBs > 0.005 ? 'is-pending' : 'is-paid'}"><small>Saldo del servicio</small><strong>${formatBs(currentCommercialPendingBs)}</strong></span>
     </div>
-    <p class="rc-economic-explanation">${customerCreditBs > 0.005 ? `Saldo a favor = pagos recibidos menos total del contrato y garantía pendiente (${formatBs(pendingGuaranteeBs)}).` : 'Total del contrato menos lo pagado a cuenta = saldo del contrato.'} La garantía se muestra por separado; no es un descuento ni se aplica automáticamente al alquiler.</p>
-    <div class="rc-economic-summary">
-      <span><small>Pagos recibidos del cliente</small><strong>${formatBs(economicTotalsForDocument.collectedBs)}</strong></span>
-      <span><small>Garantía apartada, separada del alquiler</small><strong>${formatBs(economicTotalsForDocument.guaranteeBs)}</strong></span>
-      <span><small>Danos / faltantes</small><strong>${formatBs(economicTotalsForDocument.chargesBs)}</strong></span>
-      <span><small>Devuelto al cliente</small><strong>${formatBs(economicTotalsForDocument.refundsBs)}</strong></span>
+
+    <div class="rc-economic-section-label">Garantía separada del servicio</div>
+    <div class="rc-economic-summary is-guarantee">
+      <span><small>Garantía acordada</small><strong>${formatBs(guaranteeBs)}</strong></span>
+      <span><small>Garantía pagada</small><strong>${formatBs(guaranteePaidBs)}</strong></span>
+      <span class="${pendingGuaranteeBs > 0.005 ? 'is-pending' : 'is-paid'}"><small>Garantía pendiente</small><strong>${formatBs(pendingGuaranteeBs)}</strong></span>
+    </div>
+
+    ${(economicPendingDamageBs > 0.005 || economicTotalsForDocument.refundsBs > 0.005) ? `
+      <div class="rc-economic-section-label">Ajustes posteriores</div>
+      <div class="rc-economic-summary is-secondary">
+        ${economicPendingDamageBs > 0.005 ? `<span class="is-pending"><small>Daños / faltantes pendientes</small><strong>${formatBs(economicPendingDamageBs)}</strong></span>` : ''}
+        ${economicTotalsForDocument.refundsBs > 0.005 ? `<span><small>Devuelto al cliente</small><strong>${formatBs(economicTotalsForDocument.refundsBs)}</strong></span>` : ''}
+      </div>` : ''}
+
+    <p class="rc-economic-explanation"><strong>Cómo leerlo:</strong> saldo del servicio + garantía pendiente${economicPendingDamageBs > 0.005 ? ' + daños/faltantes pendientes' : ''} = total pendiente. La garantía no reduce el alquiler.</p>
+
+    <div class="rc-economic-history-head">
+      <span>Historial de movimientos</span>
+      <small>${economicLedgerRowsForDocument.length} movimiento(s) registrado(s)</small>
     </div>
     <div class="rc-economic-lines">${economicLinesHtml}</div>
     ${economicHiddenCount > 0 ? `<p class="rc-economic-more">+ ${economicHiddenCount} movimiento(s) anterior(es) conservado(s) en el historial</p>` : ''}`;
@@ -9229,22 +9349,19 @@ export const buildContractDocumentHtml = ({
             <div class="rc-financial-item total"><span>Total cotizacion</span><strong>${formatBs(totalBs)}</strong></div>
           </div>`
     : `
-          <div class="rc-financial-summary">
-            ${durationFinancialItemsHtml}
-            ${dailyScheduleFinancialItemsHtml}
+          <div class="rc-financial-summary rc-financial-summary-coherent">
             ${itemFinancialSummaryHtml}
-            <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
+            <div class="rc-financial-item"><span>Servicios extra</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-            <div class="rc-financial-item guarantee"><span>Garantia ${isGuaranteeValidated || documentPayments.reservedBs >= Number(guaranteeBs) ? 'apartada' : 'debe'}</span><strong>${formatBs(guaranteeBs)}</strong></div>
-            ${Number(prepaidAppliedBs ?? 0) > 0 ? `<div class="rc-financial-item"><span>Prepago</span><strong>${formatBs(prepaidAppliedBs)}</strong></div>` : ''}
-            <div class="rc-financial-item"><span>Pagado</span><strong>${formatBs(effectiveDocumentPaidBs)}</strong></div>
-            <div class="rc-financial-item"><span>${customerCreditBs > 0.005 ? 'Excedente a favor del cliente' : 'A cobrar'}</span><strong>${formatBs(customerCreditBs > 0.005 ? customerCreditBs : printedPendingBs)}</strong></div>
-            <div class="rc-financial-item manual"><span>A cuenta</span><strong>&nbsp;</strong></div>
-            <div class="rc-financial-item manual"><span>Ajuste / nuevo monto</span><strong>&nbsp;</strong></div>
-            <div class="rc-financial-item total"><span>Total contrato</span><strong>${formatBs(printedManagedBs)}</strong></div>
-            <div class="rc-financial-item manual"><span>Reposicion</span><strong>&nbsp;</strong></div>
-            <div class="rc-financial-item manual"><span>Devolucion final</span><strong>&nbsp;</strong></div>
+            <div class="rc-financial-item total"><span>Total servicio</span><strong>${formatBs(printedTotalBs)}</strong></div>
+            <div class="rc-financial-item"><span>Pagado servicio</span><strong>${formatBs(servicePaidForDocumentBs)}</strong></div>
+            <div class="rc-financial-item ${currentCommercialPendingBs > 0.005 ? 'pending' : 'paid'}"><span>Saldo servicio</span><strong>${formatBs(currentCommercialPendingBs)}</strong></div>
+            <div class="rc-financial-item guarantee"><span>Garantía acordada</span><strong>${formatBs(guaranteeBs)}</strong></div>
+            <div class="rc-financial-item"><span>Garantía pagada</span><strong>${formatBs(guaranteePaidBs)}</strong></div>
+            <div class="rc-financial-item ${pendingGuaranteeBs > 0.005 ? 'pending' : 'paid'}"><span>Saldo garantía</span><strong>${formatBs(pendingGuaranteeBs)}</strong></div>
+            ${economicPendingDamageBs > 0.005 ? `<div class="rc-financial-item pending"><span>Daños / faltantes</span><strong>${formatBs(economicPendingDamageBs)}</strong></div>` : ''}
+            <div class="rc-financial-item managed"><span>${customerCreditBs > 0.005 ? 'Saldo a favor' : 'Total pendiente'}</span><strong>${formatBs(customerCreditBs > 0.005 ? customerCreditBs : totalPendingNowBs)}</strong></div>
           </div>`;
   const deliveryDate = formatDocumentScheduleDate(deliveryOut?.scheduledDate ?? contract?.deliveryDate ?? rental.rentalDate);
   const deliveryStart = deliveryOut?.windowStart ?? contract?.deliveryWindowStart ?? '-';

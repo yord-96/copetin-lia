@@ -51,9 +51,9 @@ test('1179: tres recibos suman 30000, garantía 3000 y abono comercial 27000 sin
   assert.equal(result.ledger.filter(row=>row.type==='deposit').length,3);
   assert.equal(contract.economicLedger[0].amountBs,20000);
   const html=buildContractDocumentHtml({contract,rental,cashMovements:cash,deliveries:[],settings:{},items:[]}).replace(/\s|&nbsp;/g,'');
-  assert.match(html,/<small>Pagadoacuentadelcontrato<\/small><strong>Bs27[.,]000[.,]00/);
-  assert.match(html,/<small>Faltapagardelcontrato<\/small><strong>Bs7[.,]253[.,]50/);
-  assert.match(html,/<span>Acobrar<\/span><strong>Bs7[.,]253[.,]50/);
+  assert.match(html,/<small>Pagadoalservicio<\/small><strong>Bs27[.,]000[.,]00/);
+  assert.match(html,/<small>Saldodelservicio<\/small><strong>Bs7[.,]253[.,]50/);
+  assert.match(html,/<span>Totalpendiente<\/span><strong>Bs7[.,]253[.,]50/);
   assert.ok(html.includes('RC-3'));
 });
 
@@ -66,7 +66,7 @@ test('un excedente guardado no oculta el pago: 38078.50 recibidos contra 34253.5
   const result=reconcileContractDocumentPayments(contract,{});
   assert.equal(result.receivedBs,38078.5); assert.equal(result.appliedBs,38078.5);
   const html=buildContractDocumentHtml({contract,rental:{},deliveries:[],settings:{},items:[]}).replace(/\s|&nbsp;/g,'');
-  assert.match(html,/<small>Saldoafavordelcliente<\/small><strong>Bs825[.,]00/);
-  assert.match(html,/<span>Excedenteafavordelcliente<\/span><strong>Bs825[.,]00/);
+  assert.match(html,/<b>SALDOAFAVORBs825[.,]00<\/b>/i);
+  assert.match(html,/<span>Saldoafavor<\/span><strong>Bs825[.,]00/);
   assert.doesNotMatch(html,/PENDIENTETOTAL/);
 });
