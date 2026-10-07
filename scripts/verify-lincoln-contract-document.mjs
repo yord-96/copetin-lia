@@ -12,14 +12,18 @@ try {
   await page.setContent(buildLincolnContractDocumentHtml({event:{contractDocumentSnapshot:snapshot}}));
   const measurements=await page.$$eval('.page',nodes=>nodes.map(node=>({height:node.offsetHeight,overflow:node.scrollHeight>node.clientHeight})));
   assert.ok(measurements.every(page=>!page.overflow),JSON.stringify(measurements));
-  assert.ok(measurements[0].height<=1056 && measurements[1].height<=1056,`Logical pages exceed Letter height: ${JSON.stringify(measurements)}`);
+  assert.equal(measurements.length,3,`Expected 3 logical pages: ${JSON.stringify(measurements)}`);
+  assert.ok(measurements.every(item=>item.height<=1056),`Logical pages exceed Letter height: ${JSON.stringify(measurements)}`);
   assert.ok(await page.$eval('.clauses',node=>parseFloat(getComputedStyle(node).fontSize)>=14));
   const text=await page.$eval('body',node=>node.innerText);
   const normalizedText=text.normalize('NFKC').replace(/\s+/gu,' ').trim();
   assert.ok(normalizedText.includes('ESTADO GARANTÍA DEBE'),normalizedText);
   assert.ok(normalizedText.includes('TOTAL PENDIENTE Bs 55.200,00'),normalizedText);
+  assert.ok(normalizedText.includes('FIRMAS Y CONFORMIDAD'),normalizedText);
+  assert.equal(await page.$$eval('.signature-area',nodes=>nodes.length),1);
+  assert.equal(await page.$$eval('.contract-page .signature-area,.is-annex .signature-area',nodes=>nodes.length),0);
   await page.screenshot({path:path.join(directory,'document.png'),fullPage:true});
   const pdf=await page.pdf({path:path.join(directory,'contract.pdf'),preferCSSPageSize:true,printBackground:true});
-  assert.equal((Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page\b/g)||[]).length,2);
-  console.log('Verified readable print, guarantee debt segmentation and two-page standard contract without clipping:',directory);
+  assert.equal((Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page\b/g)||[]).length,3);
+  console.log('Verified readable print, dedicated final signature page and three-page contract without clipping:',directory);
 } finally {await browser.close();}

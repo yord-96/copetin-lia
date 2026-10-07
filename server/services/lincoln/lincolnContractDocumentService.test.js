@@ -59,14 +59,16 @@ test('normalizes mixed pricing groups and keeps guarantee outside service balanc
   assert.equal(document.guaranteeBs, 700);
 });
 
-test('renders the legal contract and package matrix as two professional pages', () => {
+test('renders the legal contract, annex and a dedicated final signature page', () => {
   const html = buildLincolnContractDocumentHtml({ event });
   assert.match(html, /CONTRATO DE SERVICIOS/);
   assert.match(html, /HOJA DE COSTOS Y SERVICIOS/);
   assert.match(html, /JÓVENES/);
   assert.match(html, /ADULTOS/);
   assert.match(html, /BASILIA HERBAS SAHONERO/);
-  assert.equal((html.match(/<section class="page(?: |")/g) ?? []).length, 2);
+  assert.equal((html.match(/<section class="page(?: |")/g) ?? []).length, 3);
+  assert.equal((html.match(/class="signature-area"/g) ?? []).length, 1);
+  assert.match(html, /FIRMAS Y CONFORMIDAD/);
 });
 
 test('charges a per-person extra only to the selected group in a mixed package', () => {
