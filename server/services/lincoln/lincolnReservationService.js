@@ -1,3 +1,4 @@
+import { organizerEventDays } from '../../../shared/lincolnOrganizerContract.js';
 const text = (value) => String(value ?? '').trim();
 const normalized = (value) => text(value).toLowerCase();
 const money = (value) => {
@@ -38,9 +39,9 @@ export const getLincolnReservationAvailability = (state = {}, {
       startTime: row.startTime ?? '',
       blocksDate: reservationBlocksDate(row),
     }));
-  const events = (Array.isArray(state.events) ? state.events : [])
+  const events = (Array.isArray(state.events) ? state.events : []).flatMap(organizerEventDays)
     .filter((row) => text(row?.id) !== text(excludeEventId))
-    .filter((row) => text(row?.reservationId) !== text(excludeReservationId))
+    .filter((row) => !excludeReservationId || text(row?.reservationId) !== text(excludeReservationId))
     .filter((row) => dateKey(row?.eventDate) === requestedDate)
     .filter(eventBlocksDate)
     .map((row) => ({

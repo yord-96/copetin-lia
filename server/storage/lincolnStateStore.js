@@ -1,3 +1,4 @@
+import { normalizeOrganizerEvent } from '../services/lincoln/lincolnOrganizerService.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -558,6 +559,7 @@ export const createLincolnRecord = async (collection, payload, expectedRevision,
     let normalizedPayload = collection === 'reservations'
       ? normalizeLincolnReservation({ ...payload, reservationDate: payload?.reservationDate || createdAt.slice(0, 10) }, state)
       : (payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
+    if (collection === 'events') normalizedPayload = normalizeOrganizerEvent(normalizedPayload, state);
     if (collection === 'reservations') {
       const primaryClient = ensureReservationClient(state, { name: normalizedPayload.contractor1Name, ci: normalizedPayload.contractor1Ci, phone: normalizedPayload.contractor1Phone }, actor, String(payload?.code ?? '').trim() || 'RESERVA LINCOLN');
       const secondaryClient = ensureReservationClient(state, { name: normalizedPayload.contractor2Name, ci: normalizedPayload.contractor2Ci, phone: normalizedPayload.contractor2Phone }, actor, String(payload?.code ?? '').trim() || 'RESERVA LINCOLN');
@@ -599,6 +601,7 @@ export const updateLincolnRecord = async (collection, id, payload, expectedRevis
     let normalizedIncoming = collection === 'reservations'
       ? normalizeLincolnReservation(incoming, state, { existing: current })
       : incoming;
+    if (collection === 'events') normalizedIncoming = normalizeOrganizerEvent({ ...current, ...normalizedIncoming }, state, { excludeEventId: current.id, excludeReservationId: current.reservationId });
     if (collection === 'reservations') {
       const primaryClient = ensureReservationClient(state, { name: normalizedIncoming.contractor1Name, ci: normalizedIncoming.contractor1Ci, phone: normalizedIncoming.contractor1Phone }, actor, current.code);
       const secondaryClient = ensureReservationClient(state, { name: normalizedIncoming.contractor2Name, ci: normalizedIncoming.contractor2Ci, phone: normalizedIncoming.contractor2Phone }, actor, current.code);
@@ -707,6 +710,8 @@ export const convertLincolnReservationToEvent = async (reservationId, payload, e
       createdById: String(actor?.id ?? '').trim() || null,
       createdByName: String(actor?.name ?? '').trim() || null,
     };
+    const normalizedEvent = normalizeOrganizerEvent(event, state, { excludeReservationId: reservation.id });
+    Object.assign(event, normalizedEvent);
     state.events.unshift(event);
     state.reservations[reservationIndex] = { ...reservation, status: 'converted', eventId: event.id, updatedAt: createdAt };
     appendLincolnAudit(state, { action: 'reservations.convert_to_event', entityType: 'events', entityId: event.id, entityCode: event.code, actorId: String(actor?.id ?? '').trim() || null, actorName: String(actor?.name ?? '').trim() || null });

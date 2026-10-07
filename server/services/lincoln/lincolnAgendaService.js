@@ -1,3 +1,4 @@
+import { organizerEventDays } from '../../../shared/lincolnOrganizerContract.js';
 import { getLincolnStateSnapshot } from '../../storage/lincolnStateStore.js';
 
 const normalizeText = (value) => String(value ?? '').trim().toLowerCase();
@@ -80,12 +81,12 @@ export const buildLincolnAgendaItems = (state = {}) => {
   const linkedReservationIds = new Set(events.map((event) => String(event?.reservationId ?? '').trim()).filter(Boolean));
   const linkedEventIds = new Set(events.map((event) => String(event?.id ?? '').trim()).filter(Boolean));
 
-  const eventItems = events.map((row) => agendaItem({
+  const eventItems = events.flatMap(organizerEventDays).map((row) => agendaItem({
     row,
     kind: 'event',
     eventDate: dateKey(row.eventDate),
     status: row.status,
-    key: `event:${row.id}`,
+    key: `event:${row.id}${row.organizerDayId ? `:${row.organizerDayId}` : ''}`,
   }));
 
   const reservationItems = (Array.isArray(state.reservations) ? state.reservations : [])
