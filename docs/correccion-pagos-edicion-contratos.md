@@ -62,3 +62,12 @@ pm2 restart prestamos-app
 ```
 
 Si la reparación rechaza los datos, reiniciar igualmente el servicio y revisar la salida antes de cambiar nada más. El script carga `.env` y respeta `APP_STATE_FILE`. No importa el respaldo local sobre el VPS. Esta reparación afecta solo el contrato 1179; los otros contratos señalados requieren revisión individual.
+
+## Reporte diario 2808 y cobro de daños 2404
+
+- Una fecha de recibo editada explícitamente (`receiptEditedAt` o `editedAt`) tiene prioridad sobre una `cashEffectiveDate` histórica desactualizada al calcular el día comercial. La secuencia y hora de registro permanecen intactas. Así RC-1701 se incluye el 1 de octubre, aunque se registró el 8. El cambio se aplica al leer el reporte; no requiere crear otra devolución ni resetear el contrato.
+- El límite de cobro de daños excluye movimientos eliminados y anulados. El antiguo RC-422 eliminado ya no bloquea el cobro vigente de Bs 164 en el contrato 2404.
+- General envía el desglose de alquiler, transporte y daños. El servidor también reconoce el caso de clientes anteriores que envían General cuando solo quedan daños. Ese importe se registra como daños, no aumenta el pago del alquiler, y un segundo cobro queda rechazado.
+- Validación: prueba HTTP del reporte y cobro, prueba con el respaldo real en almacenamiento aislado, 13 pruebas relacionadas correctas, ESLint correcto y compilación de producción correcta. Suite general: 137/139 pasan; se mantienen los dos fallos de PDF anteriores documentados arriba.
+
+Actualizar frontend y backend con `git pull --ff-only origin main`, `npm run build` y `pm2 restart prestamos-app`. Recargar el navegador y generar nuevamente el reporte diario. No se registraron pagos reales durante estas comprobaciones.

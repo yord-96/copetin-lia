@@ -8,7 +8,12 @@ export const getCashBusinessDate = (timestamp = new Date()) => {
   if (Number.isNaN(date.getTime())) return '';
   return cashDayFormatter.format(date);
 };
-export const getCashEffectiveDate = (row) => row?.cashEffectiveDate || getCashBusinessDate(resolveCashMovementTimestamp(row));
+export const getCashEffectiveDate = (row) => {
+  // A deliberate receipt-date edit moves the business day, never its ledger order.
+  const editedDate = (row?.receiptEditedAt || row?.editedAt) && row?.receiptIssuedAt
+    ? getCashBusinessDate(row.receiptIssuedAt) : '';
+  return editedDate || row?.cashEffectiveDate || getCashBusinessDate(resolveCashMovementTimestamp(row));
+};
 
 const sequenceOf = (row) => Number.isSafeInteger(row?.cashLedgerSequence) && row.cashLedgerSequence > 0
   ? row.cashLedgerSequence : 0;

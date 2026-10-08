@@ -9380,9 +9380,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     event.preventDefault();
     if (!contractEconomicsData || isSavingContractEconomicsCollection) return;
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
-    const collectionTargets = selectedContractEconomicsCollectionTargets;
-    const collectionTarget = collectionTargets.length === 1 ? collectionTargets[0] : 'mixed';
     const targetPending = contractEconomicsData.collectionTargetPending ?? {};
+    const collectionTargets = selectedContractEconomicsCollectionTargets.includes('balance')
+      ? ['rental', 'transport', 'damage'].filter(target => toMoneyNumber(targetPending[`${target}Bs`]) > 0)
+      : selectedContractEconomicsCollectionTargets;
+    const collectionTarget = collectionTargets.length === 1 ? collectionTargets[0] : 'mixed';
     const suggestedByTarget = {
       rental: toMoneyNumber(targetPending.rentalBs),
       transport: toMoneyNumber(targetPending.transportBs),

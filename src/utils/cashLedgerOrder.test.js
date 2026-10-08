@@ -30,3 +30,18 @@ test('el servidor conserva la secuencia y hora guardadas y asigna el siguiente n
   const added = preserveCashLedgerOrder({ cashMovements: [{ id: 'c' }] }, preserveCashLedgerOrder(deleted));
   assert.equal(added.cashMovements[0].cashLedgerSequence, 3);
 });
+
+test('la fecha de un recibo editado cambia el dia del reporte sin cambiar su secuencia de registro', () => {
+  const previous = preserveCashLedgerOrder({ cashMovements: [
+    { id: 'fund', amountBs: 1000, cashBoxType: 'BIG_CASH', accountingTag: 'big_cash_fund_in', createdAt: '2026-10-01T12:00:00Z' },
+    { id: 'refund', amountBs: -200, cashBoxType: 'BIG_CASH', createdAt: '2026-10-08T04:01:58Z',
+      receiptIssuedAt: '2026-10-08T04:01:58Z' },
+  ] });
+  const changed = structuredClone(previous);
+  Object.assign(changed.cashMovements[1], { receiptIssuedAt: '2026-10-01T13:01:00Z', receiptEditedAt: '2026-10-08T04:02:29Z' });
+  const saved = preserveCashLedgerOrder(changed, previous);
+  const timeline = buildBigCashFundTimeline(saved.cashMovements, { asOfDate: '2026-10-01', reportDate: '2026-10-01' });
+  assert.equal(timeline.totalBs, 800);
+  assert.equal(saved.cashMovements[1].cashLedgerSequence, previous.cashMovements[1].cashLedgerSequence);
+  assert.equal(saved.cashMovements[1].cashRegisteredAt, previous.cashMovements[1].cashRegisteredAt ?? null);
+});

@@ -3592,6 +3592,17 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
       const breakdown = Array.isArray(payload.collectionBreakdown) && payload.collectionBreakdown.length
         ? payload.collectionBreakdown.map((entry) => ({ ...entry, amountBs: directMoney(entry?.amountBs) })).filter((entry) => entry.amountBs > 0)
         : [{ target: String(payload.collectionTarget ?? 'balance'), amountBs }];
+      // Older clients send "General" as balance even when only damages remain.
+      const generalPaysOnlyDamage = breakdown.every(entry => entry.target === 'balance')
+        && getCurrentCommercialOutstandingBs(linkedContract, rental) <= 0
+        && (Number(rental.penaltiesBs ?? settlement.penaltiesBs ?? 0) > 0
+          || (rental.returnReport ?? []).some(line => Number(line.penaltyBs ?? 0) > 0));
+      if (generalPaysOnlyDamage) breakdown.forEach(entry => {
+        entry.target = 'damage';
+        entry.label = 'Danos / faltantes';
+        entry.category = 'cobro_danos_faltantes';
+        entry.accountingTag = 'contract_damage_collection';
+      });
       const isDamageOnlyCollection = breakdown.length > 0
         && breakdown.every((entry) => String(entry?.target ?? '').trim() === 'damage');
       const requestedDamageBs = directMoney(
@@ -3666,7 +3677,8 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         }, 0));
 
         const collectedDamageBs = directMoney(state.cashMovements.reduce((sum, movement) => {
-          if (movement?.voidedAt || String(movement?.receiptStatus ?? '').trim().toLowerCase() === 'anulado') return sum;
+          if (movement?.deletedAt || movement?.voidedAt
+            || ['anulado', 'eliminado'].includes(String(movement?.receiptStatus ?? '').trim().toLowerCase())) return sum;
           const sameRental = String(movement?.linkedRentalId ?? movement?.sourceId ?? '') === String(rental.id);
           const sameContract = linkedContract && String(movement?.linkedContractId ?? '') === String(linkedContract.id);
           const sameOrder = String(movement?.linkedOrderCode ?? '') === String(rental?.orderCode ?? linkedContract?.orderCode ?? '');
@@ -3833,13 +3845,15 @@ router.post('/__copetin_db/cash/collect-receivable', async (req, res, next) => {
         || (contract?.orderCode && contract.orderCode === rental.orderCode)
         || (contract?.contractCode && contract.contractCode === rental.contractCode),
       ) ?? null;
-      const target = String(payload.collectionTarget ?? 'balance');
+      const target = generalPaysOnlyDamage ? 'damage' : String(payload.collectionTarget ?? 'balance');
       const mixed = breakdown.length > 1 || target === 'mixed';
       const type = mixed ? 'ingreso_cobro_mixto_contrato' : target === 'transport' ? 'ingreso_transporte_cliente' : target === 'damage' ? 'ingreso_danos_faltantes' : isReturned ? 'cobro_saldo_devolucion' : 'cobro_saldo_alquiler';
       const movement = buildDirectMovement(state, { ...payload, type, amountBs: receivedAmountBs,
+        collectionTarget: target, collectionTargets: breakdown.map(entry => entry.target), collectionBreakdown: breakdown,
+        ...(generalPaysOnlyDamage ? { accountingTag: 'contract_damage_collection' } : {}),
         description: String(payload.receiptDetail ?? '').trim().split('\n').filter(Boolean).slice(0,2).join(' | ') || String(payload.note ?? '').trim() || `Cobro contrato: ${rental.customerName ?? ''}`,
         sourceType: isReturned ? 'return' : 'rental', sourceId: rental.id, cashBoxType: 'BIG_CASH',
-        category: String(payload.category ?? '').trim() || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
+        category: (generalPaysOnlyDamage ? 'cobro_danos_faltantes' : String(payload.category ?? '').trim()) || (mixed ? 'cobro_mixto_contrato' : target === 'transport' ? 'transporte_cobrado' : target === 'damage' ? 'cobro_danos_faltantes' : isReturned ? 'cobro_liquidacion' : 'cobro_contrato'),
         linkedRentalId: rental.id, linkedContractId: String(payload.linkedContractId ?? matchedContract?.id ?? rental.contractId ?? '').trim(), linkedOrderCode: rental.orderCode,
         transportRevenueBs: transportNow, damageCollectedBs: explicitDamage, notes: payload.note,
         contractAllocationBs: commercialAppliedNow,
