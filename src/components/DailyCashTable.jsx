@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Filter, X } from 'lucide-react';
-import { DAILY_CASH_COLUMNS, dailyCashCellText, getDailyCashFilterOptions, getDailyCashClosingBalance, totalDailyCashRows } from '../utils/dailyCashReport';
+import { DAILY_CASH_TABLE_COLUMNS as TABLE_COLUMNS, DAILY_CASH_COLUMNS, dailyCashCellText, getDailyCashFilterOptions, getDailyCashClosingBalance, totalDailyCashRows } from '../utils/dailyCashReport';
 
-const TABLE_COLUMNS = DAILY_CASH_COLUMNS.filter(column => !['hour', 'reference'].includes(column.key));
 const FIRST_AMOUNT_COLUMN = TABLE_COLUMNS.findIndex(column => column.money);
 
 function FilterValues({ column, rows, selected, formatBs, onApply }) {

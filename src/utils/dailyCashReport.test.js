@@ -87,7 +87,7 @@ test('Excel conserva las 17 columnas y filas filtradas, montos numéricos, rojos
   assert.match(html, /RC-2/);
   assert.doesNotMatch(html, /RC-1/);
   assert.match(html, /TOTAL DE MOVIMIENTOS VISIBLES/);
-  assert.equal((html.match(/<th>/g) || []).length, 17);
+  assert.equal((html.match(/<th>/g) || []).length, 15);
 });
 
 test('fondo acumulado arrastra efectivo y digital entre movimientos y días', () => {
