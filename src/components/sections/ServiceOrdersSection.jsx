@@ -8219,6 +8219,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             quantity: Math.max(0, Number(line?.neededQty ?? line?.quantity ?? 0)),
           })),
         };
+        if (draft.recordId && draft.recordStatus === 'aprobado') {
+          // Hidden wizard fields must not overwrite economic records on an edit.
+          for (const key of ['paidAtApprovalBs', 'prepaidAppliedBs', 'initialPaymentMethod',
+            'initialPaymentAccount', 'confirmInitialPaymentReset', 'forceInitialPaymentBs']) {
+            delete contractPayload[key];
+          }
+        }
         let savedContract = null;
         if (approveNow && !draft.recordId && onCreateAndApproveContract) {
           setSubmitStatusMessage('Creando contrato, orden, inventario y registros vinculados...');
