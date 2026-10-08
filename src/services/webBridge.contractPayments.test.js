@@ -60,3 +60,37 @@ test('normalizing an approved contract does not reconstruct payments or rewrite 
   assert.equal(saved.contracts[0].economicLedger.find(row => row.id === 'first').amountBs, 5000);
   assert.equal(saved.contracts[0].payment.paidAtApprovalBs, 33078.5);
 });
+
+
+test('2863: editing approved items with an existing linked rental and QR deposit never creates another cash receipt', async () => {
+  const bridge = getWebBridge();
+  const state = fixture();
+  const contract = state.contracts[0];
+  state.deliveries = [];
+  state.clients = [];
+  contract.contractCode = '2863';
+  contract.rentalId = 'rental';
+  contract.orderCode = 'OS-01507';
+  contract.totals = { totalBs: 414, guaranteeBs: 0 };
+  contract.guarantee = { amountBs: 0, status: 'no_validado' };
+  contract.payment = { paidAtApprovalBs: 235, prepaidAppliedBs: 0 };
+  contract.economicLedger = [{ id: 'deposit', type: 'deposit', amountBs: 235, cashMovementId: 'qr', cashReceiptCode: 'RC-13498', isCashRegistered: true }];
+  state.cashMovements = [{ id: 'qr', linkedContractId: contract.id, linkedRentalId: 'rental', amountBs: 235,
+    receiptCode: 'RC-13498', type: 'cobro_saldo_alquiler', accountingTag: 'contract_deposit_receipt',
+    cashBoxType: 'BIG_CASH', paymentMethod: 'qr', paymentAccount: 'MERCANTIL', cashEffectiveDate: '2026-10-01', createdAt: '2026-10-01T04:27:40Z' }];
+  state.rentals = [{ id: 'rental', contractId: contract.id, contractCode: '2863', status: 'active',
+    items: structuredClone(contract.items), services: [], depositBs: 0,
+    payment: { paidAtRentalBs: 235, initialPaymentMethod: 'efectivo' }, totals: { totalBs: 414, paidAtRentalBs: 235 } }];
+  const cashBefore = structuredClone(state.cashMovements);
+  const ledgerBefore = structuredClone(contract.economicLedger);
+  await bridge.__storage.beginBatch(state);
+  try {
+    for (const quantity of [16, 15, 16]) {
+      await bridge.contracts.update({ id: contract.id, items: [{ itemId: 'item', quantity, unitPriceBs: 20, controlsStock: false }], paidAtApprovalBs: 235, initialPaymentMethod: 'efectivo' });
+      assert.deepEqual(state.cashMovements, cashBefore);
+      assert.deepEqual(state.contracts[0].economicLedger, ledgerBefore);
+      assert.equal(state.contracts[0].payment.paidAtApprovalBs, 235);
+      assert.equal(state.rentals[0].payment.paidAtRentalBs, 235);
+    }
+  } finally { await bridge.__storage.rollbackBatch(); }
+});
