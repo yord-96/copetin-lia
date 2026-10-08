@@ -115,3 +115,16 @@ test('uses live economic payments in the contract document and keeps running bal
   const movementTable=html.match(/<section class="movements">[\s\S]*?<\/section>/)?.[0];
   assert.equal((movementTable.match(/<th>/g) || []).length,3);
 });
+
+
+test('places payment history and complete totals with signatures, rather than overflowing the services annex', () => {
+  const html = buildLincolnContractDocumentHtml({ event: { ...event, documentPayments: [{ type: 'advance', date: '2026-08-27', amountBs: 5000, receiptCode: 'RCL-0001' }] } });
+  const annex = html.split('<section class="page is-annex">')[1].split('<section class="page signature-page">')[0];
+  const closing = html.split('<section class="page signature-page">')[1];
+  assert.doesNotMatch(annex, /class="totals"|class="movements"/);
+  assert.match(closing, /class="movements"/);
+  assert.match(closing, /class="totals"/);
+  assert.ok(closing.indexOf('class="totals"') < closing.indexOf('class="signature-area"'));
+  assert.match(closing, /RCL-0001/);
+  assert.match(html, /signature-page\{height:auto/);
+});
