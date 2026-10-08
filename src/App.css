@@ -75722,3 +75722,36 @@ body:has(.bigcash-report-backdrop) {
 .accounting-movement-form.is-expense .petty-expense-date { padding: 12px; background: #f4f7fc; border-radius: 12px; }
 .accounting-movement-form.is-expense .petty-category-create-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .accounting-movement-form.is-expense footer { padding-top: 16px; border-top: 1px solid #e7edf5; }
+
+/* Daily report: receipt/time and customer/contract share their columns. */
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table :is(tbody, tfoot) :is(td, th) {
+  font-size: 12px !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table thead th {
+  font-size: clamp(10px, .65vw, 11px) !important;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-receipt { width: 6% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-customer { width: 11% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-nature { width: 7% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-method { width: 7% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table :is(th.daily-col-contract, th.daily-col-extra, th.daily-col-transport, th.daily-col-guarantee, th.daily-col-refund, th.daily-col-damage) { width: 5% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-user { width: 9% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table :is(th.daily-col-income, th.daily-col-expense) { width: 6% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table :is(th.daily-col-fundCash, th.daily-col-fundDigital) { width: 9% !important; }
+.daily-customer-details { display: grid; justify-items: start; gap: 6px; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table .daily-customer-reference {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid #fdba74;
+  border-radius: 6px;
+  background: #fff0df;
+  color: #a63d00 !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1.2;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table .daily-receipt-order small {
+  font-size: 11px !important;
+  font-variant-numeric: tabular-nums;
+}
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-fund-cell strong { font-size: 12px !important; }
