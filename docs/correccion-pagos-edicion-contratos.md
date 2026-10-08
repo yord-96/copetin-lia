@@ -40,3 +40,25 @@ Después, ejecutar la auditoría sobre un respaldo recién exportado del VPS y r
 - Prueba del auditor: enlaces al mismo recibo, recibos distintos, importes inconsistentes, recibos eliminados y contratos ajenos.
 - Compilación de producción correcta.
 - Suite general: 135 de 137 pruebas pasan. Las dos pruebas de `webBridge.contract-day-totals.test.js` también fallan sobre la versión anterior de `main`; verifican textos/estructura del PDF que ya no coinciden. No se modificaron esas expectativas en esta corrección.
+
+## Reparación puntual del contrato 1179
+
+La comparación de los respaldos de las 13:35 y 13:53 UTC confirma que los registros del contrato 1179 no cambiaron: el cobro automático RC-13629 y el primer depósito alterado ya existían el 7 de octubre. La actualización del código no repara esos registros históricos.
+
+Se incorpora `scripts/repair-contract-1179.mjs`. Por defecto solo simula. Verifica contrato, importes, recibos y garantía contra el caso diagnosticado. Si detecta pagos nuevos o cambios inesperados, aborta antes de modificar datos. Con `--apply` crea una copia completa en `backups/`, usa la revisión vigente y la escritura atómica del almacenamiento del servidor. Anula RC-13629 conservando su registro y motivo; restaura RC-13559 a Bs 5.000,00 y actualiza los resúmenes del contrato y orden. Añade trazabilidad y una segunda ejecución no vuelve a aplicar cambios.
+
+Desde la carpeta del VPS, con el código actualizado, ejecutar primero:
+
+```bash
+node scripts/repair-contract-1179.mjs
+```
+
+El resultado esperado muestra `pendingBs: 3262.5`. Para aplicarlo, detener el servidor para que otra sesión no escriba durante la reparación y reiniciarlo después para descartar su caché:
+
+```bash
+pm2 stop prestamos-app
+node scripts/repair-contract-1179.mjs --apply
+pm2 restart prestamos-app
+```
+
+Si la reparación rechaza los datos, reiniciar igualmente el servicio y revisar la salida antes de cambiar nada más. El script carga `.env` y respeta `APP_STATE_FILE`. No importa el respaldo local sobre el VPS. Esta reparación afecta solo el contrato 1179; los otros contratos señalados requieren revisión individual.
