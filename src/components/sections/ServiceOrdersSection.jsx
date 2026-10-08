@@ -2536,6 +2536,11 @@ function ServiceOrdersSection({
         responsibleRole: getResponsibleDisplayRole(quote),
         totalBs: Number(quote?.totals?.totalBs ?? 0),
       };
+    }).sort((left, right) => {
+      const leftCreatedAt = Date.parse(left.createdAt) || 0;
+      const rightCreatedAt = Date.parse(right.createdAt) || 0;
+      return rightCreatedAt - leftCreatedAt
+        || String(right.quoteCode ?? '').localeCompare(String(left.quoteCode ?? ''), 'es', { numeric: true });
     });
   }, [quotes]);
 
