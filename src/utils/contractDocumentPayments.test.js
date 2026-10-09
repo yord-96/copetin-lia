@@ -70,3 +70,16 @@ test('un excedente guardado no oculta el pago: 38078.50 recibidos contra 34253.5
   assert.match(html,/<span>Saldoafavor<\/span><strong>Bs825[.,]00/);
   assert.doesNotMatch(html,/PENDIENTETOTAL/);
 });
+
+
+test('split replacement receipts do not count the original deposit twice', () => {
+ const c={id:'c',economicLedger:[{id:'d',type:'deposit',amountBs:100,cashMovementId:'old',isCashRegistered:true,guaranteeAllocationBs:50},
+  {id:'g',type:'guarantee',amountBs:50,sourceDepositId:'d',reclassifiedFromPayment:true}]};
+ const cash=[{id:'old',linkedContractId:'c',cashBoxType:'BIG_CASH',amountBs:100,receiptStatus:'anulado'},
+  {id:'rent',linkedContractId:'c',cashBoxType:'BIG_CASH',amountBs:50,type:'ingreso_alquiler',replacementOfMovementId:'old'},
+  {id:'guarantee',linkedContractId:'c',cashBoxType:'BIG_CASH',amountBs:50,type:'ingreso_garantia',replacementOfMovementId:'old'}];
+ const before=structuredClone([c,cash]);const result=reconcileContractDocumentPayments(c,{},cash);
+ assert.equal(result.appliedBs,50);assert.equal(result.receivedBs,100);assert.equal(result.reservedBs,50);
+ assert.deepEqual([c,cash],before);
+ assert.equal(reconcileContractDocumentPayments(c,{},cash.slice(1)).appliedBs,50);
+});

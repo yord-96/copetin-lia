@@ -16,6 +16,22 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
       used.add(receipt.id);
     }
   }
+  // A voided original deposit may be backed by explicit split replacements.
+  // Consume all those receipts once, preserving the original deposit allocation.
+  for (const entry of ledger.filter(row => row.type === 'deposit')) {
+    if (used.has(entry.cashMovementId)) continue;
+    const original = movements.find(row => row.id === entry.cashMovementId
+      || (entry.cashReceiptCode && row.receiptCode === entry.cashReceiptCode));
+    const originalId = original?.id || entry.cashMovementId;
+    if (!originalId || (original && !original.voidedAt && original.receiptStatus !== 'anulado')) continue;
+    const replacements = cash.filter(row => !used.has(row.id)
+      && (row.replacementOfMovementId === originalId || original?.replacedByMovementId === row.id));
+    if (!replacements.length) continue;
+    const received = replacements.reduce((sum, row) => sum + Number(row.amountBs), 0);
+    // Partial replacements do not prove the original full deposit remains valid.
+    if (Math.abs(received - Number(entry.amountBs)) > .01) continue;
+    for (const row of replacements) used.add(row.id);
+  }
   // Historical initial payments may have no cash ID. Link their receipt before
   // adding cash-only deposits, reserving explicit links above first.
   const normalize = value => String(value ?? '').trim().toLowerCase();

@@ -2909,7 +2909,7 @@ function ServiceOrdersSection({
       );
       const canonicalLedgerPaidBs = getConfirmedContractLedgerPaidBs(contract, rowChargeTargetBs);
       const reconciledPayments = reconcileContractDocumentPayments(contract, linkedRental,
-        Array.from(linkedCollectionMovements.values()).map(row => row.rawMovement ?? row));
+        effectiveCashMovements);
       const cashPaidOnAccountBs = Math.max(
         0,
         Number(collectionRegisteredBs.toFixed(2)),
@@ -3082,7 +3082,7 @@ function ServiceOrdersSection({
           : '',
       };
     });
-  }, [activeRentalByReference, collectionMovementIndex, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeAmountsByReference]);
+  }, [activeRentalByReference, collectionMovementIndex, effectiveCashMovements, economicResetPendingByContract, formatBs, orderByContractId, returnedGuaranteeAmountsByReference]);
 
   const contractRows = useMemo(() => buildContractRows(contracts), [buildContractRows, contracts]);
   const hiddenContractRows = useMemo(
