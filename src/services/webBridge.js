@@ -5301,7 +5301,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     : contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
   const storedReceiptDetail = String(movement?.receiptDetail ?? '').trim();
   const rawDetailLines = storedReceiptDetail
-    .split('\n')
+    .split(/\n|\s*\|\s*/)
     .map((line) => line.trim())
     .filter(Boolean);
   const meaningfulStoredDetailLines = rawDetailLines.filter((line) => (
@@ -5544,8 +5544,9 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
           border-radius: 0;
           background: transparent;
           margin-top: 1.7mm;
-          height: 29.5mm;
-          overflow: hidden;
+          min-height: 29.5mm;
+          flex-shrink: 0;
+          overflow: visible;
         }
         .info-col {
           border: 1.2px solid #0b2c67;
@@ -5573,10 +5574,10 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
         th { background: #0f2a5f; color: #fff; padding-top: 1.45mm; padding-bottom: 1.45mm; font-size: 10.2px; letter-spacing: 0.02em; line-height: 1; text-transform: uppercase; font-weight: 900; white-space: nowrap; }
         tbody td { height: 18mm; }
         td.detail { text-align: left; max-height: 18mm; overflow: hidden; padding-left: 3mm; padding-right: 3mm; }
-        .receipt-detail-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4mm; margin-bottom: 0.75mm; padding-bottom: 0.55mm; border-bottom: 1px dotted #cbd5e1; }
+        .receipt-detail-line { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2mm; margin-bottom: 0.75mm; padding-bottom: 0.55mm; border-bottom: 1px dotted #cbd5e1; }
         .receipt-detail-line:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
         .receipt-detail-line > span { color: #334155; }
-        .receipt-detail-line strong { color: #0f2a5f; white-space: nowrap; font-weight: 900; }
+        .receipt-detail-line strong { color: #0f2a5f; white-space: normal; overflow-wrap: anywhere; text-align: right; font-weight: 900; }
         .receipt-detail-line.is-note { display: block; color: #334155; border-bottom: 0; }
         td.receipt-money {
           padding-left: 1.2mm;
