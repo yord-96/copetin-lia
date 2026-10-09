@@ -75755,3 +75755,7 @@ body:has(.bigcash-report-backdrop) {
   font-variant-numeric: tabular-nums;
 }
 .accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-fund-cell strong { font-size: 12px !important; }
+
+/* Guarantee receipts share the displayed Contract amount. */
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-customer { width: 14% !important; }
+.accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-contract { width: 7% !important; }

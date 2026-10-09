@@ -87,7 +87,7 @@ test('Excel conserva las 17 columnas y filas filtradas, montos numéricos, rojos
   assert.match(html, /RC-2/);
   assert.doesNotMatch(html, /RC-1/);
   assert.match(html, /TOTAL DE MOVIMIENTOS VISIBLES/);
-  assert.equal((html.match(/<th>/g) || []).length, 15);
+  assert.equal((html.match(/<th>/g) || []).length, 14);
 });
 
 test('fondo acumulado arrastra efectivo y digital entre movimientos y días', () => {
@@ -186,4 +186,21 @@ test('regresión 2752: solo pagos vigentes afectan su canal; excluye historia y 
   const html = buildDailyCashReportHtml({ rows: [row], date: '2026-10-01' });
   assert.match(html, /Fondo efectivo/);
   assert.match(html, /Fondo digital/);
+});
+
+
+test('combined Contract display leaves separate guarantee, income and source rows unchanged', async () => {
+  const { dailyCashDisplayValue, DAILY_CASH_TABLE_COLUMNS } = await import('./dailyCashReport.js');
+  const column = {key:'contract'};
+  const rows = [{contract:50,guarantee:50,income:100}, {contract:null,guarantee:50,income:50}, {contract:100,guarantee:null,income:100}];
+  const before=structuredClone(rows);
+  assert.deepEqual(rows.map(row=>dailyCashDisplayValue(column,row)),[100,50,100]);
+  assert.equal(dailyCashDisplayValue(column,{contract:null,guarantee:null}),null);
+  const totals=totalDailyCashRows(rows);
+  assert.equal(dailyCashDisplayValue(column,totals),250);
+  assert.equal(totals.income,250);
+  assert.equal(totals.guarantee,100);
+  assert.deepEqual(rows,before);
+  assert.equal(DAILY_CASH_TABLE_COLUMNS.length,14);
+  assert.ok(!DAILY_CASH_TABLE_COLUMNS.some(column=>column.key==='guarantee'));
 });
