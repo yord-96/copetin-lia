@@ -1,3 +1,4 @@
+import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
 import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
@@ -15935,6 +15936,18 @@ const createWebBridge = () => ({
           contract.economicLedger = [...rowsById.values()];
         } else if (payload.economicLedger !== undefined) {
           contract.economicLedger = (Array.isArray(payload.economicLedger) ? payload.economicLedger : []).map(normalizeEntry);
+        }
+        for (const entry of contract.economicLedger ?? []) {
+          const previous = beforeContract.economicLedger?.find(row => row.id === entry.id);
+          const submitted = mutations.length
+            ? mutations.find(mutation => mutation.type === 'upsert' && mutation.entry?.id === entry.id)?.entry
+            : payload.economicLedger?.find(row => row.id === entry.id);
+          if (submitted?.createdAt && (!previous || previous.createdAt !== entry.createdAt)) {
+            syncEconomicLedgerCashDate(state, contract, entry, {
+              now, userId: payload?.updatedById ?? payload?.userId ?? null,
+              userName: String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema',
+            });
+          }
         }
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;

@@ -92,3 +92,19 @@ Resultado esperado: preservedReceipt RC-13498, voidedReceipt RC-13519, removedDu
     pm2 restart prestamos-app
 
 El ingreso del 2 de octubre baja Bs 235 y los fondos efectivos posteriores se recalculan con el recibo anulado. El reporte del 1 de octubre se conserva. Recargar el navegador y generar nuevamente los reportes. El script de reparaci?n no requiere recompilar frontend.
+
+
+## Sincronizacion de fechas del cuaderno y Caja Grande (2430)
+
+El deposito RC-12637 de Bs 100 del contrato 2430 esta fechado el 5 de septiembre. La logica antigua lo anulo y genero RC-12787 (servicio Bs 50) y RC-12788 (garantia Bs 50) con fecha del 7. Editar la linea economica solo encontraba el recibo anulado.
+
+La sincronizacion compartida sigue enlaces explicitos de recibos (id/codigo y replacementOfMovementId/replacedByMovementId), dentro del contrato. Actualiza fecha de recibo, fecha efectiva de caja y comprobantes generados de los movimientos vigentes. Conserva importes y secuencia. Se ejecuta al enviar una fecha nueva o distinta, tanto en mutaciones como en guardado completo del historial, sin cambiar fechas por normalizacion de filas incompletas. No enlaza recibos por semejanza de importes.
+
+scripts/repair-contract-2430.mjs verifica el caso historico, agrega los enlaces de sustitucion y cambia ambos ingresos al 5 de septiembre. No reactiva el recibo original ni altera pagos, garantia o devoluciones. Simula por defecto; --apply crea respaldo y guarda con control de revision. Aborta si cambiaron los datos verificados. Es idempotente.
+
+Actualizar codigo, compilar y reiniciar. Luego simular con node scripts/repair-contract-2430.mjs. Para aplicar:
+
+    pm2 stop prestamos-app && node scripts/repair-contract-2430.mjs --apply
+    pm2 restart prestamos-app
+
+Recargar sesiones y generar nuevamente los reportes del 5 y 7 de septiembre. Las pruebas cubren recibos sustitutos, comprobantes, codigo de recibo, operaciones locales, ausencia de cambios en importes/devoluciones, bloqueo ante evidencia distinta e idempotencia. Compilacion y ESLint correctos.

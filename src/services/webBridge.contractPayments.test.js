@@ -94,3 +94,17 @@ test('2863: editing approved items with an existing linked rental and QR deposit
     }
   } finally { await bridge.__storage.rollbackBatch(); }
 });
+
+
+test('economic date edits sync cash receipts in the local bridge', async () => {
+  const bridge=getWebBridge();const state=fixture();
+  const ledger=state.contracts[0].economicLedger[0];ledger.createdAt='2026-09-07T12:00:00Z';
+  await bridge.__storage.beginBatch(state);
+  try {
+    await bridge.contracts.updateEconomicLedger({id:'contract',mutations:[{type:'upsert',entry:{...ledger,createdAt:'2026-09-05T12:00:00Z'}}]});
+    assert.equal(state.cashMovements[0].receiptIssuedAt,'2026-09-05T12:00:00.000Z');
+    assert.equal(state.cashMovements[0].cashEffectiveDate,'2026-09-05');
+    assert.equal(state.cashMovements[0].amountBs,5000);
+    assert.equal(state.cashMovements[1].receiptIssuedAt,undefined);
+  } finally {await bridge.__storage.rollbackBatch();}
+});

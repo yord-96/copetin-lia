@@ -1,3 +1,4 @@
+import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
 import { createOrdersCashIndex } from '../services/ordersCashIndex.js';
 import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary } from '../services/ordersEconomicSummary.js';
 import { setImmediate as yieldToRequests } from 'node:timers/promises';
@@ -6205,45 +6206,11 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
             };
             ledgerById.set(String(normalizedEntry.id), mergedEntry);
 
-            // Una linea del cuaderno con recibo representa el mismo movimiento
-            // de Caja Grande. Al editar su fecha, ambas vistas y el PDF del
-            // recibo deben leer exactamente la misma marca de tiempo.
-            const linkedCashMovementId = String(
-              mergedEntry.cashMovementId
-              ?? previous?.cashMovementId
-              ?? '',
-            ).trim();
-            if (linkedCashMovementId && mergedEntry.createdAt) {
-              state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
-              const linkedMovement = state.cashMovements.find((movement) =>
-                String(movement?.id ?? '') === linkedCashMovementId
-              );
-              if (linkedMovement) {
-                linkedMovement.createdAt = mergedEntry.createdAt;
-                linkedMovement.receiptIssuedAt = mergedEntry.createdAt;
-                linkedMovement.updatedAt = now;
-                linkedMovement.editedAt = now;
-                linkedMovement.editedById = req.body.updatedById ?? req.body.userId ?? null;
-                linkedMovement.editedByName = String(
-                  req.body.updatedByName
-                  ?? req.body.userName
-                  ?? 'Sistema',
-                ).trim() || 'Sistema';
-
-                state.generatedReports = Array.isArray(state.generatedReports) ? state.generatedReports : [];
-                state.generatedReports.forEach((report) => {
-                  const reportMovementId = String(
-                    report?.cashMovementId
-                    ?? (report?.sourceType === 'cashMovement' ? report?.sourceId : '')
-                    ?? '',
-                  ).trim();
-                  if (reportMovementId !== linkedCashMovementId) return;
-                  report.generatedAt = mergedEntry.createdAt;
-                  report.createdAt = mergedEntry.createdAt;
-                  report.receiptIssuedAt = mergedEntry.createdAt;
-                  report.updatedAt = now;
-                });
-              }
+            if (mutation?.entry?.createdAt && (!previous || previous.createdAt !== mergedEntry.createdAt)) {
+              syncEconomicLedgerCashDate(state, existingContract, mergedEntry, {
+                now, userId: req.body.updatedById ?? req.body.userId ?? null,
+                userName: String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema',
+              });
             }
             return;
           }
@@ -6380,6 +6347,13 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
       } else if (Object.prototype.hasOwnProperty.call(req.body, 'economicLedger')) {
         // Compatibilidad con clientes anteriores. Nunca se usa para el flujo nuevo.
         savedLedger = normalizeEconomicLedgerRows(req.body.economicLedger);
+        for (const entry of savedLedger) {
+          const previous = existingLedger.find(row => row.id === entry.id);
+          if (req.body.economicLedger?.find(row => row.id === entry.id)?.createdAt && (!previous || previous.createdAt !== entry.createdAt)) syncEconomicLedgerCashDate(state, existingContract, entry, {
+            now, userId: req.body.updatedById ?? req.body.userId ?? null,
+            userName: String(req.body.updatedByName ?? req.body.userName ?? 'Sistema').trim() || 'Sistema',
+          });
+        }
       } else {
         savedLedger = existingLedger;
       }
