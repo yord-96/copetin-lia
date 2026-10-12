@@ -5434,7 +5434,7 @@ function AccountingSection({
         </div>
       ) : null}
       {cashModal ? (
-        <div className="accounting-modal-backdrop" onClick={closeCashAction}>
+        <div className="accounting-modal-backdrop" onClick={cashModal === 'expense' ? undefined : closeCashAction}>
           <form className={`accounting-modal accounting-movement-form ${cashModal === 'advance' ? 'is-advance' : ''} ${cashModal === 'expense' ? 'is-expense' : ''}`} onSubmit={handleSubmitCashAction} onClick={(event) => event.stopPropagation()}>
             <header>
               <div>
