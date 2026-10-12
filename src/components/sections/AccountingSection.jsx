@@ -5773,24 +5773,6 @@ function AccountingSection({
                     </label>
                   </div>
                 ) : null}
-                {cashModal === 'expense' ? (
-                  <label>
-                    Enlazar gasto de transporte
-                    <select
-                      value={cashForm.linkedRentalId}
-                      onChange={(event) => setCashForm((current) => ({ ...current, linkedRentalId: event.target.value }))}
-                    >
-                      <option value="">Sin enlace a contrato</option>
-                      {transportContractOptions.map((option) => (
-                        <option key={option.rentalId} value={option.rentalId}>
-                          {option.orderCode}{option.contractCode ? ` | ${option.contractCode}` : ''} - {option.customerName}
-                          {option.deliveryFeeBs > 0 ? ` - envio ${formatBs(option.deliveryFeeBs)}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <small>Usalo para taxis, fletes o envios externos asociados a un contrato.</small>
-                  </label>
-                ) : null}
                 <label>
                   Comprobante / referencia
                   <input
