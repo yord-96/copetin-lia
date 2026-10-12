@@ -66934,6 +66934,27 @@ body:has(.accounting-bigcash-view) .workspace {
 }
 .petty-category-create { display: grid; gap: 0.6rem; margin-top: 0.6rem; }
 .petty-category-create-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.accounting-movement-form.is-expense .petty-category-inline-actions {
+  display: flex;
+  gap: 8px;
+}
+.accounting-movement-form.is-expense .petty-category-inline-actions > button {
+  flex: 1;
+  min-width: 0;
+  padding-inline: 8px;
+}
+.accounting-pettycash-view .petty-primary-button.petty-floating-expense {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  padding: 14px 20px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(17, 45, 82, 0.28);
+}
+@media print {
+  .petty-floating-expense { display: none !important; }
+}
 .daily-report-table .daily-opening-balance th,
 .daily-report-table .daily-opening-balance td {
   background: #eaf1f8;

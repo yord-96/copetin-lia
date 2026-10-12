@@ -5729,7 +5729,7 @@ function AccountingSection({
                       )}
                     </select>
                     {cashModal === 'expense' ? <div className="petty-category-create">
-                      {!newPettyCategoryOpen ? <><button type="button" className="ghost-button" onClick={() => { setEditingPettyCategoryId(null); setNewPettyCategoryName(''); setNewPettyCategoryOpen(true); setPettyCategoryError(''); }}>+ Crear categoría</button><button type="button" className="ghost-button" onClick={editPettyCategory}>Editar categoría seleccionada</button><small>Selecciona la categoría y haz clic derecho para editarla. El nombre se actualizará en todos sus movimientos.</small></> : <>
+                      {!newPettyCategoryOpen ? <div className="petty-category-inline-actions"><button type="button" className="ghost-button" onClick={() => { setEditingPettyCategoryId(null); setNewPettyCategoryName(''); setNewPettyCategoryOpen(true); setPettyCategoryError(''); }}>+ Crear categoría</button><button type="button" className="ghost-button" onClick={editPettyCategory}>Editar categoría</button></div> : <>
                         <input aria-label="Nombre de la nueva categoría" maxLength={80} value={newPettyCategoryName} onChange={event => setNewPettyCategoryName(event.target.value)} placeholder="Nombre de la categoría" disabled={pettyCategoryBusy} />
                         <div className="petty-category-create-actions">
                           <button type="button" className="primary-button" disabled={pettyCategoryBusy || !newPettyCategoryName.trim()} onClick={() => void savePettyCategory()}>{pettyCategoryBusy ? 'Guardando...' : 'Guardar categoría'}</button>
@@ -8584,7 +8584,7 @@ function AccountingSection({
                 </button>
                 <button
                   type="button"
-                  className="petty-primary-button small"
+                  className="petty-primary-button small petty-floating-expense"
                   onClick={() => openCashAction('expense', { category: 'compras' })}
                   disabled={pettyCashBalanceBs <= 0}
                 >
