@@ -108,3 +108,11 @@ Actualizar codigo, compilar y reiniciar. Luego simular con node scripts/repair-c
     pm2 restart prestamos-app
 
 Recargar sesiones y generar nuevamente los reportes del 5 y 7 de septiembre. Las pruebas cubren recibos sustitutos, comprobantes, codigo de recibo, operaciones locales, ausencia de cambios en importes/devoluciones, bloqueo ante evidencia distinta e idempotencia. Compilacion y ESLint correctos.
+
+## Edicion conjunta del deposito y su garantia
+
+La Hoja Flexible permite editar el dinero recibido y su reparto entre contrato y garantia desde cualquiera de las dos lineas. Ambas acciones apuntan al deposito original. Ejemplo: Bs 1.000 recibidos pueden repartirse en Bs 950 a cuenta y Bs 50 de garantia. La devolucion de esos Bs 50 sigue siendo un egreso separado, registrado desde Devolver dinero.
+
+Guardar actualiza el deposito, la reserva y el recibo existente en una sola transaccion; conserva el codigo y el orden de caja y no crea ingresos adicionales. Eliminar pago anula el deposito, la garantia vinculada y su movimiento de caja. Se rechaza reducir la reserva por debajo de lo ya devuelto o aplicado. Los recibos antiguos reemplazados requieren consolidacion antes de editar sus montos.
+
+No requiere migracion ni modifica automaticamente contratos existentes.

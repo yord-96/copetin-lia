@@ -1,3 +1,4 @@
+import { economicDepositGroup, reviseEconomicDeposit } from '../../utils/economicDepositOperations';
 import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -2004,6 +2005,7 @@ function ServiceOrdersSection({
   const [economicReceiptImageBusyId, setEconomicReceiptImageBusyId] = useState(null);
   const [generatingDepositReceiptId, setGeneratingDepositReceiptId] = useState(null);
   const [ledgerDateEditEntry, setLedgerDateEditEntry] = useState(null);
+  const [depositEditAmounts, setDepositEditAmounts] = useState(null);
   const [ledgerDateEditValue, setLedgerDateEditValue] = useState('');
   const [ledgerDateEditError, setLedgerDateEditError] = useState('');
   const [receiptEditMovement, setReceiptEditMovement] = useState(null);
@@ -9764,6 +9766,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         }));
       }
       setContractEconomicsTarget(updated);
+      try {
+        const context = await api.contracts.getEconomicContext(updated.id);
+        setContractEconomicsFullRental(context?.rental ?? null);
+        setContractEconomicsContextMovements(context?.cashMovements ?? []);
+        setRecentEconomicCashMovements(context?.cashMovements ?? []);
+      } catch (error) { console.warn('El pago se guardo; no se pudo refrescar Caja Grande.', error); }
       setActionFeedback(
         successMessage
         || `Seguimiento economico actualizado para contrato ${
@@ -10286,6 +10294,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const handleEditContractEconomicLedgerEntry = (entry) => {
     if (!canManageContractEconomicLedger) return;
+    entry = economicDepositGroup(contractEconomicsData.economicLedger, entry)[0];
+    const allocation = getEconomicDepositAllocations(contractEconomicsData.economicLedger, contractEconomicsData.ledgerChargeTargetBs).get(entry.id);
+    setDepositEditAmounts(entry.type === 'deposit' && !isGeneratedEconomicCollectionEntry(entry) ? { receivedBs: String(entry.amountBs), guaranteeBs: String(allocation?.guaranteeBs ?? 0) } : null);
     setLedgerDateEditEntry(entry);
     setLedgerDateEditValue(getInputDateTime(entry.createdAt));
     setLedgerDateEditError('');
@@ -10308,14 +10319,19 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
 
     const nextCreatedAt = parsedDate.toISOString();
-    const nextLedger = (contractEconomicsData?.economicLedger ?? []).map((entry) => (
+    let nextLedger = (contractEconomicsData?.economicLedger ?? []).map((entry) => (
       String(entry?.id ?? '') === String(ledgerDateEditEntry.id)
         ? { ...entry, createdAt: nextCreatedAt }
         : entry
     ));
+    if (depositEditAmounts) {
+      try {
+        nextLedger = reviseEconomicDeposit(contractEconomicsData.economicLedger, ledgerDateEditEntry, { ...depositEditAmounts, createdAt: nextCreatedAt, userName: currentUser?.fullName || currentUser?.name || 'Sistema' });
+      } catch (error) { setLedgerDateEditError(error.message); return; }
+    }
     const updated = await saveContractEconomicLedgerRows(
       nextLedger,
-      'Fecha del movimiento actualizada sin modificar sus demas datos.',
+      depositEditAmounts ? 'Pago y reparto actualizados con su recibo.' : 'Fecha actualizada.',
     );
     if (!updated) {
       setLedgerDateEditError('No se pudo actualizar la fecha. Intenta nuevamente.');
@@ -10343,17 +10359,20 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       window.alert('Esta aplicación forma parte de una liquidación de garantía. Para revertirla sin dejar el recibo descuadrado, usa Reset económico y vuelve a registrar los movimientos correctos.');
       return;
     }
+    const group = economicDepositGroup(contractEconomicsData.economicLedger, entry);
+    entry = group[0];
+    const groupIds = new Set(group.map(row => row.id));
     const linkedReceiptCode = String(entry?.cashReceiptCode ?? '').trim();
     const linkedMovementId = String(entry?.cashMovementId ?? '').trim();
     const confirmed = window.confirm(
       linkedMovementId
-        ? `Eliminar este pago del cuaderno economico?${linkedReceiptCode ? `\n\nTambien se eliminara el recibo ${linkedReceiptCode} y su movimiento de Caja Grande.` : '\n\nTambien se eliminara su movimiento y recibo de Caja Grande.'}`
+        ? `Eliminar este pago y toda su garantia apartada?${linkedReceiptCode ? `\n\nTambien se eliminara el recibo ${linkedReceiptCode} y su movimiento de Caja Grande.` : '\n\nTambien se eliminara su movimiento y recibo de Caja Grande.'}`
         : 'Eliminar esta linea del cuaderno economico?',
     );
     if (!confirmed) return;
 
     const nextLedger = (contractEconomicsData.economicLedger ?? [])
-      .filter((row) => row.id !== entry.id);
+      .filter((row) => !groupIds.has(row.id));
     const updated = await saveContractEconomicLedgerRows(
       nextLedger,
       'Linea anulada del cuaderno economico.',
@@ -13875,11 +13894,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               className="contract-economics-row-action"
                               onClick={() => handleEditContractEconomicLedgerEntry(entry)}
                               disabled={readOnly || isSavingContractEconomicsLedger}
-                              title="Cambia solamente la fecha y hora de esta linea y de su recibo vinculado."
+                              title="Edita el pago con su garantia apartada y el recibo vinculado."
                               aria-label={`Editar fecha de ${meta.label}`}
                             >
                               <Pencil aria-hidden="true" />
-                              Editar fecha
+                              {economicDepositGroup(contractEconomicsData.economicLedger, entry)[0]?.type === 'deposit' ? 'Editar pago' : 'Editar fecha'}
                             </button>
                             <button
                               type="button"
@@ -13894,7 +13913,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               aria-label={`Eliminar linea ${meta.label}`}
                             >
                               <Trash2 aria-hidden="true" />
-                              Eliminar
+                              {economicDepositGroup(contractEconomicsData.economicLedger, entry)[0]?.type === 'deposit' ? 'Eliminar pago' : 'Eliminar'}
                             </button>
                           </div>
                         </article>
@@ -14223,8 +14242,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           >
             <header className="orders-modal-head">
               <div>
-                <h3>Editar fecha del movimiento</h3>
-                <p>Solo cambiaran la fecha y la hora. El monto, metodo, detalle y saldos permaneceran iguales.</p>
+                <h3>{depositEditAmounts ? 'Editar pago y garantia' : 'Editar fecha del movimiento'}</h3>
+                <p>{depositEditAmounts ? 'Un solo dinero recibido y un solo recibo. El resto del deposito se aplica al contrato.' : 'Solo cambiaran la fecha y la hora.'}</p>
               </div>
               <button type="button" className="orders-modal-close" onClick={closeLedgerDateEditor} disabled={isSavingContractEconomicsLedger}>
                 x
@@ -14246,8 +14265,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   autoFocus
                   required
                 />
-                <small>{ledgerDateEditEntry.cashMovementId ? 'El recibo vinculado mostrara esta misma fecha.' : 'Los demas datos de la linea no se modificaran.'}</small>
+                <small>{depositEditAmounts ? 'El recibo vinculado reflejara el total y su reparto.' : 'El recibo vinculado mostrara esta misma fecha.'}</small>
               </label>
+              {depositEditAmounts ? <>
+                <label><span>Total recibido (Bs)</span><input type="number" min="0.01" step="0.01" required value={depositEditAmounts.receivedBs} onChange={event => setDepositEditAmounts(current => ({ ...current, receivedBs: event.target.value }))} /></label>
+                <label><span>Apartar como garantia (Bs)</span><input type="number" min="0" step="0.01" required value={depositEditAmounts.guaranteeBs} onChange={event => setDepositEditAmounts(current => ({ ...current, guaranteeBs: event.target.value }))} /></label>
+                <div className="ledger-date-editor-summary"><span>A cuenta del contrato</span><strong>{formatBs(Number(depositEditAmounts.receivedBs) - Number(depositEditAmounts.guaranteeBs))}</strong><small>La devolucion se registra despues desde Devolver dinero.</small></div>
+              </> : null}
               {ledgerDateEditError ? <p className="receipt-editor-error receipt-editor-field-wide">{ledgerDateEditError}</p> : null}
             </div>
 
@@ -14256,7 +14280,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 Cancelar
               </button>
               <button type="submit" className="primary-button" disabled={isSavingContractEconomicsLedger}>
-                {isSavingContractEconomicsLedger ? 'Guardando...' : 'Guardar fecha'}
+                {isSavingContractEconomicsLedger ? 'Guardando...' : depositEditAmounts ? 'Guardar pago' : 'Guardar fecha'}
               </button>
             </footer>
           </form>

@@ -1,3 +1,4 @@
+import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
 import { createOrdersCashIndex } from '../services/ordersCashIndex.js';
 import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary } from '../services/ordersEconomicSummary.js';
@@ -6375,6 +6376,7 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
         throw error;
       }
 
+      syncEconomicDepositOperations(state, existingContract, existingLedger, savedLedger, now);
       updatedContract = {
         ...existingContract,
         economicLedger: savedLedger,

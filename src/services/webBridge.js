@@ -1,3 +1,4 @@
+import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
 import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
@@ -15950,6 +15951,7 @@ const createWebBridge = () => ({
             });
           }
         }
+        syncEconomicDepositOperations(state, contract, beforeContract.economicLedger ?? [], contract.economicLedger ?? [], now);
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
