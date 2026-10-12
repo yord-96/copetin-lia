@@ -8,6 +8,12 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
   const cash = movements.filter(row => row.cashBoxType === 'BIG_CASH' && !row.deletedAt && !row.voidedAt && row.receiptStatus !== 'anulado' && Number(row.amountBs) > 0
     && cashMovementMatchesContractReferences(row, {contractId:contract?.id,contractCode:contract?.contractCode,rentalId:rental?.id,orderCode:rental?.orderCode}));
   const used = new Set();
+  const voidedLedgerIds = new Set();
+  for (const entry of ledger.filter(row => row.type === 'deposit')) {
+    const receipt = movements.find(row => row.id === entry.cashMovementId || (entry.cashReceiptCode && row.receiptCode === entry.cashReceiptCode));
+    if ((receipt && (receipt.deletedAt || receipt.voidedAt || ['anulado', 'eliminado'].includes(receipt.receiptStatus)))
+      || (!receipt && cash.length && (entry.cashMovementId || entry.cashReceiptCode))) voidedLedgerIds.add(entry.id);
+  }
   for (const entry of ledger.filter(row => row.type === 'deposit')) {
     const receipt = cash.find(row => !used.has(row.id) && (row.id === entry.cashMovementId || (entry.cashReceiptCode && row.receiptCode === entry.cashReceiptCode)));
     if (receipt) {
@@ -31,6 +37,7 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
     // Partial replacements do not prove the original full deposit remains valid.
     if (Math.abs(received - Number(entry.amountBs)) > .01) continue;
     for (const row of replacements) used.add(row.id);
+    voidedLedgerIds.delete(entry.id);
   }
   // Historical initial payments may have no cash ID. Link their receipt before
   // adding cash-only deposits, reserving explicit links above first.
@@ -62,7 +69,7 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
       note:receipt.description,createdByName:receipt.createdByName || receipt.createdBy,cashMovementId:receipt.id,cashReceiptCode:receipt.receiptCode,isCashRegistered:true,
       guaranteeAllocationBs:receipt.guaranteeAllocationBs || 0,surplusAllocationBs:receipt.surplusAllocationBs || 0});
   }
-  const deposits = ledger.filter(row => row.type === 'deposit' && !row.reclassifiedFromPayment
+  const deposits = ledger.filter(row => row.type === 'deposit' && !voidedLedgerIds.has(row.id) && !row.reclassifiedFromPayment
     && (row.isCashRegistered || row.cashMovementId || row.cashReceiptCode));
   let appliedBs = 0;
   let reservedBs = 0;

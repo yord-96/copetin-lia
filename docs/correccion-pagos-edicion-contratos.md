@@ -116,3 +116,13 @@ La Hoja Flexible permite editar el dinero recibido y su reparto entre contrato y
 Guardar actualiza el deposito, la reserva y el recibo existente en una sola transaccion; conserva el codigo y el orden de caja y no crea ingresos adicionales. Eliminar pago anula el deposito, la garantia vinculada y su movimiento de caja. Se rechaza reducir la reserva por debajo de lo ya devuelto o aplicado. Los recibos antiguos reemplazados requieren consolidacion antes de editar sus montos.
 
 No requiere migracion ni modifica automaticamente contratos existentes.
+
+## Recibos anulados conservados en el cuaderno: 2048 y 2277
+
+El calculo del listado sumaba anotaciones respaldadas por recibos anulados y, ademas, el ingreso automatico activo que las habia sustituido. El indice de caja ahora conserva evidencia de anulacion para las referencias explicitas del cuaderno; la conciliacion excluye esas anotaciones del total confirmado salvo reemplazos explicitamente enlazados y completos. No se fusionan recibos por tener montos iguales.
+
+El respaldo del 12 de octubre muestra 427 contratos con referencias antiguas o depositos en cero frente a recibos positivos. Comparando la conciliacion anterior y nueva, cambian 339 calculos. Estos indicadores no autorizan a restaurar todos los recibos: la reparacion de datos se limita a los casos comprobados.
+
+`node scripts/repair-contracts-2048-2277.mjs` simula la reparacion. Con `--apply` crea respaldo y guarda con revision. En 2048 restaura RC-5865 por Bs 104 y anula RC-5882 automatico. En 2277 restaura RC-12492 por Bs 1.280 (1.080 contrato + 200 garantia) y RC-12493 por Bs 192; anula RC-12746 y RC-12747 automaticos. Conserva la devolucion RC-1385. El total de dinero vigente no aumenta; cambia la distribucion historica al recuperar las fechas de los pagos originales.
+
+La reparacion es idempotente y rechaza datos que no coincidan con los importes y recibos esperados. El respaldo proporcionado se analiza sobre una copia, nunca se importa al VPS.

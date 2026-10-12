@@ -10,7 +10,7 @@ export function linkEconomicReceiptRows(entries, { postedMovements, deposits, re
   for (const entry of entries) {
     if (!['deposit', 'guarantee', 'refund'].includes(entry.type) || entry.amountBs <= 0) continue;
     const id = String(entry.cashMovementId ?? '').trim();
-    if (id && !owners.has(id) && !isVoided(byId.get(id))) owners.set(id, entry.id);
+    if (id && byId.has(id) && !owners.has(id) && !isVoided(byId.get(id))) owners.set(id, entry.id);
   }
   return entries.map(entry => {
     const unlinked = () => ({ ...entry, isCashRegistered: false, cashReceiptCode: '', cashMovementId: null });

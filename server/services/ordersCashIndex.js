@@ -9,8 +9,13 @@ export function createOrdersCashIndex(movements = []) {
   const rows = Array.isArray(movements) ? movements : [];
   const byReference = new Map();
   const legacy = [];
+  const archivedById = new Map();
   rows.forEach((row, position) => {
-    if (!row || row.deletedAt || row.voidedAt) return;
+    if (!row) return;
+    if (row.deletedAt || row.voidedAt || ['anulado', 'eliminado'].includes(row.receiptStatus)) {
+      archivedById.set(String(row.id), position);
+      return;
+    }
     const keys = new Set(movementFields.map((field) => reference(row[field])).filter(Boolean));
     if (!keys.size) {
       // Payment reconciliation can associate unlinked legacy receipts by text.
@@ -26,6 +31,11 @@ export function createOrdersCashIndex(movements = []) {
   });
   return (contract) => {
     const positions = new Set(legacy);
+    // Reconciliation needs evidence that a ledger's receipt was voided, too.
+    for (const entry of contract.economicLedger ?? []) {
+      const archived = archivedById.get(String(entry.cashMovementId ?? ''));
+      if (archived !== undefined) positions.add(archived);
+    }
     for (const field of contractFields) {
       const key = reference(contract?.[field]);
       if (!key) continue;
