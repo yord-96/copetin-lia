@@ -1,3 +1,4 @@
+import { createAttendanceRecordLoader } from '../utils/attendanceRecordLoader';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { canAccessTab, getDefaultTabForUser, getUserCompanyAccess, getUserDisplayRole } from '../utils/permissions';
@@ -139,6 +140,10 @@ export const useAppController = () => {
   const [cashMovementMeta, setCashMovementMeta] = useState({ total: 0, visible: 0, truncated: false });
   const [accountingOperationsLoading, setAccountingOperationsLoading] = useState(false);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const attendanceRecordLoaderRef = useRef(null);
+  if (!attendanceRecordLoaderRef.current) {
+    attendanceRecordLoaderRef.current = createAttendanceRecordLoader(filters => api.attendance.listRecords(filters), setAttendanceRecords);
+  }
   const [attendanceUsersLoading, setAttendanceUsersLoading] = useState(false);
   const [userPresence, setUserPresence] = useState([]);
   const [updateNotice, setUpdateNotice] = useState(null);
@@ -924,15 +929,7 @@ export const useAppController = () => {
           window.clearTimeout(refreshTimer);
           refreshTimer = window.setTimeout(async () => {
             try {
-              const today = new Date();
-              const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-                .toISOString().slice(0, 10);
-              const records = await api.attendance.listRecords({
-                dateFrom: localToday,
-                dateTo: localToday,
-                limit: 300,
-              });
-              if (!disposed) setAttendanceRecords(records);
+              if (!disposed) await attendanceRecordLoaderRef.current.load();
             } catch (refreshError) {
               console.warn('[copetin] No se pudo refrescar asistencia.', refreshError);
             }
@@ -2995,9 +2992,7 @@ export const useAppController = () => {
 
   const handleLoadAttendanceRecords = useCallback(async (filters = {}) => {
     try {
-      const records = await api.attendance.listRecords(filters);
-      setAttendanceRecords(Array.isArray(records) ? records : []);
-      return records;
+      return await attendanceRecordLoaderRef.current.load(filters);
     } catch (requestError) {
       setError(requestError.message || 'No se pudo cargar la asistencia.');
       throw requestError;
