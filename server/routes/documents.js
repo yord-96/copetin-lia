@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { getStateSnapshot } from '../storage/fileStateStore.js';
+import { recoverInventoryDocumentRental } from '../services/inventoryDocumentContext.js';
 import {
   renderHtmlDocumentToPdf,
 } from '../storage/documentPdfRenderer.js';
@@ -641,6 +642,7 @@ router.get(
         return;
       }
 
+      context.rental = recoverInventoryDocumentRental(context.rental, context.contract);
       if (context.rental?._summaryOnly || context.contract?._summaryOnly) {
         res.status(409).json({
           error: 'El servidor no dispone de la orden completa para generar el PDF.',
