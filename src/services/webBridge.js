@@ -1,3 +1,4 @@
+import { manageAttendance } from '../utils/attendanceManagement.js';
 import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
@@ -19607,9 +19608,10 @@ const createWebBridge = () => ({
   },
 
   attendance: {
+    manageRecord: async payload => { let record; transaction(state => { record = deepClone(manageAttendance(state, payload)); return state; }); return record; },
     listRecords: async () => {
       const { attendanceRecords } = readQueryState();
-      return attendanceRecords.slice().sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt));
+      return attendanceRecords.filter(record => !record.deletedAt).sort((a, b) => new Date(b.capturedAt) - new Date(a.capturedAt));
     },
     createRecord: async (payload) => {
       const type = String(payload?.type ?? '').trim();

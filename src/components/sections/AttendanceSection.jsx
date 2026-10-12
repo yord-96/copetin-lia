@@ -1,3 +1,4 @@
+import { canManageAttendance } from '../../utils/attendanceManagement';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
@@ -70,6 +71,40 @@ function AttendanceSection({
   onLoadRecords,
   onCreateRecord,
 }) {
+  const canManage = canManageAttendance(currentUser);
+  const [managementDraft, setManagementDraft] = useState(null);
+  const [managementBusy, setManagementBusy] = useState(false);
+  const [managementError, setManagementError] = useState('');
+  const [managedRecords, setManagedRecords] = useState({});
+  records = records.map(record => managedRecords[record.id] ?? record).filter(record => !record.deletedAt);
+  records = [...Object.values(managedRecords).filter(record => !record.deletedAt && !records.some(row => row.id === record.id)), ...records];
+  const openManager = record => {
+    if (!canManage) return;
+    const date = new Date(record?.capturedAt ?? Date.now());
+    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setManagementError('');
+    setManagementDraft({ id: record?.id ?? '', userId: record?.userId || currentUser.id, capturedAt: localDate, type: record?.type || 'entrada', location: record?.location || '', reason: record?.reason || '' });
+  };
+  const saveManagedAttendance = async event => {
+    event.preventDefault(); if (!canManage || managementBusy) return;
+    setManagementBusy(true); setManagementError('');
+    try {
+      const record = await api.attendance.manageRecord({ actorId: currentUser.id, action: managementDraft.id ? 'edit' : 'create', id: managementDraft.id, record: { ...managementDraft, capturedAt: new Date(managementDraft.capturedAt).toISOString() } });
+      setManagedRecords(current => ({ ...current, [record.id]: record }));
+      setManagementDraft(null); setStatus('Asistencia guardada.');
+      if (onLoadRecords) { await onLoadRecords(filters); setManagedRecords({}); }
+    } catch (error) { setManagementError(error.message); } finally { setManagementBusy(false); }
+  };
+  const deleteManagedAttendance = async record => {
+    if (!canManage || managementBusy || !window.confirm('Eliminar la asistencia ' + record.code + ' de ' + record.userName + '?')) return;
+    setManagementBusy(true);
+    try {
+      await api.attendance.manageRecord({ actorId: currentUser.id, action: 'delete', id: record.id });
+      setManagedRecords(current => ({ ...current, [record.id]: { ...record, deletedAt: new Date().toISOString() } }));
+      setStatus('Asistencia eliminada.');
+      if (onLoadRecords) { await onLoadRecords(filters); setManagedRecords({}); }
+    } catch (error) { setError(error.message); } finally { setManagementBusy(false); }
+  };
   const [form, setForm] = useState({
     type: 'entrada',
     location: '',
@@ -709,6 +744,7 @@ function AttendanceSection({
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <strong>{isReportLoading ? '…' : filteredRecords.length}</strong>
+              {canManage ? <details className="attendance-actions"><summary aria-label="Opciones de asistencias">⋮</summary><div><button type="button" onClick={() => openManager()}>Crear asistencia</button></div></details> : null}
               <button
                 type="button"
                 className="ghost-button"
@@ -789,6 +825,7 @@ function AttendanceSection({
                   <th>Tipo</th>
                   <th>Ubicación / motivo</th>
                   <th>Foto</th>
+                  {canManage ? <th aria-label="Opciones" /> : null}
                 </tr>
               </thead>
               <tbody>
@@ -824,17 +861,36 @@ function AttendanceSection({
                         </button>
                       ) : '-'}
                     </td>
+                    {canManage ? <td><details className="attendance-actions"><summary aria-label={'Opciones de ' + record.code}>⋮</summary><div>
+                      <button type="button" disabled={managementBusy} onClick={() => openManager()}>Crear asistencia</button>
+                      <button type="button" disabled={managementBusy} onClick={() => openManager(record)}>Editar</button>
+                      <button type="button" disabled={managementBusy} onClick={() => deleteManagedAttendance(record)}>Eliminar</button>
+                    </div></details></td> : null}
                   </tr>
                   );
                 })}
                 {filteredRecords.length === 0 ? (
-                  <tr><td colSpan={6}><p className="status">Sin marcas en el rango seleccionado.</p></td></tr>
+                  <tr><td colSpan={canManage ? 7 : 6}><p className="status">Sin marcas en el rango seleccionado.</p></td></tr>
                 ) : null}
               </tbody>
             </table>
           </div>
         </article>
       </section>
+      {canManage && managementDraft ? <div className="orders-modal-backdrop" onClick={() => { if (!managementBusy) setManagementDraft(null); }}>
+        <form className="orders-modal receipt-editor-modal" onSubmit={saveManagedAttendance} onClick={event => event.stopPropagation()}>
+          <header className="orders-modal-head"><div><h3>{managementDraft.id ? 'Editar asistencia' : 'Crear asistencia'}</h3><p>Usuario, fecha, hora y datos de la marca.</p></div><button type="button" className="orders-modal-close" disabled={managementBusy} onClick={() => setManagementDraft(null)}>×</button></header>
+          <div className="receipt-editor-body">
+            <label>Usuario<select required value={managementDraft.userId} onChange={event => setManagementDraft(current => ({ ...current, userId: event.target.value }))}>{[currentUser, ...users.filter(user => user.id !== currentUser.id)].map(user => <option key={user.id} value={user.id}>{user.fullName || user.username}</option>)}</select></label>
+            <label>Fecha y hora<input type="datetime-local" required value={managementDraft.capturedAt} onChange={event => setManagementDraft(current => ({ ...current, capturedAt: event.target.value }))} /></label>
+            <label>Tipo<select value={managementDraft.type} onChange={event => setManagementDraft(current => ({ ...current, type: event.target.value }))}><option value="entrada">Entrada</option><option value="salida">Salida</option></select></label>
+            <label>Ubicacion<input required value={managementDraft.location} onChange={event => setManagementDraft(current => ({ ...current, location: event.target.value }))} /></label>
+            <label>Motivo<input required value={managementDraft.reason} onChange={event => setManagementDraft(current => ({ ...current, reason: event.target.value }))} /></label>
+            {managementError ? <p className="receipt-editor-error">{managementError}</p> : null}
+          </div>
+          <footer className="orders-modal-foot"><button type="button" className="ghost-button" disabled={managementBusy} onClick={() => setManagementDraft(null)}>Cancelar</button><button type="submit" className="primary-button" disabled={managementBusy}>{managementBusy ? 'Guardando...' : 'Guardar asistencia'}</button></footer>
+        </form>
+      </div> : null}
       {photoPreview ? (
         <div className="attendance-photo-modal-backdrop" onClick={() => setPhotoPreview(null)}>
           <section className="attendance-photo-modal" onClick={(event) => event.stopPropagation()} aria-label="Vista previa de foto de asistencia">

@@ -4468,6 +4468,15 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {
+    manageRecord: async payload => {
+      if (!shouldUseServerState()) return callBridge('attendance', 'manageRecord', true, payload);
+      const response = await fetch(getServerStateUrl('/attendance/manage'), { method: 'POST', cache: 'no-store', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo guardar la asistencia.');
+      const result = await response.json();
+      rememberServerRevision(result.revision);
+      announceDataChange({ domain: 'attendance', method: 'manageRecord', collections: ['attendanceRecords'] });
+      return result.record;
+    },
     listUsers: () => fetchAttendanceUsersDirect(),
     listRecords: (filters) => fetchAttendanceRecordsDirect(filters),
     createRecord: (payload) => createAttendanceRecordDirect(payload),

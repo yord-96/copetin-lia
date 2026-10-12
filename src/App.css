@@ -75759,3 +75759,12 @@ body:has(.bigcash-report-backdrop) {
 /* Guarantee receipts share the displayed Contract amount. */
 .accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-customer { width: 14% !important; }
 .accounting-bigcash-view.bigcash-balanced-layout .bigcash-daily-report .daily-report-table th.daily-col-contract { width: 7% !important; }
+
+.attendance-actions { position: relative; text-align: right; }
+.attendance-actions summary { display: inline-flex; justify-content: center; align-items: center; width: 32px; height: 34px; cursor: pointer; border: 1px solid #dbe4f0; border-radius: 9px; background: white; color: #123263; font-size: 24px; list-style: none; }
+.attendance-actions summary::-webkit-details-marker { display: none; }
+.attendance-actions > div { position: absolute; right: 0; top: 36px; z-index: 20; width: 175px; padding: 6px; background: white; border: 1px solid #dbe4f0; border-radius: 10px; box-shadow: 0 8px 24px #102d5930; }
+.attendance-actions button { display: block; width: 100%; border: 0; border-radius: 6px; background: white; color: #123263; text-align: left; padding: 10px; cursor: pointer; }
+.attendance-actions button:hover { background: #fff1e7; }
+.attendance-table-wrap:has(.attendance-actions) { padding-bottom: 125px; }
+.attendance-table td:has(> .attendance-actions) { width: 44px; min-width: 44px; }

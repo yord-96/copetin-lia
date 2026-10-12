@@ -1,3 +1,4 @@
+import { manageAttendance } from '../../src/utils/attendanceManagement.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
 import { createOrdersCashIndex } from '../services/ordersCashIndex.js';
@@ -4234,6 +4235,7 @@ router.get('/__copetin_db/attendance', async (req, res, next) => {
 
     const rows = (Array.isArray(snapshot?.state?.attendanceRecords) ? snapshot.state.attendanceRecords : [])
       .filter((record) => {
+        if (record.deletedAt) return false;
         if (req.query?.userId && String(record.userId) !== String(req.query.userId)) return false;
         const dateKey = getAttendanceClientDateKey(record?.capturedAt ?? record?.createdAt, timezoneOffsetMinutes);
         if (dateFrom && dateKey < dateFrom) return false;
@@ -4269,6 +4271,14 @@ router.get('/__copetin_db/attendance', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.post('/__copetin_db/attendance/manage', async (req, res, next) => {
+  try {
+    let record;
+    const result = await updateStateSnapshot(state => { record = structuredClone(manageAttendance(state, req.body ?? {})); return state; });
+    res.json({ ok: true, record: summarizeAttendanceRecord(record), revision: result.revision });
+  } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
 });
 
 router.post('/__copetin_db/attendance', async (req, res, next) => {

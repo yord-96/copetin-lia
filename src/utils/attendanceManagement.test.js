@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { manageAttendance, canManageAttendance } from './attendanceManagement.js';
+const fixture = () => ({ users: [{ id: 'owner', fullName: 'YORDY COPA CEREZO', status: 'active' }, { id: 'admin', fullName: 'Otra persona', role: 'super_admin' }, { id: 'worker', fullName: 'Trabajador' }], attendanceRecords: [] });
+const draft = { userId: 'worker', type: 'entrada', capturedAt: '2026-10-01T12:00:00Z', location: 'Oficina', reason: 'Registro corregido' };
+test('only Yordy can create, edit and delete attendance; a super admin cannot', () => {
+  const state = fixture();
+  assert.equal(canManageAttendance(state.users[1]), false);
+  for (const action of ['create', 'edit', 'delete']) assert.throws(() => manageAttendance(state, { actorId: 'admin', action, record: draft }), /Solo Yordy/);
+  assert.throws(() => manageAttendance(state, { actorId: 'missing', action: 'create', record: draft }), /Solo Yordy/);
+  assert.equal(state.attendanceRecords.length, 0);
+  const record = manageAttendance(state, { actorId: 'owner', action: 'create', record: draft });
+  record.photoUrl = '/uploads/photo.jpg';
+  assert.equal(record.code, 'ASI-00001');
+  manageAttendance(state, { actorId: 'owner', action: 'edit', id: record.id, record: { ...draft, type: 'salida', capturedAt: '2026-10-01T20:00:00Z' } });
+  assert.equal(record.type, 'salida');
+  assert.equal(record.photoUrl, '/uploads/photo.jpg');
+  assert.equal(record.editHistory[0].type, 'entrada');
+  manageAttendance(state, { actorId: 'owner', action: 'delete', id: record.id });
+  assert.ok(record.deletedAt);
+  assert.equal(record.deletedById, 'owner');
+  const next = manageAttendance(state, { actorId: 'owner', action: 'create', record: draft });
+  assert.equal(next.code, 'ASI-00002');
+});
+test('invalid input and inactive owner are rejected', () => {
+  const state = fixture();
+  assert.throws(() => manageAttendance(state, { actorId: 'owner', action: 'create', record: { ...draft, capturedAt: 'invalid' } }));
+  state.users[0].status = 'inactive';
+  assert.equal(canManageAttendance(state.users[0]), false);
+  assert.throws(() => manageAttendance(state, { actorId: 'owner', action: 'create', record: draft }), /Solo Yordy/);
+});
