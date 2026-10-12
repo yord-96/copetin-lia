@@ -26,7 +26,7 @@ import { resolveEconomicReceiptTimestamps } from '../../src/utils/economicReceip
 import { getBigCashFundMovements, buildBigCashFundTimeline } from '../../src/utils/dailyCashReport.js';
 import { getCashBusinessDate, getCashEffectiveDate, compareCashLedgerOrder } from '../../src/utils/cashLedgerOrder.js';
 import { buildPettyCashFundTimeline, assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
-import { addPettyExpenseCategory } from '../../src/utils/pettyExpenseCategories.js';
+import { addPettyExpenseCategory, renamePettyExpenseCategory } from '../../src/utils/pettyExpenseCategories.js';
 import {
   buildInventoryKardexRows,
   filterInventoryKardexMovements,
@@ -7277,6 +7277,22 @@ router.post('/__copetin_db/cash/petty-categories', async (req, res, next) => {
     res.json({ ...response, revision: result.revision });
   } catch (error) {
     if (error.message.startsWith('Escribe una categoría')) return res.status(400).json({ error: error.message });
+    next(error);
+  }
+});
+
+router.patch('/__copetin_db/cash/petty-categories/:id', async (req, res, next) => {
+  try {
+    let response;
+    const result = await updateStateSnapshot(state => {
+      response = renamePettyExpenseCategory(state.settings?.accounting?.pettyExpenseCategories, req.params.id, req.body?.label);
+      state.settings = { ...state.settings, accounting: { ...state.settings?.accounting, pettyExpenseCategories: response.categories } };
+      return state;
+    });
+    if (!result.ok) return res.status(409).json({ error: 'No se pudo guardar la categoría. Intenta nuevamente.' });
+    res.json({ ...response, revision: result.revision });
+  } catch (error) {
+    if (['La categoría', 'Escribe una categoría', 'Ya existe una categoría'].some(prefix => error.message.startsWith(prefix))) return res.status(400).json({ error: error.message });
     next(error);
   }
 });

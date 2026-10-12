@@ -1,7 +1,7 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
 import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
 import { compareCashLedgerOrder } from '../utils/cashLedgerOrder.js';
-import { addPettyExpenseCategory } from '../utils/pettyExpenseCategories.js';
+import { addPettyExpenseCategory, renamePettyExpenseCategory } from '../utils/pettyExpenseCategories.js';
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge.js';
 import { buildContractCollectionGroups } from '../utils/contractCollectionGroups.js';
 import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAvailableDelta, getMovementPhysicalDelta } from '../utils/inventoryKardex.js';
@@ -4146,6 +4146,19 @@ export const api = {
       }
       const response = await fetch(getServerStateUrl('/cash/petty-categories'), { method: 'POST', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ label }) });
       if (!response.ok) throw await createServerStateError(response, 'No se pudo guardar la categoría.');
+      const result = await response.json();
+      if (result.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
+      return result;
+    },
+    renamePettyCategory: async (id, label) => {
+      if (!shouldUseServerState()) {
+        const { settings } = await callBridge('settings', 'get', false);
+        const result = renamePettyExpenseCategory(settings?.accounting?.pettyExpenseCategories, id, label);
+        await callBridge('settings', 'update', true, { accounting: { ...settings?.accounting, pettyExpenseCategories: result.categories } });
+        return result;
+      }
+      const response = await fetch(getServerStateUrl('/cash/petty-categories/' + encodeURIComponent(id)), { method: 'PATCH', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ label }) });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo editar la categoría.');
       const result = await response.json();
       if (result.revision) { lastSharedRevision = result.revision; setCachedServerRevision(result.revision); }
       return result;

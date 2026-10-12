@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { buildPettyCashFundTimeline } from '../../utils/pettyCashFund';
-import { PETTY_EXPENSE_CATEGORIES } from '../../utils/pettyExpenseCategories';
+import { getPettyExpenseCategories } from '../../utils/pettyExpenseCategories';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
 import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate, getCashEffectiveDate } from '../../utils/cashLedgerOrder';
@@ -628,7 +628,14 @@ function AccountingSection({
   const [newPettyCategoryName, setNewPettyCategoryName] = useState('');
   const [pettyCategoryBusy, setPettyCategoryBusy] = useState(false);
   const [pettyCategoryError, setPettyCategoryError] = useState('');
-  const pettyExpenseCategories = useMemo(() => [...PETTY_EXPENSE_CATEGORIES, ...customPettyCategories], [customPettyCategories]);
+  const [editingPettyCategoryId, setEditingPettyCategoryId] = useState(null);
+  const pettyExpenseCategories = useMemo(() => getPettyExpenseCategories(customPettyCategories), [customPettyCategories]);
+  const editPettyCategory = () => {
+    const category = pettyExpenseCategories.find(row => row.id === cashForm.category);
+    if (!category || pettyCategoryBusy) return;
+    setEditingPettyCategoryId(category.id); setNewPettyCategoryName(category.label);
+    setNewPettyCategoryOpen(true); setPettyCategoryError('');
+  };
   useEffect(() => {
     if (activeModule !== 'contabilidad_caja_chica') return;
     let cancelled = false;
@@ -641,10 +648,10 @@ function AccountingSection({
     if (pettyCategoryBusy) return;
     setPettyCategoryBusy(true); setPettyCategoryError('');
     try {
-      const result = await api.cash.createPettyCategory(newPettyCategoryName);
+      const result = editingPettyCategoryId ? await api.cash.renamePettyCategory(editingPettyCategoryId, newPettyCategoryName) : await api.cash.createPettyCategory(newPettyCategoryName);
       setCustomPettyCategories(result.categories ?? []);
       setCashForm(current => ({ ...current, category: result.category.id }));
-      setNewPettyCategoryName(''); setNewPettyCategoryOpen(false);
+      setNewPettyCategoryName(''); setNewPettyCategoryOpen(false); setEditingPettyCategoryId(null);
     } catch (error) { setPettyCategoryError(error.message); }
     finally { setPettyCategoryBusy(false); }
   };
@@ -5688,7 +5695,7 @@ function AccountingSection({
                 <div className="accounting-form-grid two">
                   <label>
                     Categoria
-                    <select value={cashForm.category} onChange={(event) => setCashForm((current) => ({ ...current, category: event.target.value }))}>
+                    <select onContextMenu={cashModal === 'expense' ? (event) => { event.preventDefault(); editPettyCategory(); } : undefined} value={cashForm.category} onChange={(event) => setCashForm((current) => ({ ...current, category: event.target.value }))}>
                       {cashModal === 'expense' ? (
                         <>
                           {pettyExpenseCategories.map((category) => (
@@ -5722,7 +5729,7 @@ function AccountingSection({
                       )}
                     </select>
                     {cashModal === 'expense' ? <div className="petty-category-create">
-                      {!newPettyCategoryOpen ? <button type="button" className="ghost-button" onClick={() => { setNewPettyCategoryOpen(true); setPettyCategoryError(''); }}>+ Crear categoría</button> : <>
+                      {!newPettyCategoryOpen ? <><button type="button" className="ghost-button" onClick={() => { setEditingPettyCategoryId(null); setNewPettyCategoryName(''); setNewPettyCategoryOpen(true); setPettyCategoryError(''); }}>+ Crear categoría</button><button type="button" className="ghost-button" onClick={editPettyCategory}>Editar categoría seleccionada</button><small>Selecciona la categoría y haz clic derecho para editarla. El nombre se actualizará en todos sus movimientos.</small></> : <>
                         <input aria-label="Nombre de la nueva categoría" maxLength={80} value={newPettyCategoryName} onChange={event => setNewPettyCategoryName(event.target.value)} placeholder="Nombre de la categoría" disabled={pettyCategoryBusy} />
                         <div className="petty-category-create-actions">
                           <button type="button" className="primary-button" disabled={pettyCategoryBusy || !newPettyCategoryName.trim()} onClick={() => void savePettyCategory()}>{pettyCategoryBusy ? 'Guardando...' : 'Guardar categoría'}</button>

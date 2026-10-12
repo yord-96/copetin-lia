@@ -71,6 +71,15 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(snapshot.state.resetLogs.length,1);
     assert.equal(snapshot.state.cashMovements.filter(row=>row.accountingPeriodStatus!=='archived'&&row.cashBoxType==='PETTY_CASH').length,3);
     assert.equal(snapshot.state.settings.accounting.pettyExpenseCategories.length,1);
+    const cashBeforeRename = structuredClone(snapshot.state.cashMovements);
+    const renameResponse = await fetch(base + '/cash/petty-categories/' + category.body.category.id, {method:'PATCH',headers:{'Content-Type':'application/json','X-App-Internal-Key':'test-petty-key'},body:JSON.stringify({label:'Reparacion de maquinaria'})});
+    assert.equal(renameResponse.status,200);
+    const renamedCategory = await renameResponse.json();
+    assert.equal(renamedCategory.category.id,category.body.category.id);
+    assert.equal(renamedCategory.category.label,'Reparacion de maquinaria');
+    snapshot = await store.getStateSnapshot();
+    assert.deepEqual(snapshot.state.cashMovements,cashBeforeRename);
+
     const digitalIncome = await request('/cash/movement', {...payload, amountBs:120,paymentMethod:'qr',paymentAccount:'CIDRE'});
     const digitalExpense = await request('/cash/movement', {...payload,type:'egreso',category:'compras',amountBs:20,paymentMethod:'qr',paymentAccount:'CIDRE'});
     assert.equal(digitalIncome.status,200);
