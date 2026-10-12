@@ -1,3 +1,4 @@
+import { createPdfPreview } from '../../utils/pdfPreview';
 import { economicDepositGroup, reviseEconomicDeposit } from '../../utils/economicDepositOperations';
 import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -8786,36 +8787,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
-  const requestQuotePdfViewerUrl = async ({ identifier, paperSize = 'oficio' }) => {
-    const requestedId = String(identifier ?? '').trim();
-    if (!requestedId) {
-      throw new Error('No se pudo identificar la cotizacion.');
-    }
-
-    const response = await fetch(
-      getDocumentApiUrl(`/__copetin_db/quotes/${encodeURIComponent(requestedId)}/pdf-access?paper=${encodeURIComponent(paperSize)}`),
-      {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.error || 'No se pudo preparar el visor de la cotizacion.');
-    }
-
-    const payload = await response.json();
-    const relativeUrl = String(payload?.url ?? '').trim();
-    if (!relativeUrl) {
-      throw new Error('El servidor no devolvio una URL valida para el PDF.');
-    }
-    return getDocumentApiUrl(relativeUrl);
-  };
-
   const fetchQuotePdf = async ({ identifier, paperSize = 'oficio' }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
@@ -8843,43 +8814,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       throw new Error('El servidor no devolvio un documento PDF valido.');
     }
 
-    const viewerUrl = await requestQuotePdfViewerUrl({ identifier: requestedId, paperSize });
     return {
-      blobUrl: URL.createObjectURL(pdfBlob),
-      viewerUrl,
+      ...createPdfPreview(pdfBlob),
       cacheStatus: response.headers.get('X-Document-Cache') ?? '',
       durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
     };
-  };
-
-  const requestContractPdfViewerUrl = async ({ identifier, paperSize = 'oficio' }) => {
-    const requestedId = String(identifier ?? '').trim();
-    if (!requestedId) {
-      throw new Error('No se pudo identificar el contrato.');
-    }
-
-    const response = await fetch(
-      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf-access?paper=${encodeURIComponent(paperSize)}`),
-      {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          ...(DOCUMENT_INTERNAL_KEY ? { 'X-App-Internal-Key': DOCUMENT_INTERNAL_KEY } : {}),
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(payload?.error || 'No se pudo preparar el visor del contrato.');
-    }
-
-    const payload = await response.json();
-    const relativeUrl = String(payload?.url ?? '').trim();
-    if (!relativeUrl) {
-      throw new Error('El servidor no devolvió una URL válida para el PDF.');
-    }
-    return getDocumentApiUrl(relativeUrl);
   };
 
   const fetchContractPdf = async ({ identifier, paperSize = 'oficio' }) => {
@@ -8909,14 +8848,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       throw new Error('El servidor no devolvió un documento PDF válido.');
     }
 
-    const viewerUrl = await requestContractPdfViewerUrl({
-      identifier: requestedId,
-      paperSize,
-    });
 
     return {
-      blobUrl: URL.createObjectURL(pdfBlob),
-      viewerUrl,
+      ...createPdfPreview(pdfBlob),
       cacheStatus: response.headers.get('X-Document-Cache') ?? '',
       durationMs: Number(response.headers.get('X-Document-Duration-Ms') ?? 0),
     };
