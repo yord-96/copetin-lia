@@ -4676,13 +4676,14 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
       if (isArchivedAccountingRecord(movement) || movement?.voidedAt || String(movement?.receiptStatus ?? '').toLowerCase() === 'anulado') {
         const error = new Error('No se puede editar un movimiento anulado o eliminado.'); error.statusCode = 409; throw error;
       }
-      if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) >= 0 || movement?.isInternalTransfer) {
-        const error = new Error('Solo se pueden editar gastos activos de Caja Chica.'); error.statusCode = 409; throw error;
+      if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) === 0 || movement?.isInternalTransfer) {
+        const error = new Error('Solo se pueden editar movimientos activos de Caja Chica.'); error.statusCode = 409; throw error;
       }
       const oldAmountBs = Math.abs(Number(movement.amountBs ?? 0));
+      const isIncome = Number(movement.amountBs) > 0;
       const availableIncludingCurrent = directMoney(getDirectCurrentCashBalance(state, 'PETTY_CASH') + oldAmountBs);
-      if (amountBs > availableIncludingCurrent) {
-        const error = new Error(`Caja Chica no tiene saldo suficiente. Maximo editable: Bs ${availableIncludingCurrent.toFixed(2)}.`);
+      if ((!isIncome && amountBs > availableIncludingCurrent) || (isIncome && getDirectCurrentCashBalance(state, 'PETTY_CASH') - oldAmountBs + amountBs < -0.009)) {
+        const error = new Error(isIncome ? 'No puedes reducir este ingreso a ese monto: sus fondos ya fueron utilizados.' : `Caja Chica no tiene saldo suficiente. Maximo editable: Bs ${availableIncludingCurrent.toFixed(2)}.`);
         error.statusCode = 400;
         throw error;
       }
@@ -4693,7 +4694,7 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
         paymentMethod: movement.paymentMethod, paymentAccount: movement.paymentAccount,
         responsible: movement.responsible, receipt: movement.receipt, notes: movement.notes,
       };
-      movement.amountBs = -amountBs;
+      movement.amountBs = isIncome ? amountBs : -amountBs;
       if (expenseDate) {
         movement.createdAt = expenseDate.toISOString();
         movement.receiptIssuedAt = expenseDate.toISOString();
@@ -4742,8 +4743,11 @@ router.delete('/__copetin_db/cash/petty-expense/:movementId', async (req, res, n
         responseData = { movement: structuredClone(movement), summary: summarizeDirectCashState(state), duplicated: true };
         return state;
       }
-      if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) >= 0 || movement?.isInternalTransfer) {
-        const error = new Error('Solo se pueden eliminar gastos de Caja Chica.'); error.statusCode = 409; throw error;
+      if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) === 0 || movement?.isInternalTransfer) {
+        const error = new Error('Solo se pueden eliminar movimientos de Caja Chica.'); error.statusCode = 409; throw error;
+      }
+      if (Number(movement.amountBs) > 0 && getDirectCurrentCashBalance(state, 'PETTY_CASH') - Number(movement.amountBs) < -0.009) {
+        const error = new Error('No puedes eliminar este ingreso: sus fondos ya fueron utilizados.'); error.statusCode = 409; throw error;
       }
       const now = new Date().toISOString();
       movement.deletedAt = now;

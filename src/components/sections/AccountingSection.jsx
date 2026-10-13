@@ -3881,9 +3881,9 @@ function AccountingSection({
 
   const handleDeletePettyExpenseAction = async (movement) => {
     if (!isDeveloperUser || !movement || isVoidedCashMovement(movement)) return;
-    const reason = window.prompt('Motivo obligatorio para eliminar este gasto de Caja Chica:');
+    const reason = window.prompt('Motivo obligatorio para eliminar este movimiento de Caja Chica:');
     if (!String(reason ?? '').trim()) return;
-    if (!window.confirm(`Eliminar logicamente el gasto "${movement.description}" por ${formatBs(Math.abs(toNumber(movement.amountBs)))}?`)) return;
+    if (!window.confirm(`Eliminar logicamente el movimiento "${movement.description}" por ${formatBs(Math.abs(toNumber(movement.amountBs)))}?`)) return;
     setCashActionError('');
     try {
       await onDeletePettyExpense?.({ movementId: movement.id, reason: String(reason).trim() });
@@ -4392,9 +4392,9 @@ function AccountingSection({
             responsible: cashForm.responsible || currentUserName,
             receipt: cashForm.receipt,
             notes: cashForm.notes,
-            reason: 'Corrección de gasto desde Caja Chica.',
+            reason: 'Corrección de movimiento desde Caja Chica.',
           });
-          setCashActionFeedback('Gasto de Caja Chica actualizado.');
+          setCashActionFeedback('Movimiento de Caja Chica actualizado.');
         } else {
         const created = await onCreateCashMovement?.({
           type: 'egreso',
@@ -4707,7 +4707,7 @@ function AccountingSection({
   const getCashModalTitle = () => {
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
     if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
-    if (cashModal === 'expense') return editingPettyExpense ? 'Editar gasto de Caja Chica' : 'Registrar gasto de Caja Chica';
+    if (cashModal === 'expense') return editingPettyExpense ? (Number(editingPettyExpense.amountBs) > 0 ? 'Editar ingreso de Caja Chica' : 'Editar gasto de Caja Chica') : 'Registrar gasto de Caja Chica';
     if (cashModal === 'advance') return 'Registrar adelanto de personal';
     if (cashModal === 'debt') return 'Registrar deuda';
     if (cashModal === 'payDebt') return 'Pagar deuda';
@@ -4738,7 +4738,7 @@ function AccountingSection({
       return <span className="cash-receipt-muted">Sin recibo</span>;
     }
     const isActivePettyExpense = isPettyCash(movement)
-      && Number(movement?.amountBs ?? 0) < 0
+      && Number(movement?.amountBs ?? 0) !== 0
       && !movement?.isInternalTransfer;
     if (isActivePettyExpense) {
       return (
@@ -4747,7 +4747,7 @@ function AccountingSection({
             <button
               type="button"
               className="petty-debt-menu-button"
-              aria-label={`Opciones del gasto ${movement.description || movement.id}`}
+              aria-label={`Opciones del movimiento ${movement.description || movement.id}`}
               onClick={() => setPettyExpenseActionMenuId((current) => current === movement.id ? '' : movement.id)}
             >
               ⋮
@@ -5458,7 +5458,7 @@ function AccountingSection({
                     : cashModal === 'advance'
                     ? 'El adelanto sale solo de Caja Chica y genera un recibo firmado.'
                     : cashModal === 'expense'
-                    ? 'Los gastos salen de la Caja Chica abierta.'
+                    ? (editingPettyExpense && Number(editingPettyExpense.amountBs) > 0 ? 'Corrige el ingreso registrado en Caja Chica.' : 'Los gastos salen de la Caja Chica abierta.')
                     : cashModal === 'closePetty'
                     ? 'El saldo contado vuelve a Caja Grande al cerrar.'
                     : 'Se descuenta de Caja Grande, se registra recibo de egreso y el monto queda disponible en Caja Chica.'}
@@ -5698,6 +5698,9 @@ function AccountingSection({
                     <select onContextMenu={cashModal === 'expense' ? (event) => { event.preventDefault(); editPettyCategory(); } : undefined} value={cashForm.category} onChange={(event) => setCashForm((current) => ({ ...current, category: event.target.value }))}>
                       {cashModal === 'expense' ? (
                         <>
+                          {editingPettyExpense && Number(editingPettyExpense.amountBs) > 0 && !pettyExpenseCategories.some(category => category.id === cashForm.category) ? (
+                            <option value={cashForm.category}>{cashForm.category}</option>
+                          ) : null}
                           {pettyExpenseCategories.map((category) => (
                             <option key={category.id} value={category.id}>{category.label}</option>
                           ))}

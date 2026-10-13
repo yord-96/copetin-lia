@@ -104,6 +104,25 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(edited.movement.cashEffectiveDate,beforeEdit.cashEffectiveDate);
     assert.equal(edited.movement.editHistory.at(-1).createdAt,digitalExpense.body.movement.createdAt);
     assert.equal(edited.summary.pettyCashBalanceBs,300);
+    const incomeEditResponse = await fetch(base + '/cash/petty-expense/' + income.body.movement.id, {
+      method:'PATCH',headers:{'Content-Type':'application/json','X-App-Internal-Key':'test-petty-key'},
+      body:JSON.stringify({amountBs:350,description:'Ingreso corregido',createdAt:editedDate}),
+    });
+    const incomeEdited = await incomeEditResponse.json();
+    assert.equal(incomeEditResponse.status,200,JSON.stringify(incomeEdited));
+    assert.equal(incomeEdited.movement.amountBs,350);
+    assert.equal(incomeEdited.movement.category,income.body.movement.category);
+    assert.equal(incomeEdited.movement.type,income.body.movement.type);
+    assert.equal(incomeEdited.summary.pettyCashBalanceBs,350);
+    const spentIncome = await request('/cash/movement',{...payload,type:'egreso',amountBs:100,description:'Fondos utilizados'});
+    assert.equal(spentIncome.status,200);
+    const badIncomeEdit = await fetch(base + '/cash/petty-expense/' + income.body.movement.id, {
+      method:'PATCH',headers:{'Content-Type':'application/json','X-App-Internal-Key':'test-petty-key'},
+      body:JSON.stringify({amountBs:1,description:'Ingreso insuficiente'}),
+    });
+    assert.equal(badIncomeEdit.status,400);
+    assert.equal((await store.getStateSnapshot()).state.cashMovements.find(row=>row.id===income.body.movement.id).amountBs,350);
+
   } finally {
     if(server) await new Promise(resolve=>server.close(resolve));
     await fs.rm(directory,{recursive:true,force:true});

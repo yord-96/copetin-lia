@@ -191,12 +191,14 @@ export const getAllowedTabRoots = (user) => new Set(
   [
     ...getUserRoleIds(user).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
     ...(user && getUserPermissions(user).attendanceEnabled ? ['asistencia'] : []),
-  ].filter((tab) => tab !== 'asistencia' || getUserPermissions(user).attendanceEnabled),
+  ].filter((tab) => (tab !== 'asistencia' || getUserPermissions(user).attendanceEnabled)
+    && (!tab.startsWith('contabilidad') || isDeveloper(user))),
 );
 
 export const canAccessTab = (user, tabId) => {
   if (!user) return false;
   const target = String(tabId ?? '');
+  if (target.startsWith('contabilidad') && !isDeveloper(user)) return false;
   const permissions = getUserPermissions(user);
   if (target === 'asistencia' && !permissions.attendanceEnabled) return false;
   const roots = getAllowedTabRoots(user);
