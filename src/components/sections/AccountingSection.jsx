@@ -6,7 +6,7 @@ import { getPettyExpenseCategories } from '../../utils/pettyExpenseCategories';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
 import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate, getCashEffectiveDate } from '../../utils/cashLedgerOrder';
-import { DAILY_CASH_COLUMNS, getFundDeliveryCoverage, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
+import { DAILY_CASH_COLUMNS, getFundDeliveryCoverage, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
   getCommercialContractCode,
@@ -1767,54 +1767,6 @@ function AccountingSection({
     movement,
   })), [dailyReportRows, dailyFundTimeline, getDailyCustomerName, getDailyMovementNature, getMovementReference, getMovementUserLabel]);
   const visibleDailyTableRows = useMemo(() => filterDailyCashRows(dailyTableRows, dailyColumnFilters), [dailyTableRows, dailyColumnFilters]);
-
-  const dailyIncomeRows = useMemo(
-    () => visibleDailyTableRows.filter((row) => row.income != null).map((row) => row.movement),
-    [visibleDailyTableRows],
-  );
-  const dailyExpenseRows = useMemo(
-    () => visibleDailyTableRows.filter((row) => row.expense != null).map((row) => row.movement),
-    [visibleDailyTableRows],
-  );
-  const dailyTotals = useMemo(() => totalDailyCashRows(visibleDailyTableRows), [visibleDailyTableRows]);
-  const dailyIncomeBs = dailyTotals.income;
-  const dailyExpenseBs = dailyTotals.expense;
-  const dailyNetBs = Number((dailyIncomeBs - dailyExpenseBs).toFixed(2));
-
-  const summarizeDailyRows = useCallback((rows) => {
-    const nature = new Map();
-    const methods = new Map();
-    rows.forEach((movement) => {
-      const amount = Math.abs(toNumber(movement.amountBs));
-      const natureMeta = getDailyMovementNature(movement);
-      const natureRow = nature.get(natureMeta.key) ?? { ...natureMeta, amountBs: 0, count: 0 };
-      natureRow.amountBs += amount;
-      natureRow.count += 1;
-      nature.set(natureMeta.key, natureRow);
-
-      const methodMeta = getPaymentMethodMeta(movement.paymentMethod);
-      const methodKey = normalizePaymentMethod(movement.paymentMethod);
-      const account = methodKey === 'qr' ? String(movement?.paymentAccount ?? '').trim() : '';
-      const key = `${methodKey}::${normalizeText(account)}`;
-      const methodRow = methods.get(key) ?? {
-        key,
-        label: methodMeta.label,
-        className: methodMeta.className,
-        account,
-        amountBs: 0,
-        count: 0,
-      };
-      methodRow.amountBs += amount;
-      methodRow.count += 1;
-      methods.set(key, methodRow);
-    });
-    return {
-      nature: [...nature.values()].map((row) => ({ ...row, amountBs: Number(row.amountBs.toFixed(2)) })).sort((a, b) => b.amountBs - a.amountBs),
-      methods: [...methods.values()].map((row) => ({ ...row, amountBs: Number(row.amountBs.toFixed(2)) })).sort((a, b) => b.amountBs - a.amountBs),
-    };
-  }, [getDailyMovementNature]);
-
-  const dailyIncomeSummary = useMemo(() => summarizeDailyRows(dailyIncomeRows), [dailyIncomeRows, summarizeDailyRows]);
 
   const periodBigCashRows = useMemo(
     () => bigCashMovementRows.filter((movement) => {
@@ -8121,48 +8073,6 @@ function AccountingSection({
             </article>
 
             <article className="bigcash-card daily-sector income-sector">
-              <header className="daily-sector-header compact">
-                <div className="daily-sector-heading">
-                  <span className="daily-sector-kicker">RESUMEN OPERATIVO</span>
-                  <h3>Movimientos confirmados del día</h3>
-                  <p>El fondo efectivo y el digital se calculan por separado. Solo afectan los pagos realizados desde la apertura del fondo hasta este día; los abonos históricos y futuros quedan fuera. El orden de caja se conserva al editar el recibo.</p>
-                </div>
-                <div className="daily-sector-inline-stats" aria-label="Resumen del día">
-                  <article className="daily-inline-stat income">
-                    <small>Ingresos</small>
-                    <strong>{formatBs(dailyIncomeBs)}</strong>
-                    <span>{dailyIncomeRows.length} movimiento{dailyIncomeRows.length === 1 ? '' : 's'}</span>
-                  </article>
-                  <article className="daily-inline-stat out">
-                    <small>Egresos</small>
-                    <strong>{formatBs(dailyExpenseBs)}</strong>
-                    <span>{dailyExpenseRows.length} movimiento{dailyExpenseRows.length === 1 ? '' : 's'}</span>
-                  </article>
-                  <article className={`daily-inline-stat net ${dailyNetBs < 0 ? 'negative' : ''}`}>
-                    <small>Resultado neto</small>
-                    <strong>{formatBs(dailyNetBs)}</strong>
-                    <span>Ingresos − egresos</span>
-                  </article>
-                </div>
-              </header>
-
-              <div className="daily-sector-breakdowns">
-                <div className="daily-breakdown-block">
-                  <h4>Por origen</h4>
-                  <div className="daily-breakdown-list">
-                    {dailyIncomeSummary.nature.map((row) => <div key={row.key}><span><strong>{row.label}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
-                    {!dailyIncomeSummary.nature.length ? <p className="status">Sin ingresos registrados este día.</p> : null}
-                  </div>
-                </div>
-                <div className="daily-breakdown-block">
-                  <h4>Por medio / cuenta receptora</h4>
-                  <div className="daily-breakdown-list">
-                    {dailyIncomeSummary.methods.map((row) => <div key={row.key}><span><strong>{row.label}{row.account ? ` · ${row.account}` : ''}</strong><small>{row.count} mov.</small></span><b>{formatBs(row.amountBs)}</b></div>)}
-                    {!dailyIncomeSummary.methods.length ? <p className="status">Sin medios de ingreso para mostrar.</p> : null}
-                  </div>
-                </div>
-              </div>
-
               {serverDailyLoading ? <p className="status">Actualizando reporte desde el servidor...</p> : null}
               {serverDailyError ? <p className="status error">{serverDailyError}</p> : null}
               {!serverDailyLoading && dailyTableRows.length > 0 && dailyTableRows.every(row => row.fundCash == null && row.fundDigital == null) ? (
