@@ -156,7 +156,7 @@ function DailyFiltersPanel({ rows, filters, position, formatBs, onFiltersChange,
   );
 }
 
-export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery, onFundHistory, openingBalance }) {
+export default function DailyCashTable({ allRows, rows, filters, onFiltersChange, formatBs, onFundIncome, onFundDelivery, onFundHistory, openingBalance, deliveryCoverage }) {
   const [filtersOpen, setFiltersOpen] = useState(null);
   const triggerRef = useRef(null);
   const tableWrapRef = useRef(null);
@@ -221,7 +221,8 @@ export default function DailyCashTable({ allRows, rows, filters, onFiltersChange
       </div>
     </div>
 
-    <div ref={tableWrapRef} className="bigcash-table-wrap daily-report-table-wrap">
+    {deliveryCoverage ? <p className="daily-delivery-note">ENTREGADO · Hasta {deliveryCoverage.endDate} · {formatBs(deliveryCoverage.amountBs)} · {deliveryCoverage.receipt}. El saldo restante continúa al día siguiente.</p> : null}
+    <div ref={tableWrapRef} className={`bigcash-table-wrap daily-report-table-wrap${deliveryCoverage ? ' is-delivered' : ''}`}>
       <table className="accounting-table bigcash-table daily-report-table">
         <thead><tr>{TABLE_COLUMNS.map((column) => <th
           key={column.key}

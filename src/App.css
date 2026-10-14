@@ -66934,6 +66934,20 @@ body:has(.accounting-bigcash-view) .workspace {
 }
 .petty-category-create { display: grid; gap: 0.6rem; margin-top: 0.6rem; }
 .petty-category-create-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.daily-report-table-wrap.is-delivered { position: relative; }
+.daily-report-table-wrap.is-delivered::after {
+  content: 'ENTREGADO';
+  position: absolute;
+  top: 200px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-18deg);
+  font-size: clamp(48px, 7vw, 110px);
+  font-weight: 900;
+  color: rgba(22, 115, 70, 0.16);
+  pointer-events: none;
+  z-index: 3;
+}
+.daily-delivery-note { color: #167346; font-weight: 700; }
 .accounting-movement-form.is-expense .petty-category-inline-actions {
   display: flex;
   gap: 8px;

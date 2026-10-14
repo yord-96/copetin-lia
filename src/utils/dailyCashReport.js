@@ -116,6 +116,18 @@ export function buildBigCashFundTimeline(movements = [], options) {
 export const dailyCashFilterValue = (value) => value == null ? '' : String(value);
 export const getDailyCashClosingBalance = (rows, key, openingBalance) => rows.findLast((row) => row[key] != null)?.[key]
   ?? (key === 'fundCash' ? openingBalance?.cashBs : openingBalance?.digitalBs) ?? 0;
+
+export function getFundDeliveryCoverage(movements, reportDate) {
+  const rows = getBigCashFundMovements(movements);
+  const first = rows[0];
+  if (!first || reportDate < getCashEffectiveDate(first)) return null;
+  const delivery = rows.filter(row => Number(row.amountBs) < 0
+    && (normalize(row.accountingTag) === 'big_cash_fund_out' || normalize(row.category) === 'entrega_fondos')
+    && getCashEffectiveDate(row) >= reportDate)
+    .sort((a,b) => getCashEffectiveDate(a).localeCompare(getCashEffectiveDate(b)) || compareCashLedgerOrder(a,b))[0];
+  if (!delivery) return null;
+  return { startDate: getCashEffectiveDate(first), endDate: getCashEffectiveDate(delivery), amountBs: Math.abs(Number(delivery.amountBs)), receipt: delivery.receiptCode ?? '' };
+}
 export const dailyCashCellText = (column, value, formatMoney = bs) => value == null ? '—' : (column.money || column.balance) ? formatMoney(value) : String(value);
 
 // One numeric row feeds the screen, column filters, PDF and XLSX.

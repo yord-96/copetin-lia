@@ -5,7 +5,7 @@ import { getPettyExpenseCategories } from '../../utils/pettyExpenseCategories';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
 import { attachCashLedgerOrder, compareCashLedgerOrder, getCashBusinessDate, getCashEffectiveDate } from '../../utils/cashLedgerOrder';
-import { DAILY_CASH_COLUMNS, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
+import { DAILY_CASH_COLUMNS, getFundDeliveryCoverage, buildDailyCashRow, buildBigCashFundTimeline, filterDailyCashRows, totalDailyCashRows, createDailyCashWorkbook, buildDailyCashReportHtml } from '../../utils/dailyCashReport';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import {
   getCommercialContractCode,
@@ -1430,7 +1430,6 @@ function AccountingSection({
   const monthStartDate = getMonthStartInput(selectedDate);
   const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
   const fundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements), [sortedMovements]);
-  const currentFundSummary = fundTimeline;
   const fundHistoryRows = useMemo(() => postedMovements
     .filter(movement => activeModule === 'contabilidad_caja_chica' ? isPettyCash(movement) : isBigCash(movement))
     .filter((movement) => {
@@ -4174,7 +4173,11 @@ function AccountingSection({
   };
 
   const pettyFundTimeline = useMemo(() => buildPettyCashFundTimeline(sortedMovements), [sortedMovements]);
-  const selectedFundSummary = fundBoxType === 'PETTY_CASH' ? pettyFundTimeline : currentFundSummary;
+  const selectedFundSummary = useMemo(() => fundBoxType === 'PETTY_CASH' ? pettyFundTimeline : buildBigCashFundTimeline(sortedMovements, {
+    asOfDate: fundForm.createdAt ? fundForm.createdAt.slice(0, 10) : dailyReportDate,
+    reportDate: fundForm.createdAt ? fundForm.createdAt.slice(0, 10) : dailyReportDate,
+  }), [fundBoxType, pettyFundTimeline, sortedMovements, fundForm.createdAt, dailyReportDate]);
+  const dailyDeliveryCoverage = useMemo(() => getFundDeliveryCoverage(sortedMovements, dailyReportDate), [sortedMovements, dailyReportDate]);
   const fundBoxLabel = fundBoxType === 'PETTY_CASH' ? 'Caja Chica' : 'Caja Grande';
   const modalPendingFundDeliveries = postedMovements.filter(row => row.cashBoxType === fundBoxType
     && row.category === 'entrega_fondos' && row.fundReportStatus !== 'approved');
@@ -4206,7 +4209,7 @@ function AccountingSection({
       paymentMethod: 'efectivo',
       paymentAccount: '',
       description: `${kind === 'in' ? 'Ingreso' : 'Entrega'} de fondos ${box === 'PETTY_CASH' ? 'de Caja Chica' : 'de Caja Grande'}`,
-      createdAt: now.toISOString().slice(0, 16),
+      createdAt: box === 'BIG_CASH' ? `${dailyReportDate}T23:59` : now.toISOString().slice(0, 16),
       recipientName: '',
       recipientDocument: '',
       notes: '',
@@ -8156,6 +8159,7 @@ function AccountingSection({
               <DailyCashTable
                 key={dailyReportDate}
                 allRows={dailyTableRows}
+                deliveryCoverage={dailyDeliveryCoverage}
                 openingBalance={dailyFundTimeline.openingBalance}
                 rows={visibleDailyTableRows}
                 filters={dailyColumnFilters}
