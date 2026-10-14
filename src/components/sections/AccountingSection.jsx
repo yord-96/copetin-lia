@@ -4244,7 +4244,7 @@ function AccountingSection({
       try {
         const statement = buildFundDeliveryStatement(sortedMovements, movement);
         popup.document.write(buildFundDeliveryDocumentHtml({statement,delivery:movement,labels:row=>({
-          customer:getDailyCustomerName(row),reference:getMovementReference(row),nature:getDailyMovementNature(row).label,
+          customer:getDailyCustomerName(row),reference:getMovementReference(row),nature:getDailyMovementNature(row),
           method:getPaymentMethodLabel(row),user:getMovementUserLabel(row),hour:getHourLabel(resolveCashMovementTimestamp(row)),
         })}));
         popup.document.close();

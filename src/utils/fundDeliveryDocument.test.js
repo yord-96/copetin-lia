@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {buildFundDeliveryStatement,buildFundDeliveryDocumentHtml} from './fundDeliveryDocument.js';
+import {buildFundDeliveryStatement,buildFundDeliveryDocumentHtml,summarizeFundDelivery} from './fundDeliveryDocument.js';
 const row=(id,amountBs,date,sequence,tag='')=>({id,amountBs,cashBoxType:'BIG_CASH',paymentMethod:'efectivo',cashEffectiveDate:date,cashLedgerSequence:sequence,accountingTag:tag});
 test('statement reconciles opening, receipts, expenses, delivery and carryforward',()=>{
  const rows=[row('opening',5000,'2026-10-01',1,'big_cash_fund_in'),row('income',25000,'2026-10-05',2),row('future',10000,'2026-10-06',3)];
@@ -15,5 +15,16 @@ test('statement reconciles opening, receipts, expenses, delivery and carryforwar
  assert.deepEqual(next.details.map(r=>r.movement.id),['future','later']);
  assert.equal(next.after.totalBs,12000);
  const html=buildFundDeliveryDocumentHtml({statement:s,delivery,labels:()=>({customer:'<cliente>',reference:'123',user:'Usuario'})});
- assert.ok(html.includes('&lt;cliente&gt;'));assert.ok(html.includes('Contrato 123'));assert.ok(html.includes('RECIBIDO POR'));
+ assert.ok(html.includes('Resumen por concepto'));assert.ok(html.includes('Conciliación por medio y cuenta'));assert.ok(html.includes('RECIBIDO POR'));
+});
+
+test('separates guarantee allocations without adding a second receipt and reconciles each account',()=>{
+ const deposit={...row('deposit',100,'2026-10-02',2),guaranteeAllocationBs:50};
+ const refund=row('refund',-20,'2026-10-02',3);
+ const delivery=row('delivery',-30,'2026-10-02',4,'big_cash_fund_out');
+ const statement=buildFundDeliveryStatement([row('fund',10,'2026-10-01',1,'big_cash_fund_in'),deposit,refund],delivery);
+ const summary=summarizeFundDelivery(statement,delivery,m=>({nature:{label:m.id==='refund'?'Garantías devueltas':'Contratos / abonos'}}));
+ assert.equal(summary.concepts.find(r=>r.name==='Garantías recibidas').totalBs,50);
+ assert.equal(summary.concepts.filter(r=>r.direction==='Ingreso').reduce((s,r)=>s+r.totalBs,0),110);
+ for(const a of summary.accounts) assert.equal(a.initialBs+a.incomeBs-a.expenseBs-a.deliveryBs,a.afterBs);
 });
