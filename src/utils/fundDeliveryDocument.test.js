@@ -15,7 +15,7 @@ test('statement reconciles opening, receipts, expenses, delivery and carryforwar
  assert.deepEqual(next.details.map(r=>r.movement.id),['future','later']);
  assert.equal(next.after.totalBs,12000);
  const html=buildFundDeliveryDocumentHtml({statement:s,delivery,labels:()=>({customer:'<cliente>',reference:'123',user:'Usuario'})});
- assert.ok(html.includes('Resumen por concepto'));assert.ok(html.includes('Conciliación por medio y cuenta'));assert.ok(html.includes('RECIBIDO POR'));assert.ok(!html.includes('APROBADO POR'));assert.ok(html.includes('TOTAL INGRESOS'));assert.ok(html.includes('TOTAL GENERAL'));assert.ok(html.includes('CONCILIADO'));
+ assert.ok(html.includes('Ingresos por concepto'));assert.ok(html.includes('Conciliación por medio y cuenta'));assert.ok(html.includes('RECIBIDO POR'));assert.ok(!html.includes('APROBADO POR'));assert.ok(html.includes('TOTAL INGRESOS'));assert.ok(html.includes('TOTAL GENERAL'));assert.ok(html.includes('Egresos por concepto'));assert.ok(!html.includes('RESULTADO NETO'));assert.ok(html.includes('CONCILIADO'));
 });
 
 test('separates guarantee allocations without adding a second receipt and reconciles each account',()=>{
