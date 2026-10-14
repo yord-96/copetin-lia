@@ -1,3 +1,4 @@
+import { buildFundDeliveryStatement, buildFundDeliveryDocumentHtml } from '../../utils/fundDeliveryDocument.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { buildPettyCashFundTimeline } from '../../utils/pettyCashFund';
@@ -4239,6 +4240,17 @@ function AccountingSection({
       setFundActionError('El navegador bloqueó la ventana del reporte. Habilita ventanas emergentes para imprimir la entrega.');
       return;
     }
+    if (movement.cashBoxType === 'BIG_CASH') {
+      try {
+        const statement = buildFundDeliveryStatement(sortedMovements, movement);
+        popup.document.write(buildFundDeliveryDocumentHtml({statement,delivery:movement,labels:row=>({
+          customer:getDailyCustomerName(row),reference:getMovementReference(row),nature:getDailyMovementNature(row).label,
+          method:getPaymentMethodLabel(row),user:getMovementUserLabel(row),hour:getHourLabel(resolveCashMovementTimestamp(row)),
+        })}));
+        popup.document.close();
+      } catch (error) { popup.close(); setFundActionError(error.message); }
+      return;
+    }
     const snapshot = explicitSnapshot ?? getFundSnapshotForMovement(movement);
     const after = snapshot?.after ?? { totalBs: 0, cashBs: 0, digitalBs: 0, accounts: [] };
     const before = snapshot?.before ?? { totalBs: 0, cashBs: 0, digitalBs: 0 };
@@ -4260,7 +4272,7 @@ function AccountingSection({
       <section class="signatures"><div class="signature"><strong>ENTREGADO POR</strong><small>${esc(getMovementUserLabel(movement))}</small></div><div class="signature"><strong>RECIBIDO POR</strong><small>${esc(movement?.fundRecipientName || 'Nombre / CI')}</small></div><div class="signature"><strong>APROBADO POR</strong><small>${approved ? esc(movement?.fundApprovedBy || 'Aprobado') : 'Nombre / cargo / firma'}</small></div></section>
     </body></html>`);
     popup.document.close();
-  }, [formatBs, formatDateTime, getFundSnapshotForMovement, getMovementUserLabel]);
+  }, [formatBs, formatDateTime, getFundSnapshotForMovement, getMovementUserLabel, sortedMovements, getDailyCustomerName, getMovementReference, getDailyMovementNature]);
 
   const openFundHistoryDocument = async (movement) => {
     if (!movement) return;
