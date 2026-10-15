@@ -3062,11 +3062,15 @@ function ServiceOrdersSection({
         finalizedAt: contract?.finalizedAt ?? null,
         finalizedByName: String(contract?.finalizedByName ?? '').trim(),
         guaranteePrimary: guaranteeBs > 0
-          ? formatBs(['held', 'partial'].includes(guaranteeStatus) ? guaranteeSettlement.pendingRefundBs : guaranteeBs)
+          ? guaranteeStatus === 'pending'
+            ? `Debe ${formatBs(guaranteeBs)}`
+            : guaranteeStatus === 'held' && rowGuaranteeReserveBs + 0.009 < guaranteeBs
+              ? `Recibida ${formatBs(rowGuaranteeReserveBs)}`
+              : formatBs(['held', 'partial'].includes(guaranteeStatus) ? guaranteeSettlement.pendingRefundBs : guaranteeBs)
           : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
           ? guaranteeStatus === 'pending'
-            ? `Falta recibir ${formatBs(guaranteeBs)}`
+            ? ''
             : guaranteeStatus === 'returned'
               ? 'Devuelta'
               : guaranteeStatus === 'mixed'
@@ -3076,7 +3080,7 @@ function ServiceOrdersSection({
                 : guaranteeStatus === 'charged'
                   ? 'Aplicada'
                   : guaranteeStatus === 'held'
-                    ? (rowGuaranteeReserveBs + 0.009 < guaranteeBs ? `Recibida ${formatBs(rowGuaranteeReserveBs)} de ${formatBs(guaranteeBs)} · Faltan ${formatBs(guaranteeBs - rowGuaranteeReserveBs)}` : 'Apartada')
+                    ? (rowGuaranteeReserveBs + 0.009 < guaranteeBs ? `Falta ${formatBs(guaranteeBs - rowGuaranteeReserveBs)}` : 'Apartada')
                     : 'Pagada'
           : '',
       };
@@ -12161,7 +12165,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <td>
                           <div className={`orders-guarantee-cell ${row.guaranteeBs > 0 ? 'has-guarantee' : 'empty'}`}>
                             <strong>{row.guaranteePrimary}</strong>
-                            <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span>
+                            {row.guaranteeSecondary ? <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span> : null}
                           </div>
                         </td>
                         <td className={`orders-total ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
@@ -12337,7 +12341,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <Check aria-hidden="true" />
                         <small>Garantía</small>
                         <strong>{row.guaranteePrimary}</strong>
-                        <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span>
+                        {row.guaranteeSecondary ? <span className={`orders-guarantee-state ${row.guaranteeStatus}`}>{row.guaranteeSecondary}</span> : null}
                       </div>
                       <div className="orders-transport-cell">
                         <Truck aria-hidden="true" />

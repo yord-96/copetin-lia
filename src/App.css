@@ -37459,9 +37459,30 @@ button.calendar-dispatch-row:focus-visible {
 
   .orders-guarantee-state {
     width: fit-content;
-    border-radius: 999px;
+    border-radius: 0.3rem;
     padding: 0.16rem 0.42rem;
     background: #eef3fb;
+  }
+
+  .orders-view .orders-contracts-table .orders-guarantee-cell.has-guarantee {
+    text-align: left;
+    align-content: center;
+    justify-items: start;
+    border-radius: 0.4rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .orders-view .orders-contracts-table .orders-guarantee-cell > strong,
+  .orders-view .orders-contracts-table .orders-guarantee-state {
+    line-height: 1.35;
+    white-space: normal;
+    text-wrap: pretty;
+  }
+
+  .orders-view .orders-contracts-table .orders-guarantee-state {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   .orders-guarantee-state.held,
