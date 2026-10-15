@@ -203,9 +203,10 @@ function SuppliersSection({
     [localBundle?.loans, supplierBundle?.loans],
   );
 
+  const catalogItems = localBundle?.catalogItems ?? items;
   const contractById = useMemo(
-    () => new Map(contracts.filter((contract) => contract?.id).map((contract) => [String(contract.id), contract])),
-    [contracts],
+    () => new Map([...contracts, ...(localBundle?.contractReferences ?? [])].filter((contract) => contract?.id).map((contract) => [String(contract.id), contract])),
+    [contracts, localBundle?.contractReferences],
   );
 
   const getLinkedContract = useCallback((loan) => {
@@ -471,7 +472,7 @@ function SuppliersSection({
         if (lineIndex !== index) return line;
         const next = { ...line, [field]: value };
         if (field === 'itemName') {
-          const inventoryItem = items.find((item) => normalizeText(item.name) === normalizeText(value));
+          const inventoryItem = catalogItems.find((item) => normalizeText(item.name) === normalizeText(value));
           const price = latestPrices.get(`${supplierId}|${normalizeText(value)}`);
           if (inventoryItem) {
             next.category = inventoryItem.category;
@@ -1295,7 +1296,7 @@ function SuppliersSection({
       })() : null}
 
       <datalist id="inventory-item-names">
-        {items.map((item) => <option key={item.id} value={item.name} />)}
+        {catalogItems.map((item) => <option key={item.id} value={item.name} />)}
       </datalist>
 
       {documentPreview ? (

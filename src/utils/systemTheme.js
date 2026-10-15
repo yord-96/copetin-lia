@@ -98,12 +98,17 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .primary-button{background:linear-gradient(135deg,#e56a14,#c4490a)!important;color:#fff!important;border-color:#ef853e!important;box-shadow:0 4px 14px #e56a1420}
   html[data-theme="dark"] .primary-button:hover:not(:disabled){background:linear-gradient(135deg,#f37a23,#d65510)!important}
   html[data-theme="dark"] .primary-button:disabled{opacity:.5}
+  html[data-theme="dark"] .suppliers-v2{--sup-border:#34435b;--sup-soft:#1c293b;--sup-text:#dce7f7;--sup-muted:#9eafc6;--sup-orange:#ff984a;--sup-orange-soft:#3b291e}
+  html[data-theme="dark"] .suppliers-v2 .suppliers-compact-kpis strong,html[data-theme="dark"] .suppliers-v2 .suppliers-tab-count,html[data-theme="dark"] .suppliers-v2 .suppliers-detail-metrics strong,html[data-theme="dark"] .suppliers-v2 .suppliers-view-tabs button.active{color:#a9cdff}
   html[data-theme="dark"] input:focus,html[data-theme="dark"] select:focus,html[data-theme="dark"] textarea:focus{outline-color:#ff984a;border-color:#ff984a;box-shadow:0 0 0 3px #ff984a20}`;
   const rebuild=()=>{
     if(theme!=='dark'){style.textContent='';return;}
     let css='';
     const rootStyle=getComputedStyle(document.documentElement),variables=new Map();
-    const resolveVariable=name=>{if(!variables.has(name))variables.set(name,rootStyle.getPropertyValue(name).trim());return variables.get(name);};
+    const localVariables=new Map();
+    const collect=rules=>{for(const rule of rules){if(rule.style)for(const property of rule.style){if(property.startsWith('--'))localVariables.set(property,rule.style.getPropertyValue(property).trim());}else if(rule.cssRules)collect(rule.cssRules);}};
+    for(const sheet of document.styleSheets){if(sheet.ownerNode===style)continue;try{collect(sheet.cssRules);}catch{/* Cross-origin fonts. */}}
+    const resolveVariable=name=>{if(!variables.has(name))variables.set(name,rootStyle.getPropertyValue(name).trim()||localVariables.get(name)||'');return variables.get(name);};
     for(const sheet of document.styleSheets) {
       if(sheet.ownerNode===style)continue;
       try{css+=compileDarkRules(sheet.cssRules,resolveVariable);}catch{/* External font stylesheets are inaccessible. */}
@@ -118,7 +123,7 @@ export function initializeSystemTheme() {
   const schedule=()=>{clearTimeout(timer);timer=setTimeout(rebuild,50);};
   const observer=new MutationObserver(records=>{
     if(records.some(r=>r.target!==style&&(r.target.tagName==='STYLE'||r.target.parentNode?.tagName==='STYLE'&&r.target.parentNode!==style
-      || [...r.addedNodes].some(n=>n!==style&&(n.tagName==='STYLE'||n.tagName==='LINK')))))schedule();
+      || [...r.addedNodes].some(n=>n!==style&&(n.tagName==='STYLE'||n.tagName==='LINK'||n.querySelector?.('style,link[rel="stylesheet"]'))))))schedule();
   });
   observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
   document.addEventListener('load',event=>{if(event.target.tagName==='LINK')schedule();},true);

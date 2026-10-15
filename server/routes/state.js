@@ -1,3 +1,4 @@
+import { buildSupplierViewContext } from '../services/supplierViewContext.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
@@ -2525,6 +2526,7 @@ router.get('/__copetin_db/suppliers/overview', async (req, res, next) => {
       suppliers,
       quotes,
       loans,
+      ...buildSupplierViewContext(state,loans),
       revision: snapshot.revision,
       version: snapshot.version,
       updatedAt: snapshot.updatedAt,

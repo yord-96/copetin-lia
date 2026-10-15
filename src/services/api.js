@@ -3906,6 +3906,8 @@ export const api = {
           setCachedServerRevision(payload.revision);
         }
         const bundle = {
+          contractReferences: payload?.contractReferences ?? [],
+          catalogItems: payload?.catalogItems ?? [],
           suppliers: Array.isArray(payload?.suppliers) ? payload.suppliers : [],
           quotes: Array.isArray(payload?.quotes) ? payload.quotes : [],
           loans: Array.isArray(payload?.loans) ? payload.loans : [],

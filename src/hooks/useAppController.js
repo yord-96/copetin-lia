@@ -481,6 +481,10 @@ export const useAppController = () => {
     // Otros modulos comparten colecciones parciales. Al volver a Ordenes,
     // confirmar su listado completo (incluidos anulados y ocultos).
     if (requestedTab !== 'alquiler') ordersOverviewLoadedRef.current = false;
+    if (requestedTab === 'proveedores') {
+      setSupplierBundle(await api.suppliers.listBundle());
+      return;
+    }
     if (requestedTab === 'items') {
       await prepareClientsOverview();
       return;
@@ -643,7 +647,7 @@ export const useAppController = () => {
     // Calendario, Ordenes, Usuarios y Asistencia tienen cargas pequenas propias.
     // El resto del sistema conserva la carga completa, pero de forma diferida.
     if (
-      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios', 'items', 'personal'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'asistencia', 'usuarios', 'items', 'personal', 'proveedores'].includes(String(activeTab))
       || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) return;
@@ -983,6 +987,14 @@ export const useAppController = () => {
         return;
       }
 
+      if (activeTab === 'proveedores') {
+        window.clearTimeout(refreshTimer);
+        refreshTimer=window.setTimeout(async()=>{
+          try { const bundle=await api.suppliers.listBundle({force:true}); if(!disposed)setSupplierBundle(bundle); }
+          catch (error) { console.warn('No se pudo actualizar Proveedores.',error); }
+        },250);
+        return;
+      }
       if (activeTab === 'disponibilidad') {
         availabilityOverviewLoadedRef.current = false;
         window.clearTimeout(refreshTimer);
@@ -1021,7 +1033,7 @@ export const useAppController = () => {
         }
       }, isRemoteChange ? 450 : 0);
     }, {
-      moduleScoped: ['alquiler', 'caja', 'personal', 'asistencia', 'usuarios', 'items', 'disponibilidad'].includes(String(activeTab))
+      moduleScoped: ['alquiler', 'caja', 'personal', 'asistencia', 'usuarios', 'items', 'disponibilidad', 'proveedores'].includes(String(activeTab))
         || String(activeTab).startsWith('contabilidad'),
     });
 
@@ -1073,7 +1085,7 @@ export const useAppController = () => {
       return;
     }
     if (
-      ['caja', 'alquiler', 'disponibilidad', 'personal', 'asistencia', 'usuarios', 'items'].includes(String(activeTab))
+      ['caja', 'alquiler', 'disponibilidad', 'personal', 'asistencia', 'usuarios', 'items', 'proveedores'].includes(String(activeTab))
       || String(activeTab).startsWith('contabilidad')
       || String(activeTab).startsWith('inventario')
     ) {
@@ -2357,7 +2369,7 @@ export const useAppController = () => {
     setError('');
     try {
       const updated = await api.suppliers.update(payload);
-      await loadData();
+      setSupplierBundle(await api.suppliers.listBundle({force:true}));
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el proveedor.');
@@ -2387,7 +2399,7 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.suppliers.createLoan(payload);
-      await loadData();
+      setSupplierBundle(await api.suppliers.listBundle({force:true}));
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar el prestamo del proveedor.');
@@ -2399,7 +2411,7 @@ export const useAppController = () => {
     setError('');
     try {
       const updated = await api.suppliers.updateLoanStatus(payload);
-      await loadData();
+      setSupplierBundle(await api.suppliers.listBundle({force:true}));
       return updated;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el prestamo.');
