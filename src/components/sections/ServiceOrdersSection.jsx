@@ -1,3 +1,4 @@
+import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
 import { economicDepositGroup, reviseEconomicDeposit } from '../../utils/economicDepositOperations';
 import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
@@ -7322,6 +7323,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       return;
     }
     const parsed = Math.max(1, parseIntegerInput(cleanedValue, 1));
+    if (isComboPriceLine(draft.items, draftLine)) {
+      setDraft(current => ({...current,items:resizeComboPackage(current.items,lineKeyOrItemId,parsed,(main,count,oldCount)=>{
+        const saved={rentalPriceBs:Number(main.unitPriceBs)||0,pricingCondition:main.comboPricingCondition};
+        return getComboUnitPriceForQuantity(saved,oldCount)===Number(main.unitPriceBs)
+          ? getComboUnitPriceForQuantity(saved,count) : Number(main.unitPriceBs)||0;
+      }) ?? current.items}));
+      return;
+    }
     // Una vez agregado el combo, cada componente debe seguir siendo editable en
     // el contrato. Antes se redistribuian obligatoriamente las unidades del slot
     // para que coincidieran con la configuracion original del combo; con un solo
@@ -17397,7 +17406,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               <div className="orders-qty-stepper">
                                 <button
                                   type="button"
-                                  onClick={() => setDraftItemQuantity(line.lineKey, String(Math.max(1, Number(line.quantity ?? 1) - 1)))}
+                                  onClick={() => setDraftItemQuantity(line.lineKey, String(Math.max(1, Number(line.quantity ?? 1) - (isComboPriceLine(draft.items, draft.items.find(row => row.lineKey === line.lineKey)) ? Math.max(1, Number(line.quantity) / Math.max(1, Number(line.comboQuantity)||1)) : 1))))}
                                   aria-label={`Reducir cantidad de ${line.item.name}`}
                                 >
                                   -
@@ -17414,7 +17423,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => setDraftItemQuantity(line.lineKey, String(Number(line.quantity ?? 1) + 1))}
+                                  onClick={() => setDraftItemQuantity(line.lineKey, String(Number(line.quantity ?? 1) + (isComboPriceLine(draft.items, draft.items.find(row => row.lineKey === line.lineKey)) ? Math.max(1, Number(line.quantity) / Math.max(1, Number(line.comboQuantity)||1)) : 1)))}
                                   aria-label={`Aumentar cantidad de ${line.item.name}`}
                                 >
                                   +
