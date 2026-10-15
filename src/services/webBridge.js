@@ -7609,8 +7609,9 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
     gap: 1.2mm;
     align-items: end;
     color: #111;
-    font-size: 10px;
-    font-weight: 500;
+    min-height: 5mm;
+    font-size: 11.5px;
+    font-weight: 600;
     white-space: nowrap;
   }
   .rc-sign-field i {
@@ -9341,10 +9342,11 @@ export const buildContractDocumentHtml = ({
         <h2 class="rc-operational-title">Datos del cliente y cronograma</h2>
         <div class="rc-operational-grid">
           <div class="rc-info-list">
-            <div class="rc-info-line is-wide"><small>Cliente</small><strong>${escapeHtml(documentCustomerName)}</strong></div>
-            <div class="rc-info-line is-wide"><small>Telefono</small><strong>${escapeHtml(documentCustomerPhones.length ? documentCustomerPhones.join(' / ') : '-')}</strong></div>
+            <div class="rc-info-line"><small>Cliente</small><strong>${escapeHtml(documentCustomerName)}</strong></div>
+            <div class="rc-info-line"><small>Telefono</small><strong>${escapeHtml(documentCustomerPhones.length ? documentCustomerPhones.join(' / ') : '-')}</strong></div>
             <div class="rc-info-line"><small>CI</small><strong>${escapeHtml(documentCustomerCi || '-')}</strong></div>
             <div class="rc-info-line"><small>Evento</small><strong>${escapeHtml(contract?.eventType ?? rental.eventType ?? 'General')}</strong></div>
+            <div class="rc-place-line"><small>Direccion</small><strong>${escapeHtml(operationalPlaceLabel)}</strong></div>
           </div>
           <div class="rc-timeline">
             <div class="rc-timeline-row">
@@ -9357,7 +9359,6 @@ export const buildContractDocumentHtml = ({
               <span><small>Fecha</small><strong>${escapeHtml(pickupDate)}</strong></span>
               <span><small>Horario</small><strong>${escapeHtml(pickupTimeLabel)}</strong></span>
             </div>
-            <div class="rc-place-line"><small>Direccion</small><strong>${escapeHtml(operationalPlaceLabel)}</strong></div>
           </div>
         </div>
         <div class="rc-sign-line">
