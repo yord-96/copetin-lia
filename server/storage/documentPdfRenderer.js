@@ -326,6 +326,19 @@ export const ensureDocumentPdfCacheDirectory = async () => {
   return cacheDirectory;
 };
 
+export const readCachedDocumentPdf = async (cacheKey, fileName) => {
+  if (!/^[a-f0-9]{64}$/.test(String(cacheKey)) || !/^[a-zA-Z0-9_-]+\.pdf$/.test(String(fileName))) {
+    return null;
+  }
+  const baseName = fileName.slice(0, -4);
+  try {
+    return await fs.readFile(path.join(cacheDirectory, `${baseName}-${cacheKey}.pdf`));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+};
+
 export const closeDocumentPdfRenderer = async () => {
   const pendingBrowser = browserPromise;
   const currentBrowser = browserInstance;
