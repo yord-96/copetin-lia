@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ThemeToggle from './ThemeToggle.jsx';
 
 const initialsFromName = (name) =>
   String(name ?? '')
@@ -196,6 +197,7 @@ function TopBar({
               <strong>{currentUser?.fullName ?? 'Usuario'}</strong>
               <span>{currentUser?.role ?? 'Operador'} - {currentDevice}</span>
             </div>
+            <ThemeToggle />
             <button type="button" className="top-logout-button" onClick={onLogout}>Salir</button>
           </div>
         </div>

@@ -75837,3 +75837,21 @@ body:has(.bigcash-report-backdrop) {
 .daily-filters-panel button.apply { background: #173a70; color: #fff; border-color: #173a70; }
 @media (max-width: 540px) { .daily-filters-panel-body { grid-template-columns: 125px minmax(0, 1fr); } .daily-filters-values { padding: 10px; } .daily-filters-columns { padding: 7px; } }
 @media print { .daily-filters-panel { display: none; } }
+.system-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #ead8ca;
+  border-radius: 50%;
+  background: #fff8f2;
+  color: #b84b10;
+  cursor: pointer;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+.system-theme-toggle:hover { background: #ffead9; box-shadow: 0 2px 8px rgba(143,64,14,.14); }
+.system-theme-toggle:focus-visible { outline: 2px solid #ec620c; outline-offset: 3px; }
+@media print { .system-theme-toggle { display: none; } }
