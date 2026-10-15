@@ -121,7 +121,14 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .developer-company-card--salon .developer-company-icon,html[data-theme="dark"] .developer-company-card--salon .developer-company-eyebrow{background:#173f3c!important;color:#8ce7cd!important;border-color:#33786c!important}
   html[data-theme="dark"] .developer-company-card--salon .developer-company-action{color:#8ce7cd!important}
   html[data-theme="dark"] .developer-company-tags em{background:#172435!important;color:#c7d7eb!important;border-color:#455a75!important}
-  html[data-theme="dark"] .developer-company-footer{background:#131e2e!important;border-color:#3a4c65!important}`;
+  html[data-theme="dark"] .developer-company-footer{background:#131e2e!important;border-color:#3a4c65!important}
+  html[data-theme="dark"] .lincon-shell,html[data-theme="dark"] .lincon-shell .lincon-main{background:#141e2c!important;color:#e3ebf5}
+  html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering{background:linear-gradient(135deg,#1d3940,#20313e)!important;border-color:#3d696e!important}
+  html[data-theme="dark"] .lincoln-commercial-metric-card.is-numbering .lincoln-commercial-metric-icon{background:#254d51!important;color:#9ce6d8!important}
+  html[data-theme="dark"] .lincoln-commercial-metric-card.is-numbering .lincoln-commercial-numbering-label{color:#9ce6d8!important}
+  html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering > div{border-color:#45616b!important}
+  html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering small{color:#b3cad7!important}
+  html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering b{color:#f0f8ff!important;font-variant-numeric:tabular-nums}`;
   const rebuild=()=>{
     if(theme!=='dark'){style.textContent='';return;}
     let css='';
