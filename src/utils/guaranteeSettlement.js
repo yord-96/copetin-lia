@@ -20,6 +20,7 @@ export const calculateGuaranteePaidEvidence = (
 }, 0));
 
 const isActiveLedgerEntry = (entry) => !entry?.deletedAt;
+export const getActiveEconomicLedger = (contract) => (Array.isArray(contract?.economicLedger) ? contract.economicLedger : []).filter(isActiveLedgerEntry);
 
 const isConfirmedLedgerEntry = (entry) => Boolean(
   entry?.isCashRegistered
@@ -45,8 +46,7 @@ const isCashCollectedDamageEntry = (entry) => (
  * accounting bootstrap does not include old cash movements.
  */
 export const getGuaranteeLedgerEvidence = (contract) => {
-  const ledger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
-    .filter(isActiveLedgerEntry);
+  const ledger = getActiveEconomicLedger(contract);
   if (ledger.length === 0) {
     const summary = contract?.accountingLedgerSummary?.guaranteeEvidence;
     if (summary && ['paidBs', 'appliedBs', 'refundedBs'].some((key) => Number.isFinite(Number(summary?.[key])))) {

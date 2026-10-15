@@ -41,7 +41,7 @@ import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { reconcileContractDocumentPayments } from '../../utils/contractDocumentPayments';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
-import { resolveGuaranteeReceivedBs, calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
+import { getActiveEconomicLedger, resolveGuaranteeReceivedBs, calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
 import { buildGuaranteeApplicationPlan } from '../../utils/guaranteeApplication';
 import { distributeComboUnits } from '../../utils/comboDistribution';
 import { api } from '../../services/api';
@@ -802,7 +802,7 @@ const getEconomicCommercialCashAmount = (movement) => {
 };
 
 const isEconomicGuaranteeBackedByCash = (entry, ledgerById = new Map()) => {
-  if (entry?.type !== 'guarantee') return false;
+  if (entry?.deletedAt || entry?.type !== 'guarantee') return false;
   if (isEconomicLedgerEntryConfirmedInCash(entry)) return true;
 
   // Apartar una garantia desde un deposito es una reclasificacion del mismo
@@ -811,7 +811,7 @@ const isEconomicGuaranteeBackedByCash = (entry, ledgerById = new Map()) => {
   const sourceDepositId = String(entry?.sourceDepositId ?? '').trim();
   if (!sourceDepositId) return false;
   const sourceDeposit = ledgerById.get(sourceDepositId);
-  return sourceDeposit?.type === 'deposit'
+  return !sourceDeposit?.deletedAt && sourceDeposit?.type === 'deposit'
     && isEconomicLedgerEntryConfirmedInCash(sourceDeposit);
 };
 
@@ -2729,8 +2729,7 @@ function ServiceOrdersSection({
       const clientPendingUnits = (Array.isArray(clientPendingPickup?.items) ? clientPendingPickup.items : [])
         .reduce((sum, line) => sum + Math.max(0, Number(line?.pendingQty ?? 0)), 0);
       const hasClientPending = clientPendingUnits > 0;
-      const economicLedger = (Array.isArray(contract?.economicLedger) ? contract.economicLedger : [])
-        .map(normalizeEconomicLedgerEntry);
+      const economicLedger = getActiveEconomicLedger(contract).map(normalizeEconomicLedgerEntry);
       const economicInternalNotes = getEconomicInternalNotes({ economicLedger });
       const hasEconomicLedger = economicLedger
         .some((entry) => toMoneyNumber(entry?.amountBs) > 0);
