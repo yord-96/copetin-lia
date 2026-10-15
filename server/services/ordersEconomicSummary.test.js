@@ -6,6 +6,15 @@ import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary
 const contract = { id: 'contract-1', rentalId: 'rental-1', contractCode: '2026', orderCode: 'OS-001', totals: { guaranteeBs: 200 }, economicLedger: [] };
 const receipt = (id, fields = {}) => ({ id, type: 'ingreso_alquiler', cashBoxType: 'BIG_CASH', amountBs: 100, receiptCode: `REC-${id}`, collectionTarget: 'balance', ...fields });
 
+test('partial guarantee receipt does not inflate to the declared amount and refunds leave the real remainder',()=>{
+  const partial={...contract,totals:{guaranteeBs:480},guarantee:{amountBs:480,status:'validado',validatedBs:480},economicLedger:[{id:'g',type:'deposit',amountBs:400,guaranteeAllocationBs:400,isCashRegistered:true}]};
+  const summary=getOrdersGuaranteeEconomicSummary(partial,[],{guaranteePaidBs:400});
+  assert.equal(summary.paidBs,400);assert.equal(summary.pendingRefundBs,400);
+  const refunded={...partial,totals:{guaranteeBs:350},economicLedger:[{id:'g',type:'deposit',amountBs:350,guaranteeAllocationBs:350,isCashRegistered:true},{id:'r',type:'refund',refundSource:'guarantee',amountBs:200,isCashRegistered:true}]};
+  const result=getOrdersGuaranteeEconomicSummary(refunded,[],{guaranteePaidBs:350});
+  assert.equal(result.pendingRefundBs,150);assert.equal(result.status,'partial');
+});
+
 test('candidate index preserves source order, deduplicates aliases and retains legacy text receipts', () => {
   const rows = [receipt('a', { linkedContractId: 'contract-1', linkedRentalId: 'rental-1' }), receipt('unrelated', { contractId: 'other' }), receipt('legacy', { description: 'Abono del Contrato 2026' }), receipt('case', { contractId: 'CONTRACT-1' }), receipt('void', { contractId: 'contract-1', voidedAt: '2026-10-06' })];
   const candidates = createOrdersCashIndex(rows)(contract);

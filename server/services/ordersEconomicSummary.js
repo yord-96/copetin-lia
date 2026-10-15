@@ -1,3 +1,4 @@
+import { resolveGuaranteeReceivedBs } from '../../src/utils/guaranteeSettlement.js';
 import { reconcileContractDocumentPayments } from '../../src/utils/contractDocumentPayments.js';
 const toPositiveRoundedNumber = (value) => {
   const number = Number(value);
@@ -111,12 +112,9 @@ export const getOrdersGuaranteeEconomicSummary = (contract = {}, cashMovements =
   ).trim().toLowerCase();
   const storedValidatedBs = toPositiveRoundedNumber(contract?.guarantee?.validatedBs);
 
-  const paidBs = toPositiveRoundedNumber(Math.max(
-    rawStatus === 'validado' ? Math.max(storedValidatedBs, declaredBs) : storedValidatedBs,
-    explicitGuaranteePaidBs,
-    confirmedDepositGuaranteeBs,
-    cashSummary.guaranteePaidBs,
-  ));
+  const paidBs = resolveGuaranteeReceivedBs([
+    explicitGuaranteePaidBs, confirmedDepositGuaranteeBs, cashSummary.guaranteePaidBs,
+  ], rawStatus === 'validado' ? Math.max(storedValidatedBs, declaredBs) : storedValidatedBs);
 
   const refundedBs = toPositiveRoundedNumber(Math.min(
     paidBs,

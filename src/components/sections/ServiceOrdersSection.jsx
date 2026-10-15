@@ -41,7 +41,7 @@ import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { reconcileContractDocumentPayments } from '../../utils/contractDocumentPayments';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
-import { calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
+import { resolveGuaranteeReceivedBs, calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
 import { buildGuaranteeApplicationPlan } from '../../utils/guaranteeApplication';
 import { distributeComboUnits } from '../../utils/comboDistribution';
 import { api } from '../../services/api';
@@ -2853,14 +2853,13 @@ function ServiceOrdersSection({
         if (sourceDepositBs <= 0 || collectionRegisteredBs + 0.009 < sourceDepositBs) return sum;
         return sum + Math.max(0, toMoneyNumber(entry?.amountBs));
       }, 0);
-      const rowGuaranteeReserveBs = Math.max(
-        rawGuaranteeStatus === 'validado' ? guaranteeBs : 0,
+      const rowGuaranteeReserveBs = resolveGuaranteeReceivedBs([
         rowLedgerBackedGuaranteeBs,
         reclassifiedGuaranteeFromCollectedDepositBs,
         toMoneyNumber(rowGuaranteeEvidence?.paidBs),
         toMoneyNumber(serverGuaranteeSummary?.paidBs),
         toMoneyNumber(serverCashSummary?.guaranteePaidBs),
-      );
+      ], rawGuaranteeStatus === 'validado' ? guaranteeBs : 0);
       // No considerar cualquier dano como garantia aplicada: solo cuenta una
       // aplicacion explicita registrada en la hoja economica. El resumen del
       // servidor prevalece cuando el bootstrap ya resolvio el cuaderno completo.
@@ -3013,12 +3012,9 @@ function ServiceOrdersSection({
         ),
       });
       const isGuaranteeValidated = rowGuaranteeReserveBs > 0;
-      const serverGuaranteeStatus = String(serverGuaranteeSummary?.status ?? '').trim().toLowerCase();
       const guaranteeStatus = guaranteeBs <= 0
         ? 'none'
-        : ['returned', 'mixed', 'partial', 'charged', 'held', 'pending'].includes(serverGuaranteeStatus)
-          ? serverGuaranteeStatus
-          : guaranteeSettlement.isFullyResolved && guaranteeSettlement.appliedBs > 0 && guaranteeSettlement.refundedBs > 0
+        : guaranteeSettlement.isFullyResolved && guaranteeSettlement.appliedBs > 0 && guaranteeSettlement.refundedBs > 0
             ? 'mixed'
           : guaranteeSettlement.isFullyResolved && guaranteeSettlement.refundedBs > 0
             ? 'returned'
@@ -3067,11 +3063,11 @@ function ServiceOrdersSection({
         finalizedAt: contract?.finalizedAt ?? null,
         finalizedByName: String(contract?.finalizedByName ?? '').trim(),
         guaranteePrimary: guaranteeBs > 0
-          ? formatBs(guaranteeStatus === 'partial' ? guaranteeSettlement.pendingRefundBs : guaranteeBs)
+          ? formatBs(['held', 'partial'].includes(guaranteeStatus) ? guaranteeSettlement.pendingRefundBs : guaranteeBs)
           : 'Sin garantía',
         guaranteeSecondary: guaranteeBs > 0
           ? guaranteeStatus === 'pending'
-            ? 'Debe'
+            ? `Falta recibir ${formatBs(guaranteeBs)}`
             : guaranteeStatus === 'returned'
               ? 'Devuelta'
               : guaranteeStatus === 'mixed'
@@ -3081,7 +3077,7 @@ function ServiceOrdersSection({
                 : guaranteeStatus === 'charged'
                   ? 'Aplicada'
                   : guaranteeStatus === 'held'
-                    ? 'Apartada'
+                    ? (rowGuaranteeReserveBs + 0.009 < guaranteeBs ? `Recibida ${formatBs(rowGuaranteeReserveBs)} de ${formatBs(guaranteeBs)} · Faltan ${formatBs(guaranteeBs - rowGuaranteeReserveBs)}` : 'Apartada')
                     : 'Pagada'
           : '',
       };

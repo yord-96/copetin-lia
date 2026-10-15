@@ -3,6 +3,11 @@ const toMoney = (value) => {
   return Number.isFinite(parsed) ? Math.max(0, Number(parsed.toFixed(2))) : 0;
 };
 
+export function resolveGuaranteeReceivedBs(evidence, legacyValidatedBs = 0) {
+  const confirmed = Math.max(0, ...evidence.map(toMoney));
+  return confirmed > 0 ? confirmed : toMoney(legacyValidatedBs);
+}
+
 export const calculateGuaranteePaidEvidence = (
   movements = [],
   isDirectGuarantee = () => false,
