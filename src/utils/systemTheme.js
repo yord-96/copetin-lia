@@ -128,7 +128,27 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .lincoln-commercial-metric-card.is-numbering .lincoln-commercial-numbering-label{color:#9ce6d8!important}
   html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering > div{border-color:#45616b!important}
   html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering small{color:#b3cad7!important}
-  html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering b{color:#f0f8ff!important;font-variant-numeric:tabular-nums}`;
+  html[data-theme="dark"] .lincoln-commercial-metrics .lincoln-commercial-metric-card.is-numbering b{color:#f0f8ff!important;font-variant-numeric:tabular-nums}
+  html[data-theme="dark"] .contract-economics-modal{background:#172233!important;color:#e3ebf5!important;border-color:#3b4c63!important}
+  html[data-theme="dark"] .contract-economics-modal .orders-modal-head,html[data-theme="dark"] .contract-economics-modal .orders-modal-foot{background:#192739!important;border-color:#3b4c63!important}
+  html[data-theme="dark"] .contract-economics-modal h3,html[data-theme="dark"] .contract-economics-modal h4{color:#f0f5ff!important}
+  html[data-theme="dark"] .contract-economics-modal p,html[data-theme="dark"] .contract-economics-modal label{color:#b5c6dc!important}
+  html[data-theme="dark"] .contract-economics-modal input,html[data-theme="dark"] .contract-economics-modal select,html[data-theme="dark"] .contract-economics-modal textarea{background:#142033!important;color:#eef5ff!important;border-color:#435771!important}
+  html[data-theme="dark"] .contract-economics-current-state{background:linear-gradient(125deg,#18372f,#1b2d3d)!important;border-color:#3c7969!important}
+  html[data-theme="dark"] .contract-economics-operation-center{background:#1b293b!important;border-color:#3a506c!important}
+  html[data-theme="dark"] .contract-economics-operation-center > header{background:#22334a!important;border-color:#3a506c!important}
+  html[data-theme="dark"] .contract-economics-operation-center > header > span{background:#3b2b20!important;color:#ffbd87!important;border-color:#805b3c!important}
+  html[data-theme="dark"] .contract-economics-extra-collection{background:#1c2e49!important;border-color:#426597!important}
+  html[data-theme="dark"] .contract-economics-extra-collection label > span{color:#93bfff!important}
+  html[data-theme="dark"] .contract-economics-apply-guarantee{background:#342c24!important;border-color:#816039!important}
+  html[data-theme="dark"] .contract-economics-apply-guarantee > span{color:#ffc17e!important}
+  html[data-theme="dark"] .contract-economics-modal .guarantee-refund{background:#19382f!important;border-color:#3e7b65!important}
+  html[data-theme="dark"] .contract-economics-modal .guarantee-refund > div > span{color:#8de1b7!important}
+  html[data-theme="dark"] .contract-economics-kpis article{background:#213148!important;border-color:#405570!important}
+  html[data-theme="dark"] .contract-economics-kpis article strong{color:#f0f5ff!important}
+  html[data-theme="dark"] .contract-economics-kpis article small{color:#b9cbe0!important}
+  html[data-theme="dark"] .contract-economics-money-story{background:#1c2a3d!important;border-color:#405570!important}
+  html[data-theme="dark"] .contract-economics-modal .primary-button:disabled{background:#344256!important;border-color:#526078!important;color:#c3cede!important;opacity:.65}`;
   const rebuild=()=>{
     if(theme!=='dark'){style.textContent='';return;}
     let css='';

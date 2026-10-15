@@ -12961,7 +12961,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               </div>
 
               <section
-                className="contract-economics-panel"
+                className="contract-economics-panel contract-economics-current-state"
                 style={{
                   marginBottom: '14px',
                   borderColor: contractEconomicsData.managedDebtBs > 0 || contractEconomicsData.ledgerRefundSuggestedBs > 0 ? '#fdba74' : '#86efac',
@@ -13042,6 +13042,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 </div>
                 <section className="contract-economics-flow-card">
                   <div
+                    className="contract-economics-operation-center"
                     style={{
                       border: '1px solid #d9e2f2',
                       borderRadius: '14px',
@@ -13190,6 +13191,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
                       <form
                         onSubmit={handleSubmitContractExtraCollection}
+                        className="contract-economics-extra-collection"
                         style={{
                           margin: 0,
                           border: '1px solid #bfdbfe',
@@ -13268,6 +13270,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         }}
                       >
                         <section
+                          className="contract-economics-apply-guarantee"
                           style={{
                             gridColumn: '1 / -1',
                             border: '1px solid #fed7aa',
