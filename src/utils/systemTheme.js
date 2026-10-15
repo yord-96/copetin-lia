@@ -148,7 +148,13 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .contract-economics-kpis article strong{color:#f0f5ff!important}
   html[data-theme="dark"] .contract-economics-kpis article small{color:#b9cbe0!important}
   html[data-theme="dark"] .contract-economics-money-story{background:#1c2a3d!important;border-color:#405570!important}
-  html[data-theme="dark"] .contract-economics-modal .primary-button:disabled{background:#344256!important;border-color:#526078!important;color:#c3cede!important;opacity:.65}`;
+  html[data-theme="dark"] .contract-economics-modal .primary-button:disabled{background:#344256!important;border-color:#526078!important;color:#c3cede!important;opacity:.65}
+  html[data-theme="dark"] .orders-document-paper-picker{color:#b9cbe0!important}
+  html[data-theme="dark"] .orders-document-paper-picker select{background:#24344a!important;color:#eef5ff!important;border-color:#506580!important;color-scheme:dark;cursor:pointer}
+  html[data-theme="dark"] .orders-document-paper-picker select:hover{background:#2d415b!important;border-color:#849ab8!important}
+  html[data-theme="dark"] .orders-document-paper-picker select:focus-visible{outline:2px solid #ff984a;outline-offset:2px}
+  html[data-theme="dark"] .orders-document-paper-picker select:disabled{opacity:.55;cursor:wait}
+  html[data-theme="dark"] .orders-document-paper-picker option{background:#24344a;color:#eef5ff}`;
   const rebuild=()=>{
     if(theme!=='dark'){style.textContent='';return;}
     let css='';

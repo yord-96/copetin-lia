@@ -15168,6 +15168,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               ) : null}
               {['contract', 'quote'].includes(documentPreview.kind) ? (
                 <label
+                  className="orders-document-paper-picker"
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -15196,15 +15197,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <option value="oficio">Oficio</option>
                   </select>
                 </label>
-              ) : null}
-              {documentPreview.mimeType === 'application/pdf' && !documentPreview.loading && documentPreview.blobUrl ? (
-                <a
-                  className="ghost-button"
-                  href={documentPreview.blobUrl}
-                  download={`${String(documentPreview.fileName || documentPreview.title || 'documento').replace(/\.pdf$/i, '')}.pdf`}
-                >
-                  Descargar PDF
-                </a>
               ) : null}
               <button
                 type="button"
