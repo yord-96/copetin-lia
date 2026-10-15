@@ -100,7 +100,28 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .primary-button:disabled{opacity:.5}
   html[data-theme="dark"] .suppliers-v2{--sup-border:#34435b;--sup-soft:#1c293b;--sup-text:#dce7f7;--sup-muted:#9eafc6;--sup-orange:#ff984a;--sup-orange-soft:#3b291e}
   html[data-theme="dark"] .suppliers-v2 .suppliers-compact-kpis strong,html[data-theme="dark"] .suppliers-v2 .suppliers-tab-count,html[data-theme="dark"] .suppliers-v2 .suppliers-detail-metrics strong,html[data-theme="dark"] .suppliers-v2 .suppliers-view-tabs button.active{color:#a9cdff}
-  html[data-theme="dark"] input:focus,html[data-theme="dark"] select:focus,html[data-theme="dark"] textarea:focus{outline-color:#ff984a;border-color:#ff984a;box-shadow:0 0 0 3px #ff984a20}`;
+  html[data-theme="dark"] input:focus,html[data-theme="dark"] select:focus,html[data-theme="dark"] textarea:focus{outline-color:#ff984a;border-color:#ff984a;box-shadow:0 0 0 3px #ff984a20}
+  html[data-theme="dark"] .presence-strip .presence-session-list > span{background:#1b2b3c!important;border-color:color-mix(in srgb,var(--presence-color) 55%,#34445b)!important}
+  html[data-theme="dark"] .presence-strip .presence-session-list > span.active{background:color-mix(in srgb,var(--presence-color) 12%,#182638)!important}
+  html[data-theme="dark"] .presence-strip .presence-session-list b{color:#edf3fc!important}
+  html[data-theme="dark"] .presence-strip .presence-session-list em{color:#ffb47d!important}
+  html[data-theme="dark"] .presence-strip .presence-session-list span > small{background:#2a3e55!important;color:#e2edfc!important;box-shadow:inset 0 0 0 1px #465d78}
+  html[data-theme="dark"] .presence-strip .presence-session-list span > small:last-of-type{background:color-mix(in srgb,var(--presence-color) 18%,#172b36)!important;color:#effbff!important}
+  html[data-theme="dark"] .developer-company-backdrop{background:radial-gradient(circle at 50% 38%,#31446155,transparent 34rem),#080f1dcc!important}
+  html[data-theme="dark"] .developer-company-modal{background:#172334!important;border-color:#3a4c65!important;box-shadow:0 30px 90px #0008}
+  html[data-theme="dark"] .developer-company-header{background:linear-gradient(135deg,#23334a,#182538)!important;border-color:#3a4c65!important}
+  html[data-theme="dark"] .developer-company-brand strong,html[data-theme="dark"] .developer-company-modal h2,html[data-theme="dark"] .developer-company-card > strong{color:#f0f5ff!important}
+  html[data-theme="dark"] .developer-company-brand span:not(.developer-company-brand-mark),html[data-theme="dark"] .developer-company-footer span{color:#ffb47d!important}
+  html[data-theme="dark"] .developer-company-modal p,html[data-theme="dark"] .developer-company-description,html[data-theme="dark"] .developer-company-footer strong{color:#b8c8dd!important}
+  html[data-theme="dark"] .developer-company-card{background:linear-gradient(150deg,#26364b,#1d2b3d)!important;border-color:#435570!important;color:#e3ebf5!important}
+  html[data-theme="dark"] .developer-company-card:hover{background:linear-gradient(150deg,#304058,#243247)!important;border-color:#ff984a!important}
+  html[data-theme="dark"] .developer-company-card--salon:hover{border-color:#57d6b3!important}
+  html[data-theme="dark"] .developer-company-icon,html[data-theme="dark"] .developer-company-eyebrow{background:#3e2b23!important;color:#ffb47d!important;border-color:#865137!important}
+  html[data-theme="dark"] .developer-company-action{color:#ffb47d!important}
+  html[data-theme="dark"] .developer-company-card--salon .developer-company-icon,html[data-theme="dark"] .developer-company-card--salon .developer-company-eyebrow{background:#173f3c!important;color:#8ce7cd!important;border-color:#33786c!important}
+  html[data-theme="dark"] .developer-company-card--salon .developer-company-action{color:#8ce7cd!important}
+  html[data-theme="dark"] .developer-company-tags em{background:#172435!important;color:#c7d7eb!important;border-color:#455a75!important}
+  html[data-theme="dark"] .developer-company-footer{background:#131e2e!important;border-color:#3a4c65!important}`;
   const rebuild=()=>{
     if(theme!=='dark'){style.textContent='';return;}
     let css='';
