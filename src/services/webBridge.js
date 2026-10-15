@@ -8283,6 +8283,28 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   .rc-sheet.is-dense .rc-client-materials { margin-top: 1.6mm; }
   .rc-sheet.is-dense .rc-signature { min-height: 12mm; }
   .rc-sheet.is-dense .rc-page-bottom { padding-top: 4.5mm; }
+  /* Compact the writing areas and duplicated totals before adding another page.
+     Keep item text, financial figures and signature space at their normal size. */
+  .rc-sheet.is-dense .rc-closeout { gap: 2mm; }
+  .rc-sheet.is-dense .rc-closeout-writing { gap: 1.5mm; }
+  .rc-sheet.is-dense .rc-observations { min-height: 12mm; }
+  .rc-sheet.is-dense .rc-observations strong { margin-bottom: .6mm; }
+  .rc-sheet.is-dense .rc-closeout .rc-financial-item { min-height: 6.8mm; padding-top: .6mm; padding-bottom: .6mm; }
+  .rc-sheet.is-dense .rc-economic-summary.is-main span { min-height: 9mm; }
+  .rc-sheet.is-dense .rc-economic-summary.is-guarantee span { min-height: 9mm; }
+  .rc-sheet.is-dense .rc-material-box { min-height: 18mm; }
+  .rc-sheet.is-dense .rc-material-lines { min-height: 12mm; }
+  .rc-sheet.is-dense .rc-table td { padding-top: .4mm; padding-bottom: .4mm; }
+  .rc-sheet.is-dense .rc-economic-head { margin-bottom: .8mm; }
+  .rc-sheet.is-dense .rc-economic-status { min-height: 6mm; }
+  .rc-sheet.is-dense .rc-economic-explanation { margin: .6mm 0 .8mm; padding: .5mm 1mm; }
+  .rc-sheet.is-dense .rc-economic-line { min-height: 6.4mm; padding-top: .6mm; padding-bottom: .6mm; }
+  .rc-sheet.is-dense .rc-economic-control { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2mm; }
+  .rc-sheet.is-dense .rc-economic-control > * { grid-column: 1 / -1; }
+  .rc-sheet.is-dense .rc-economic-control > .rc-economic-section-label:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .rc-sheet.is-dense .rc-economic-control > .rc-economic-summary.is-main { grid-column: 1; grid-row: 3; }
+  .rc-sheet.is-dense .rc-economic-control > .rc-economic-section-label:nth-child(4) { grid-column: 2; grid-row: 2; }
+  .rc-sheet.is-dense .rc-economic-control > .rc-economic-summary.is-guarantee { grid-column: 2; grid-row: 3; }
   .rc-sheet.is-multipage .rc-financial-block {
     margin-top: 0;
     border-top: 0;
@@ -8373,6 +8395,7 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
       padding-top: 0;
     }
     .rc-bottom,
+    .rc-closing,
     .rc-closeout,
     .rc-client-materials,
     .rc-page-bottom,
@@ -8393,6 +8416,7 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
       padding-bottom: 1.5mm;
     }
     .rc-items { padding-bottom: 1.5mm; }
+    .rc-sheet.is-dense:not(.is-multipage) .rc-page-bottom { padding-top: 3mm; }
   }
 `;
 };
@@ -9354,6 +9378,7 @@ export const buildContractDocumentHtml = ({
         </section>
       </section>
 
+      <div class="rc-closing">
       <section class="rc-closeout">
         <div class="rc-closeout-writing">
           <section class="rc-bottom">
@@ -9400,6 +9425,7 @@ export const buildContractDocumentHtml = ({
           <strong>${escapeHtml(company.email || '-')}</strong>
           <span>${escapeHtml([company.phone, '67402818'].filter(Boolean).join(' / ') || '-')}</span>
         </footer>
+      </div>
       </div>
     </main>
   </body>

@@ -15196,6 +15196,15 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   </select>
                 </label>
               ) : null}
+              {documentPreview.mimeType === 'application/pdf' && !documentPreview.loading && documentPreview.blobUrl ? (
+                <a
+                  className="ghost-button"
+                  href={documentPreview.blobUrl}
+                  download={`${String(documentPreview.fileName || documentPreview.title || 'documento').replace(/\.pdf$/i, '')}.pdf`}
+                >
+                  Descargar PDF
+                </a>
+              ) : null}
               <button
                 type="button"
                 className="primary-button"
