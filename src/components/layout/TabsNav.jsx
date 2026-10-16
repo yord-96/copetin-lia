@@ -33,6 +33,7 @@ const operationTabs = [
       { id: 'inventario_categorias', label: 'Categorias', targetId: 'inventario_categorias' },
       { id: 'inventario_movimientos', label: 'Movimientos', targetId: 'inventario_movimientos' },
       { id: 'inventario_mantenimiento', label: 'Daños y Faltantes', targetId: 'inventario_mantenimiento' },
+      { id: 'inventario_prestamos', label: 'Préstamos de ítems', targetId: 'inventario_prestamos' },
       { id: 'inventario_ajustes', label: 'Ajustes de Stock', targetId: 'inventario_ajustes' },
     ],
   },

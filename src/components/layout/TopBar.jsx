@@ -38,6 +38,7 @@ const PAGE_LABELS = {
   inventario_categorias: 'Categorias',
   inventario_movimientos: 'Movimientos',
   inventario_mantenimiento: 'Daños y Faltantes',
+  inventario_prestamos: 'Préstamos de ítems',
   inventario_ajustes: 'Ajustes stock',
   devolucion: 'Transporte',
   devolucion_entregas: 'Entregas',

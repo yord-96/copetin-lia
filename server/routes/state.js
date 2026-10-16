@@ -35,6 +35,7 @@ import {
   getMovementPhysicalDelta,
 } from '../../src/utils/inventoryKardex.js';
 import { filterInventoryMovementHistory } from '../../src/utils/inventoryMovementHistory.js';
+import { mutateItemLoan } from '../services/itemLoans.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -75,6 +76,7 @@ const getSnapshotRevisionKey = (value = {}) => String(
 const deferredBootstrapCollections = Object.freeze([
   'inventoryMovements',
   'stockRecoveries',
+  'itemLoans',
   'legacyContracts',
   'cashMovements',
   'cashDebts',
@@ -207,6 +209,7 @@ const patchableCollections = new Set([
   'resetLogs',
   'inventoryMovements',
   'stockRecoveries',
+  'itemLoans',
   'legacyContracts',
   'systemAuditLog',
 ]);
@@ -8048,6 +8051,7 @@ const summarizeAvailabilityItem = (item = {}) => ({
   adoptionSource: item.adoptionSource ?? '',
   totalStock: Number(item.totalStock ?? 0),
   availableStock: Number(item.availableStock ?? 0),
+  itemLoanAllocations: item.itemLoanAllocations ?? [],
   imageUrl: item.thumbnailUrl || item.imageUrl || item.imageDataUrl || item.image || item.photo || '',
   _summaryOnly: true,
   _availabilitySummaryOnly: true,
@@ -8193,6 +8197,7 @@ const summarizeInventoryMovementItem = (item = {}) => ({
   verificationStatus: item.verificationStatus ?? '',
   totalStock: Number(item.totalStock ?? 0),
   availableStock: Number(item.availableStock ?? 0),
+  itemLoanAllocations: item.itemLoanAllocations ?? [],
   rentalPriceBs: Number(item.rentalPriceBs ?? item.unitPriceBs ?? 0),
   damagedUnitChargeBs: Number(item.damagedUnitChargeBs ?? 0),
   missingUnitChargeBs: Number(item.missingUnitChargeBs ?? 0),
@@ -10697,6 +10702,32 @@ router.put('/__copetin_db', async (req, res, next) => {
       message: error?.message,
       ip: req.ip,
     });
+    next(error);
+  }
+});
+
+const itemLoanCatalog = state => (state.items ?? []).filter(item => !item.deletedAt && item.controlsStock !== false).map(item => ({
+  id: item.id, name: item.name, sku: item.sku, category: item.category,
+  totalStock: item.totalStock, availableStock: item.availableStock,
+}));
+
+router.get('/__copetin_db/inventory/item-loans', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    res.json({ loans: (snapshot.state?.itemLoans ?? []).filter(loan => !loan.deletedAt), items: itemLoanCatalog(snapshot.state ?? {}) });
+  } catch (error) { next(error); }
+});
+
+router.post('/__copetin_db/inventory/item-loans/:action', async (req, res, next) => {
+  try {
+    let changed;
+    const result = await updateStateSnapshot(state => {
+      changed = mutateItemLoan(state, req.params.action, req.body ?? {});
+      return state;
+    });
+    res.json({ ...changed, revision: result.revision });
+  } catch (error) {
+    if (error.statusCode) { res.status(error.statusCode).json({ error: error.message }); return; }
     next(error);
   }
 });

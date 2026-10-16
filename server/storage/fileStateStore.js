@@ -27,6 +27,7 @@ const protectedBusinessCollections = [
   'cashDebts',
   'inventoryMovements',
   'stockRecoveries',
+  'itemLoans',
   'legacyContracts',
   'suppliers',
   'supplierQuotes',

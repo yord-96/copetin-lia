@@ -715,7 +715,7 @@ export const useAppController = () => {
           setInventoryModuleLoading(false);
         }
       };
-    } else if (activeInventoryTab === 'inventario_movimientos') {
+    } else if (['inventario_movimientos', 'inventario_prestamos'].includes(activeInventoryTab)) {
       // InventoryDashboardSection solicita su rango visible directamente al
       // backend. Evitamos precargar aquí el overview pesado por duplicado.
       group = '';

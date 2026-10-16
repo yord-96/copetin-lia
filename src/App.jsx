@@ -52,6 +52,7 @@ const CalendarSection = lazy(loadCalendarSection);
 const ClientsSection = lazy(loadClientsSection);
 const UsersSection = lazy(loadUsersSection);
 const ServiceOrdersSection = lazy(loadServiceOrdersSection);
+const ItemLoansSection = lazy(() => import('./components/sections/ItemLoansSection'));
 const AccountingSection = lazy(loadAccountingSection);
 const collectionSignatureCache = new WeakMap();
 
@@ -763,7 +764,10 @@ function AdminApp() {
           />
         )}
 
-        {String(controller.activeTab).startsWith('inventario') && (
+        {controller.activeTab === 'inventario_prestamos' && (
+          <ItemLoansSection currentUser={controller.currentUser} readOnly={!canWriteTab(controller.currentUser, 'inventario_prestamos')} />
+        )}
+        {String(controller.activeTab).startsWith('inventario') && controller.activeTab !== 'inventario_prestamos' && (
           <InventoryDashboardSection
             activeModule={controller.activeTab}
             items={controller.items}

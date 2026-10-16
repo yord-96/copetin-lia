@@ -1350,6 +1350,7 @@ const createSeedData = () => {
     personnelIncidents: [],
     inventoryMovements: [],
     stockRecoveries: [],
+    itemLoans: [],
     cashSessions: [],
     cashMovements: [],
     cashDebts: [],
@@ -2006,7 +2007,7 @@ const normalizeState = (state) => {
       const isPendingOperationalItem =
         rawVerificationStatus === 'pending_verification'
         || adoptionSource === 'service_order_quick_item'
-        || (totalStock <= 0 && availableStock <= 0);
+        || (totalStock <= 0 && availableStock <= 0 && !(item?.itemLoanAllocations?.length > 0));
       const controlsStock =
         legacyControlsStock !== null
           ? legacyControlsStock
@@ -2031,6 +2032,7 @@ const normalizeState = (state) => {
         sku: toBusinessUppercase(item?.sku ?? item?.code ?? ''),
         totalStock,
         availableStock,
+        itemLoanAllocations: Array.isArray(item?.itemLoanAllocations) ? item.itemLoanAllocations : [],
         controlsStock: controlsStock && !isPendingOperationalItem,
         verificationStatus: controlsStock && !isPendingOperationalItem ? 'verified' : verificationStatus,
         adoptionSource,

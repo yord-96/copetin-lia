@@ -8,6 +8,7 @@ import { buildInventoryKardexRows, filterInventoryKardexMovements, getMovementAv
 
 const SERVER_STATE_ENDPOINT = '/__copetin_db';
 const DEFERRED_BOOTSTRAP_COLLECTIONS = Object.freeze([
+  'itemLoans',
   'inventoryMovements',
   'stockRecoveries',
   'legacyContracts',
@@ -343,6 +344,7 @@ const applyRemoteBackoff = (error) => {
 };
 
 const businessCollections = [
+  'itemLoans',
   'categories',
   'clients',
   'users',
@@ -3788,6 +3790,24 @@ export const api = {
     ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),
   },
   inventory: {
+    itemLoans: async (action = '', payload = {}) => {
+      const response = await fetch(getServerStateUrl(`/inventory/item-loans${action ? `/${action}` : ''}`), {
+        method: action ? 'POST' : 'GET', cache: 'no-store',
+        headers: getInternalHeaders(action ? { 'Content-Type': 'application/json' } : {}),
+        ...(action ? { body: JSON.stringify(payload) } : {}),
+      });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo procesar el préstamo.');
+      const result = await response.json();
+      if (result.revision) rememberServerRevision(result.revision);
+      if (action) {
+        const snapshot = await exportLocalCollections(['items']);
+        const updated = new Map((result.items ?? []).map(item => [String(item.id), item]));
+        await mergeLocalState({ items: (snapshot.items ?? []).map(item => updated.has(String(item.id)) ? { ...item, ...updated.get(String(item.id)) } : item) });
+        markServerStateStale('inventory.itemLoans');
+        announceDataChange({ domain: 'inventory', method: 'itemLoans', collections: ['items', 'itemLoans', 'inventoryMovements'] });
+      }
+      return result;
+    },
     list: () => callBridge('inventory', 'list', false),
     listCombos: () => callBridge('inventory', 'listCombos', false),
     create: (payload) => callBridge('inventory', 'create', true, payload),

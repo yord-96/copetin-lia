@@ -1604,7 +1604,7 @@ const isDetachedFromInventory = (lineOrItem) => {
     || item.controlsStock === false
     || String(item.verificationStatus ?? '').trim() === 'pending_verification'
     || String(item.adoptionSource ?? '').trim() === 'service_order_quick_item'
-    || (Number(item.totalStock ?? 0) <= 0 && Number(item.availableStock ?? 0) <= 0);
+    || (Number(item.totalStock ?? 0) <= 0 && Number(item.availableStock ?? 0) <= 0 && !(item.itemLoanAllocations?.length > 0));
 };
 
 const getClientAddressOptions = (client) => {
@@ -7760,11 +7760,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   const getUncoveredStockIssueMessage = (issue) => {
     const selectedLine = selectedItems.find((line) => line.itemId === issue.itemId);
     const hardRecords = selectedLine?.availability?.hardReservedQtyRecords ?? [];
+    const loanText = (selectedLine?.availability?.loanRecords ?? []).map(loan => `${loan.quantity} prestado(s) a ${loan.personName} (${loan.code})`).join(', ');
     const conflictText = hardRecords
       .slice(0, 2)
       .map((record) => `contrato ${record.contractCode || record.code || record.orderCode || ''} hasta ${formatDate(record.endDate)}`)
       .join(', ');
-    return `${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Selecciona proveedor o reduce cantidad.`;
+    return `${issue.itemName} tiene faltante sin cubrir. Faltan ${issue.uncoveredQty} unidades.${loanText ? ` Prestamos: ${loanText}.` : ''}${conflictText ? ` Esta usado por ${conflictText}.` : ''} Selecciona proveedor o reduce cantidad.`;
   };
 
   const getStepValidationMessage = (stepIndex) => {
@@ -15894,6 +15895,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   </div>
                 ) : null}
 
+                {(summary.loanRecords ?? []).length > 0 ? (
+                  <section className="orders-loan-availability-note">
+                    <strong>Material prestado fuera del inventario disponible</strong>
+                    {(summary.loanRecords ?? []).map((loan, index) => <p key={loan.id + '-' + index}>{loan.quantity} unidad(es) · {loan.personName} · {loan.code}{loan.dueDate ? ' · Devolución prevista: ' + formatDate(loan.dueDate) : ' · Sin fecha de devolución confirmada'}</p>)}
+                    <small>Estas unidades ya están descontadas del stock físico. Se liberan al registrar su devolución.</small>
+                  </section>
+                ) : null}
+
                 <div className="orders-availability-records-head">
                   <div>
                     <h4>Contratos y órdenes relacionados</h4>
@@ -17021,6 +17030,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           </div>
                           <div className="orders-product-info">
                             <strong title={item.name}>{item.name}</strong>
+                            {(item.itemLoanAllocations ?? []).length > 0 ? <small className="orders-product-loan-note">Prestado: {(item.itemLoanAllocations ?? []).map(loan => loan.quantity + ' a ' + loan.personName).join(' · ')}</small> : null}
                             <span>
                               {item.category || 'Sin categoria'}
                               {isProvisionalCatalogItem ? ' | Pendiente de inventario' : ''}

@@ -147,7 +147,7 @@ const controlsStock = (item) =>
   item?.controlsStock !== false
   && String(item?.verificationStatus ?? '').trim() !== 'pending_verification'
   && String(item?.adoptionSource ?? '').trim() !== 'service_order_quick_item'
-  && !(Number(item?.totalStock ?? 0) <= 0 && Number(item?.availableStock ?? 0) <= 0);
+  && !(Number(item?.totalStock ?? 0) <= 0 && Number(item?.availableStock ?? 0) <= 0 && !(item?.itemLoanAllocations?.length > 0));
 
 const recordItemLines = (record) =>
   (Array.isArray(record?.items) ? record.items : [])
@@ -221,6 +221,8 @@ export function getProjectedInventoryAvailability({
     summaries.set(item.id, {
       itemId: item.id,
       itemName: item.name,
+      loanRecords: Array.isArray(item.itemLoanAllocations) ? item.itemLoanAllocations : [],
+      loanedQty: (item.itemLoanAllocations ?? []).reduce((sum, loan) => sum + Number(loan.quantity || 0), 0),
       stockControlled,
       totalStock,
       currentAvailable,
@@ -418,6 +420,7 @@ export function validateProjectedInventoryRequest({
         shortageQty: Math.max(0, requestedQty - (summary?.projectedAvailable ?? 0)),
         returningBeforeStartQty: summary?.returningBeforeStartQty ?? 0,
         hardConflicts: summary?.hardReservedQtyRecords ?? [],
+        loanRecords: summary?.loanRecords ?? [],
       };
     })
     .filter(Boolean);

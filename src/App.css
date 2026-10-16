@@ -75876,3 +75876,6 @@ body:has(.bigcash-report-backdrop) {
 .system-theme-toggle:hover { background: #ffead9; box-shadow: 0 2px 8px rgba(143,64,14,.14); }
 .system-theme-toggle:focus-visible { outline: 2px solid #ec620c; outline-offset: 3px; }
 @media print { .system-theme-toggle { display: none; } }
+
+/* Préstamos: explicación de stock en el editor de contratos. */
+.orders-loan-availability-note{padding:14px 16px;margin:14px 0;border:1px solid #e3bd86;border-radius:10px;background:#fff6e8;color:#885113}.orders-loan-availability-note p{margin:7px 0;font-size:13px}.orders-loan-availability-note small{font-size:11px}.orders-product-loan-note{display:block!important;color:#ae651d!important;white-space:normal!important;line-height:1.4!important;font-size:11px!important;margin:4px 0}
