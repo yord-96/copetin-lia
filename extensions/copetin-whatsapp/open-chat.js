@@ -44,7 +44,26 @@ export async function openChatWithoutReload(phone) {
     const number = digits(value);
     return number === phone || (phone.startsWith('591') && number === phone.slice(3));
   };
-  const row = await waitFor(() => [...scope.querySelectorAll('[role="listitem"], [role="row"], [data-testid="cell-frame-container"]')]
+  const chatAction = /^(chat|chatear|conversar|iniciar (?:un )?chat|abrir (?:el )?chat|chat on whatsapp|chatear (?:con|en whatsapp)|conversar com)(?:\s|$)/i;
+  const findNewNumberAction = () => {
+    // Unknown numbers can be shown as a "Chat" action instead of a contact row.
+    // Match the exact phone in the same small result block; never click Invite/Add.
+    const phoneLabels = [...scope.querySelectorAll('span, [title]')].filter(element =>
+      visible(element) && !element.closest('#main') && !element.contains(search)
+      && (matchesPhone(element.getAttribute('title')) || matchesPhone(element.textContent)));
+    for (const label of phoneLabels) {
+      let block = label;
+      for (let depth = 0; depth < 4 && block && block !== scope; depth++, block = block.parentElement) {
+        if (block.contains(search)) break;
+        const controls = [block, ...block.querySelectorAll('button, [role="button"]')];
+        const control = controls.find(element => visible(element) && element.matches('button, [role="button"]')
+          && chatAction.test(element.getAttribute('aria-label') || element.textContent.trim()));
+        if (control) return control;
+      }
+    }
+    return null;
+  };
+  const row = await waitFor(() => findNewNumberAction() || [...scope.querySelectorAll('[role="listitem"], [role="row"], [data-testid="cell-frame-container"]')]
     .find(element => visible(element) && !element.closest('#main') && !element.contains(search) && [...element.querySelectorAll('[title], span')]
       .some(label => matchesPhone(label.getAttribute('title')) || matchesPhone(label.textContent))));
   const previousHeader = document.querySelector('#main header');
