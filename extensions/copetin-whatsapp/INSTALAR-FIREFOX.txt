@@ -1,0 +1,12 @@
+COPETÍN WHATSAPP — FIREFOX (PAQUETE SIN FIRMAR, PARA PRUEBAS)
+
+1. Descomprime copetin-whatsapp-firefox.zip en una carpeta.
+2. En Firefox abre about:debugging#/runtime/this-firefox
+3. Pulsa Cargar complemento temporal y selecciona manifest.json de esa carpeta.
+4. Permite el acceso a web.whatsapp.com si Firefox lo solicita.
+5. Actualiza El Copetín y utiliza WhatsApp abierto EN FIREFOX, en el mismo perfil.
+
+Esta instalación desaparece al reiniciar Firefox.
+Para instalar permanentemente se necesita un XPI firmado por Mozilla.
+El ZIP sin firmar no se instala permanentemente desde about:addons.
+No es necesario desactivar la comprobación de firmas ni otras protecciones.

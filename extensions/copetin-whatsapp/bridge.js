@@ -11,7 +11,7 @@ if (window === window.top) {
     busy = true;
     respond({ pending: true });
     try {
-      const response = await chrome.runtime.sendMessage({ phone: request.phone, tabId: request.tabId });
+      const response = await (globalThis.browser || chrome).runtime.sendMessage({ phone: request.phone, tabId: request.tabId });
       respond(response);
     } catch {
       respond({ error: 'La extensión se actualizó. Actualiza la página de El Copetín e inténtalo otra vez.' });
