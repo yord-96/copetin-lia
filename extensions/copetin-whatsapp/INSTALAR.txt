@@ -1,0 +1,14 @@
+COPETÍN WHATSAPP — INSTALACIÓN GRATUITA
+
+1. Descomprime el ZIP en una carpeta permanente de tu computadora.
+2. Abre chrome://extensions en el perfil donde utilizas El Copetín y WhatsApp.
+3. Activa Modo desarrollador (arriba a la derecha).
+4. Pulsa Cargar descomprimida y selecciona esta carpeta (contiene manifest.json).
+5. Actualiza la página de El Copetín. Deja abierto tu WhatsApp habitual.
+
+El botón del contrato reutiliza esa pestaña. Si hay varias, pregunta cuál usar.
+Si no hay ninguna, abre una. No envía mensajes ni lee conversaciones.
+WhatsApp puede recargarse al cambiar de chat; utiliza la sesión de ese perfil.
+La instalación se realiza una vez en cada perfil/computadora. No borres la carpeta.
+Al actualizar la extensión, pulsa Recargar en chrome://extensions y actualiza El Copetín.
+Sin suscripciones, servicios externos, claves API ni pagos de publicación.

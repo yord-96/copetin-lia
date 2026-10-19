@@ -2044,9 +2044,24 @@ function ServiceOrdersSection({
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
   const [contactWhatsAppPicker, setContactWhatsAppPicker] = useState(null);
+  const [contactWhatsAppBusy, setContactWhatsAppBusy] = useState(false);
+  const openContractContact = async (row, contact, tabId) => {
+    if (contactWhatsAppBusy) return;
+    setContactWhatsAppBusy(true);
+    setContactWhatsAppPicker({ row, contact, loading: true });
+    try {
+      const result = await openContractWhatsAppContact(contact, window, tabId);
+      setContactWhatsAppPicker(result.tabs ? { row, contact, tabs: result.tabs } : null);
+    } catch (error) {
+      setContactWhatsAppPicker({ row, error: error.message });
+    } finally {
+      setContactWhatsAppBusy(false);
+    }
+  };
   const contactContractWhatsApp = (row) => {
+    if (contactWhatsAppBusy) return;
     const contacts = getContractWhatsAppContacts(row);
-    if (contacts.length === 1) openContractWhatsAppContact(contacts[0]);
+    if (contacts.length === 1) void openContractContact(row, contacts[0]);
     else if (contacts.length > 1) setContactWhatsAppPicker({ row, contacts });
   };
   const [supplierCoverageModal, setSupplierCoverageModal] = useState(null);
@@ -14366,7 +14381,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         <div className="orders-modal-backdrop" onClick={() => setContactWhatsAppPicker(null)}>
           <section className="orders-modal orders-whatsapp-contact-picker" role="dialog" aria-modal="true" aria-labelledby="contract-whatsapp-contact-title" onClick={event => event.stopPropagation()}>
             <header className="orders-modal-head"><div><h3 id="contract-whatsapp-contact-title">Contactar por WhatsApp</h3><p>Contrato {contactWhatsAppPicker.row.contractCode} · {contactWhatsAppPicker.row.customerName}</p></div><button type="button" className="orders-modal-close" aria-label="Cerrar selector de contacto" onClick={() => setContactWhatsAppPicker(null)}><X size={18} /></button></header>
-            <div className="orders-whatsapp-contact-options"><p>¿A qué número quieres contactar?</p>{contactWhatsAppPicker.contacts.map(contact => <button type="button" key={contact.kind} onClick={() => { openContractWhatsAppContact(contact); setContactWhatsAppPicker(null); }}><WhatsAppGlyph /><span><strong>{contact.label}</strong><small>{contact.raw}</small></span></button>)}</div>
+            <div className="orders-whatsapp-contact-options" aria-busy={contactWhatsAppBusy}>
+              {contactWhatsAppPicker.loading ? <p role="status">Abriendo el chat en WhatsApp…</p> : null}
+              {contactWhatsAppPicker.error ? <><p role="alert">{contactWhatsAppPicker.error}</p><a href="/copetin-whatsapp-extension.zip" download>Descargar extensión gratuita</a><p>Descomprime el archivo. En chrome://extensions activa Modo desarrollador, pulsa Cargar descomprimida y elige la carpeta. Después actualiza El Copetín.</p></> : null}
+              {contactWhatsAppPicker.tabs ? <><p>Hay varios WhatsApp abiertos. ¿Cuál quieres utilizar?</p>{contactWhatsAppPicker.tabs.map(tab => <button type="button" key={tab.id} onClick={() => void openContractContact(contactWhatsAppPicker.row, contactWhatsAppPicker.contact, tab.id)}><WhatsAppGlyph /><span><strong>{tab.label}</strong><small>{tab.detail}</small></span></button>)}</> : null}
+              {contactWhatsAppPicker.contacts ? <><p>¿A qué número quieres contactar?</p>{contactWhatsAppPicker.contacts.map(contact => <button type="button" key={contact.kind} onClick={() => void openContractContact(contactWhatsAppPicker.row, contact)}><WhatsAppGlyph /><span><strong>{contact.label}</strong><small>{contact.raw}</small></span></button>)}</> : null}
+            </div>
           </section>
         </div>
       ) : null}

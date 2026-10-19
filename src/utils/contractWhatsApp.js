@@ -15,11 +15,26 @@
   });
 }
 
-export function openContractWhatsAppContact(contact, browser = window) {
-  const tab = browser.open(contact.url, 'copetin-whatsapp-web');
-  if (tab) {
-    tab.opener = null;
-    tab.focus?.();
-  }
-  return tab;
+export function openContractWhatsAppContact(contact, browser = window, tabId) {
+  return new Promise((resolve, reject) => {
+    const id = browser.crypto.randomUUID();
+    const cleanup = () => {
+      browser.clearTimeout(timer);
+      browser.removeEventListener('message', receive);
+    };
+    const receive = event => {
+      if (event.source !== browser || event.origin !== browser.location.origin) return;
+      const reply = event.data;
+      if (reply?.source !== 'copetin-whatsapp-extension' || reply.id !== id) return;
+      cleanup();
+      if (reply.error) reject(new Error(reply.error));
+      else resolve(reply.result);
+    };
+    const timer = browser.setTimeout(() => {
+      cleanup();
+      reject(new Error('Instala o activa la extensión Copetín WhatsApp y actualiza esta página. No se abrió otra pestaña.'));
+    }, 5000);
+    browser.addEventListener('message', receive);
+    browser.postMessage({ source: 'copetin-whatsapp-app', id, phone: contact.phone, tabId }, browser.location.origin);
+  });
 }
