@@ -65822,9 +65822,14 @@ body:has(.accounting-bigcash-view) .workspace {
 
 /* ASISTENCIA FOTO MOVIL - controles file nativos visibles.
    Sin overlays transparentes, input.click() ni labels intermediarios. */
+.attendance-view .attendance-work-reason {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .attendance-view .attendance-photo-native-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.65rem;
   width: 100%;
   min-width: 0;

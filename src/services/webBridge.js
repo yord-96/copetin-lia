@@ -1,4 +1,5 @@
 import { manageAttendance } from '../utils/attendanceManagement.js';
+import { attendanceNeedsPhoto } from '../utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
@@ -19668,7 +19669,7 @@ const createWebBridge = () => ({
       if (!reason) {
         throw new Error('Debes indicar el motivo.');
       }
-      if (!photoUrl && !photoDataUrl) {
+      if (!photoUrl && !photoDataUrl && attendanceNeedsPhoto(location)) {
         throw new Error('Debes tomar o subir una foto para respaldar la marca.');
       }
 

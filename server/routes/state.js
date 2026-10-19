@@ -1,5 +1,6 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
+import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
 import { createOrdersCashIndex } from '../services/ordersCashIndex.js';
@@ -4310,7 +4311,7 @@ router.post('/__copetin_db/attendance', async (req, res, next) => {
       res.status(400).json({ error: 'Debes indicar el motivo.' });
       return;
     }
-    if (!photoUrl) {
+    if (!photoUrl && attendanceNeedsPhoto(location)) {
       res.status(400).json({ error: 'Debes tomar o subir una foto para respaldar la marca.' });
       return;
     }

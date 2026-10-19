@@ -1,4 +1,5 @@
 import { canManageAttendance } from '../../utils/attendanceManagement';
+import { attendanceNeedsPhoto, getAttendanceWorkReason } from '../../utils/attendancePolicy';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
@@ -108,7 +109,7 @@ function AttendanceSection({
   const [form, setForm] = useState({
     type: 'entrada',
     location: '',
-    reason: '',
+    reason: 'Ingreso trabajo',
     latitude: null,
     longitude: null,
   });
@@ -361,8 +362,8 @@ function AttendanceSection({
     }
     setError('');
     setStatus('');
-    if (!photoDraft?.blob) {
-      setError('Debes tomar o subir una foto para respaldar la marca.');
+    if (!photoDraft?.blob && attendanceNeedsPhoto(form.location)) {
+      setError('Debes tomar una foto para registrar asistencia fuera de Batallón Colorados.');
       return;
     }
     const participants = markingMode === 'responsable'
@@ -383,17 +384,18 @@ function AttendanceSection({
         ? `attendance-group-${Date.now()}-${Math.random().toString(16).slice(2)}`
         : '';
       const uploadStartedAt = performance.now();
-      const uploadedPhoto = await api.uploads.attendancePhoto(photoDraft.blob, {
+      const uploadedPhoto = photoDraft?.blob ? await api.uploads.attendancePhoto(photoDraft.blob, {
         recordId: attendanceGroupId || `${currentUser?.id ?? 'attendance'}-${Date.now()}`,
-      });
-      console.info('[copetin-attendance] Foto de asistencia subida.', {
-        originalBytes: photoDraft.originalSizeBytes,
-        finalBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
+      }) : {};
+      if (photoDraft?.blob) console.info('[copetin-attendance] Foto de asistencia subida.', {
+        originalBytes: photoDraft?.originalSizeBytes,
+        finalBytes: uploadedPhoto.bytes ?? photoDraft?.sizeBytes,
         durationMs: Math.round(performance.now() - uploadStartedAt),
       });
       for (const participant of participants) {
         await onCreateRecord?.({
           ...form,
+          reason: getAttendanceWorkReason(form.type),
           markingMode,
           attendanceGroupId,
           attendanceGroupSize: participants.length,
@@ -406,17 +408,17 @@ function AttendanceSection({
           userName: participant.userName,
           role: participant.role,
           isManualParticipant: participant.manual,
-          photoUrl: uploadedPhoto.photoUrl,
-          photoMimeType: uploadedPhoto.mimeType ?? photoDraft.mimeType,
-          photoSizeBytes: uploadedPhoto.bytes ?? photoDraft.sizeBytes,
-          photoWidth: photoDraft.width,
-          photoHeight: photoDraft.height,
+          photoUrl: uploadedPhoto.photoUrl || '',
+          photoMimeType: uploadedPhoto.mimeType ?? photoDraft?.mimeType ?? '',
+          photoSizeBytes: uploadedPhoto.bytes ?? photoDraft?.sizeBytes ?? 0,
+          photoWidth: photoDraft?.width ?? null,
+          photoHeight: photoDraft?.height ?? null,
         });
       }
       setForm({
         type: 'entrada',
         location: '',
-        reason: '',
+        reason: 'Ingreso trabajo',
         latitude: null,
         longitude: null,
       });
@@ -444,7 +446,7 @@ function AttendanceSection({
         <div>
           <span>Control remoto</span>
           <h2>Asistencia</h2>
-          <p>Marca entrada o salida como biométrico móvil, con ubicación, motivo, hora y foto.</p>
+          <p>Registra ingreso o salida del trabajo con ubicación y hora. En Batallón Colorados la foto es opcional.</p>
         </div>
         <div className="attendance-user-card">
           <span className="attendance-user-avatar">{(currentUser?.fullName || currentUser?.username || 'U').slice(0, 1).toUpperCase()}</span>
@@ -620,25 +622,6 @@ function AttendanceSection({
             </section>
           ) : null}
 
-          <div className="attendance-type-toggle">
-            <button
-              type="button"
-              className={form.type === 'entrada' ? 'active' : ''}
-              onClick={() => setForm((current) => ({ ...current, type: 'entrada' }))}
-              disabled={!canMark}
-            >
-              Entrada
-            </button>
-            <button
-              type="button"
-              className={form.type === 'salida' ? 'active' : ''}
-              onClick={() => setForm((current) => ({ ...current, type: 'salida' }))}
-              disabled={!canMark}
-            >
-              Salida
-            </button>
-          </div>
-
           <label>
             Ubicación
             <div className="attendance-location-row">
@@ -655,19 +638,16 @@ function AttendanceSection({
             <small className="attendance-field-hint">Puedes usar GPS para sugerir calles o escribir manualmente dónde estás.</small>
           </label>
 
-          <label>
-            Motivo
-            <textarea
-              rows={3}
-              value={form.reason}
-              onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))}
-              placeholder="Ej: entrega temprana, salida tarde, apoyo en evento, visita a proveedor..."
-              required
-            />
-          </label>
+          <div className="attendance-work-reason">
+            <span id="attendance-work-reason-label">Motivo</span>
+            <div className="attendance-type-toggle" role="group" aria-labelledby="attendance-work-reason-label">
+              {['entrada', 'salida'].map(type => <button key={type} type="button" className={form.type === type ? 'active' : ''} aria-pressed={form.type === type} disabled={!canMark || isSubmitting} onClick={() => setForm(current => ({ ...current, type, reason: getAttendanceWorkReason(type) }))}>{getAttendanceWorkReason(type)}</button>)}
+            </div>
+          </div>
 
           <div className="attendance-photo-picker">
             <span className="attendance-photo-title">Evidencia fotográfica</span>
+            <small className="attendance-field-hint" role="status">{attendanceNeedsPhoto(form.location) ? 'Fuera de Batallón Colorados, toma una foto para respaldar la asistencia.' : 'Ubicación: Batallón Colorados · Puedes registrar tu asistencia sin foto.'}</small>
 
             {markingMode === 'responsable' && selectedParticipants.length > 1 ? (
               <div className="attendance-group-photo-advice">
@@ -694,19 +674,6 @@ function AttendanceSection({
                 />
               </div>
 
-              <div className="attendance-photo-native-box">
-                <strong>🖼️ Buscar foto</strong>
-                <small>Selecciona una imagen guardada en el dispositivo.</small>
-                <input
-                  id="attendance-photo-gallery-input"
-                  className="attendance-photo-native-input"
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoChange}
-                  disabled={!canMark}
-                  aria-label="Buscar foto en galería o archivos"
-                />
-              </div>
             </div>
 
             {photoDraft ? (
