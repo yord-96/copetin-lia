@@ -154,7 +154,44 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .orders-document-paper-picker select:hover{background:#2d415b!important;border-color:#849ab8!important}
   html[data-theme="dark"] .orders-document-paper-picker select:focus-visible{outline:2px solid #ff984a;outline-offset:2px}
   html[data-theme="dark"] .orders-document-paper-picker select:disabled{opacity:.55;cursor:wait}
-  html[data-theme="dark"] .orders-document-paper-picker option{background:#24344a;color:#eef5ff}`;
+  html[data-theme="dark"] .orders-document-paper-picker option{background:#24344a;color:#eef5ff}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign{--accounting-surface:#1c293b;--accounting-line:#35465d;--petty-line:#35465d;background:#172232!important;color:#e4edf8!important;border-color:#35465d!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-kpi-card,.bigcash-card,.petty-side-card,.accounting-modal){background:#1c293b!important;border-color:#35465d!important;color:#e4edf8!important;box-shadow:0 8px 24px #080f1c26}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .pettycash-head{background:linear-gradient(115deg,#16365a,#1b2a40)!important;border-color:#3b5675!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(h2,h3,h4,.petty-card-title strong,.petty-table-head){color:#edf4ff!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-card-title p,.petty-money-context small,.petty-day-equation small,.petty-day-closing small,.petty-table-head p,.accounting-modal small){color:#aabbd2!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-money-context>span,.petty-day-equation>span){background:#142133!important;border-color:#34475f!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-money-context b,.petty-day-equation b){color:#e0eafa!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.value-green,.petty-kpi-card .value-green){color:#62dfa5!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.value-blue,.petty-kpi-card .value-blue){color:#8ab8ff!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.value-orange,.petty-kpi-card .value-orange){color:#ffad7b!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-table-head,.petty-toolbar,.petty-report-bar){background:#1c293b!important;border-color:#35465d!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-workspace-tabs{background:#142133!important;border-color:#35465d!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-workspace-tabs button{background:transparent!important;color:#b8c9df!important;border-color:transparent!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-workspace-tabs button.active{background:#2f3c50!important;color:#ffb37f!important;box-shadow:inset 0 -2px #f18a43}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-workspace-tabs button b{background:#22344c!important;color:#e4edf8!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(input,select,textarea){background:#142133!important;color:#e4edf8!important;border-color:#425773!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(input,select,textarea):focus-visible{outline:2px solid #82b4ff;outline-offset:2px}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table th{background:#18375e!important;color:#f0f5ff!important;border-color:#3a5271!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table tbody td{background:#1c293b!important;color:#e0eafa!important;border-color:#34445b!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table tbody tr:nth-child(odd) td{background:#202f43!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table tbody tr:not(.petty-opening-balance):hover td{background:#293c55!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table .petty-opening-balance td{background:#183352!important;color:#dceaff!important;border-color:#47658a!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table td small{color:#aabbd2!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-table .petty-fund-cell{background:#17263a!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-amount-badge.is-income,.petty-debt-status.paid){background:#133e32!important;color:#73e5b0!important;border-color:#2c6d55!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-amount-badge.is-expense{background:#4b2d22!important;color:#ffb68d!important;border-color:#80513c!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .petty-debt-status.pending{background:#483a1e!important;color:#ffda85!important;border-color:#776039!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-primary-button,.accounting-overview-primary){background:#245798!important;color:#fff!important;border-color:#5186cc!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-secondary-button,.accounting-overview-secondary){background:#29364a!important;color:#ffb386!important;border-color:#67503f!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.accounting-modal header,.accounting-modal footer,.petty-history-summary,.petty-advance-form){background:#1c293b!important;border-color:#35465d!important;color:#e4edf8!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-debt-menu-popover,.petty-expense-menu-popover){background:#26374f!important;border-color:#526781!important;color:#e4edf8!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.fund-action-modal,.fund-history-modal,.fund-history-document){background:#1c293b!important;color:#e4edf8!important;border-color:#35465d!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.fund-action-modal-head,.fund-history-head,.fund-current-summary,.fund-history-summary>article,.fund-history-tabs,.fund-action-form-actions){background:#142133!important;color:#e4edf8!important;border-color:#35465d!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.fund-action-modal,.fund-history-modal) :is(p,small,label){color:#b3c4da!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .fund-history-document.income :is(.fund-history-type,.fund-history-document-amount strong){color:#73e5b0!important}
+  html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .fund-history-document.delivery :is(.fund-history-type,.fund-history-document-amount strong){color:#ffb68d!important}
+  `;
   const rebuild=()=>{
     if(theme!=='dark'){style.textContent='';return;}
     let css='';
