@@ -1,5 +1,6 @@
 import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
+import { getContractWhatsAppContacts, openContractWhatsAppContact } from '../../utils/contractWhatsApp.js';
 import { economicDepositGroup, reviseEconomicDeposit } from '../../utils/economicDepositOperations';
 import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -2042,6 +2043,12 @@ function ServiceOrdersSection({
   const deferredItemSearch = useDeferredValue(itemSearch);
   const [quoteApprovalPreview, setQuoteApprovalPreview] = useState(null);
   const [whatsAppModal, setWhatsAppModal] = useState(null);
+  const [contactWhatsAppPicker, setContactWhatsAppPicker] = useState(null);
+  const contactContractWhatsApp = (row) => {
+    const contacts = getContractWhatsAppContacts(row);
+    if (contacts.length === 1) openContractWhatsAppContact(contacts[0]);
+    else if (contacts.length > 1) setContactWhatsAppPicker({ row, contacts });
+  };
   const [supplierCoverageModal, setSupplierCoverageModal] = useState(null);
   const [availabilityContractDetail, setAvailabilityContractDetail] = useState(null);
   const [clientPendingDetail, setClientPendingDetail] = useState(null);
@@ -12193,6 +12200,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         </td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
+                            <button type="button" className="orders-contract-whatsapp-contact" onClick={() => contactContractWhatsApp(row)} disabled={!getContractWhatsAppContacts(row).length} title="Contactar por WhatsApp Web" aria-label={`Contactar contrato ${row.contractCode} por WhatsApp`}>
+                              <WhatsAppGlyph />
+                            </button>
                             <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                               Abrir
                             </button>
@@ -12353,6 +12363,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       </div>
                     </div>
                     <div className="orders-mobile-contract-actions">
+                      <button type="button" className="orders-contract-whatsapp-contact" onClick={() => contactContractWhatsApp(row)} disabled={!getContractWhatsAppContacts(row).length} title="Contactar por WhatsApp Web" aria-label={`Contactar contrato ${row.contractCode} por WhatsApp`}><WhatsAppGlyph /></button>
                       <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                         Abrir
                       </button>
@@ -14351,6 +14362,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         </div>
       ) : null}
 
+      {contactWhatsAppPicker ? (
+        <div className="orders-modal-backdrop" onClick={() => setContactWhatsAppPicker(null)}>
+          <section className="orders-modal orders-whatsapp-contact-picker" role="dialog" aria-modal="true" aria-labelledby="contract-whatsapp-contact-title" onClick={event => event.stopPropagation()}>
+            <header className="orders-modal-head"><div><h3 id="contract-whatsapp-contact-title">Contactar por WhatsApp</h3><p>Contrato {contactWhatsAppPicker.row.contractCode} · {contactWhatsAppPicker.row.customerName}</p></div><button type="button" className="orders-modal-close" aria-label="Cerrar selector de contacto" onClick={() => setContactWhatsAppPicker(null)}><X size={18} /></button></header>
+            <div className="orders-whatsapp-contact-options"><p>¿A qué número quieres contactar?</p>{contactWhatsAppPicker.contacts.map(contact => <button type="button" key={contact.kind} onClick={() => { openContractWhatsAppContact(contact); setContactWhatsAppPicker(null); }}><WhatsAppGlyph /><span><strong>{contact.label}</strong><small>{contact.raw}</small></span></button>)}</div>
+          </section>
+        </div>
+      ) : null}
       {whatsAppModal ? (
         <div className="orders-modal-backdrop" onClick={() => setWhatsAppModal(null)}>
           <section className="orders-modal whatsapp-modal" onClick={(event) => event.stopPropagation()}>
