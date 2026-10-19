@@ -9,6 +9,7 @@ if (window === window.top) {
     const respond = data => window.postMessage({ source: 'copetin-whatsapp-extension', id: request.id, ...data }, location.origin);
     if (busy) return respond({ error: 'Espera a que termine la apertura anterior.' });
     busy = true;
+    respond({ pending: true });
     try {
       const response = await chrome.runtime.sendMessage({ phone: request.phone, tabId: request.tabId });
       respond(response);

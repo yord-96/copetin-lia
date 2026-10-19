@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Copetín WhatsApp",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "permissions": ["scripting"],
   "description": "Abre el chat del contrato en tu pestaña existente de WhatsApp Web.",
   "host_permissions": ["https://web.whatsapp.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },

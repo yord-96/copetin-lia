@@ -1,3 +1,4 @@
+import { openChatWithoutReload } from './open-chat.js';
 const allowedOrigins = new Set(['https://tucopetin.com', 'https://www.tucopetin.com']);
 
 export async function navigateToContact(browser, request, sender) {
@@ -17,8 +18,12 @@ export async function navigateToContact(browser, request, sender) {
   if (request.tabId !== undefined && !target) throw new Error('Esa pestaña ya no está disponible. Vuelve a presionar el botón.');
   const url = `https://web.whatsapp.com/send?phone=${request.phone}`;
   const tab = target
-    ? await browser.tabs.update(target.id, { url, active: true })
+    ? await browser.tabs.update(target.id, { active: true })
     : await browser.tabs.create({ url, active: true, windowId: sender.tab.windowId });
   await browser.windows.update(tab.windowId, { focused: true });
+  if (target) {
+    const results = await browser.scripting.executeScript({ target: { tabId: target.id }, func: openChatWithoutReload, args: [request.phone] });
+    if (results[0]?.result !== true) throw new Error('WhatsApp no confirmó la apertura del chat. No se recargó la página.');
+  }
   return { opened: true, reused: Boolean(target) };
 }

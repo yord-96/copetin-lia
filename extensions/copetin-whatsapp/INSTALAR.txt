@@ -8,7 +8,8 @@ COPETÍN WHATSAPP — INSTALACIÓN GRATUITA
 
 El botón del contrato reutiliza esa pestaña. Si hay varias, pregunta cuál usar.
 Si no hay ninguna, abre una. No envía mensajes ni lee conversaciones.
-WhatsApp puede recargarse al cambiar de chat; utiliza la sesión de ese perfil.
+Si WhatsApp ya está abierto, se usa Nuevo chat sin recargar la página.
+Si su interfaz cambia y no puede abrirse el chat, se informa el error sin recargar.
 La instalación se realiza una vez en cada perfil/computadora. No borres la carpeta.
 Al actualizar la extensión, pulsa Recargar en chrome://extensions y actualiza El Copetín.
 Sin suscripciones, servicios externos, claves API ni pagos de publicación.

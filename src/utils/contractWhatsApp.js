@@ -26,11 +26,19 @@ export function openContractWhatsAppContact(contact, browser = window, tabId) {
       if (event.source !== browser || event.origin !== browser.location.origin) return;
       const reply = event.data;
       if (reply?.source !== 'copetin-whatsapp-extension' || reply.id !== id) return;
+      if (reply.pending) {
+        browser.clearTimeout(timer);
+        timer = browser.setTimeout(() => {
+          cleanup();
+          reject(new Error('WhatsApp no respondió a tiempo. Revisa la pestaña y vuelve a intentarlo.'));
+        }, 45000);
+        return;
+      }
       cleanup();
       if (reply.error) reject(new Error(reply.error));
       else resolve(reply.result);
     };
-    const timer = browser.setTimeout(() => {
+    let timer = browser.setTimeout(() => {
       cleanup();
       reject(new Error('Instala o activa la extensión Copetín WhatsApp y actualiza esta página. No se abrió otra pestaña.'));
     }, 5000);
