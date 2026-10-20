@@ -33,3 +33,22 @@ test('quote client sends only its document and reuses the operation after an int
     assert.equal((await getWebBridge().__storage.exportCollections(['quotes'])).quotes[0].id, 'confirmed');
   } finally { globalThis.window = originalWindow; globalThis.fetch = originalFetch; }
 });
+
+test('conversion sends a quote reference and its version without fetching or uploading the database', async () => {
+  const originalWindow = globalThis.window;
+  const originalFetch = globalThis.fetch;
+  const storage = new Map();
+  globalThis.window = { location: { hostname: 'tucopetin.test', protocol: 'https:' }, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) } };
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    assert.equal(url, '/__copetin_db/quotes/quote-id/convert');
+    assert.deepEqual(JSON.parse(options.body), { trace: { userId: 'qa' }, quoteUpdatedAt: 'version' });
+    return new Response(JSON.stringify({ contract: { id: 'c', rentalId: 'r' }, rental: { id: 'r' }, changes: {}, revision: '3:confirmed' }), { status: 200 });
+  };
+  try {
+    const { api } = await import('./api.js');
+    const result = await api.contracts.createAndApprove({ contract: { quoteId: 'quote-id', expectedQuoteUpdatedAt: 'version', items: [{ itemId: 'chair', quantity: 999 }], customerName: 'untrusted browser copy' }, trace: { userId: 'qa' } });
+    assert.equal(result.contract.id, 'c'); assert.equal(calls, 1);
+  } finally { globalThis.window = originalWindow; globalThis.fetch = originalFetch; }
+});

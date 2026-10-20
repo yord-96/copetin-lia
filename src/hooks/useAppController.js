@@ -2851,6 +2851,18 @@ export const useAppController = () => {
         if (index < 0) return [createdRental, ...current];
         return [...current.slice(0, index), createdRental, ...current.slice(index + 1)];
       });
+      if (Array.isArray(payload?.changes?.quotes)) {
+        setQuotes(current => {
+          const confirmed = new Map(payload.changes.quotes.map(row => [row.id, row]));
+          return current.map(row => confirmed.get(row.id) ?? row);
+        });
+      }
+      if (Array.isArray(payload?.changes?.items)) {
+        setItems(current => {
+          const confirmed = new Map(payload.changes.items.map(row => [row.id, row]));
+          return current.map(row => confirmed.get(row.id) ?? row);
+        });
+      }
       if (Array.isArray(payload?.changes?.deliveries)) {
         setDeliveries((current) => {
           const next = [...current];

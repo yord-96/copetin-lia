@@ -2308,15 +2308,20 @@ const createAndApproveContractOnServer = async ({ contract, contractId, trace } 
     throw new Error('No se puede aprobar un contrato incompleto o resumido.');
   }
 
-  const meta = await fetchServerMeta();
+  const quoteId = !contractId ? String(contract?.quoteId ?? '').trim() : '';
+  const meta = quoteId ? null : await fetchServerMeta();
   const revision = meta?.revision ?? getKnownLocalRevision();
-  const response = await fetch(getServerStateUrl(contractId
+  const response = await fetch(getServerStateUrl(quoteId
+    ? `/quotes/${encodeURIComponent(quoteId)}/convert`
+    : contractId
     ? `/contracts/${encodeURIComponent(contractId)}/approve`
     : '/contracts/create-and-approve'), {
     method: 'POST',
     cache: 'no-store',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ contract, trace, revision }),
+    body: JSON.stringify(quoteId
+      ? { trace, quoteUpdatedAt: contract.expectedQuoteUpdatedAt ?? contract.updatedAt ?? '' }
+      : { contract, trace, revision }),
   });
   if (!response.ok) {
     throw await createServerStateError(response, 'No se pudo crear y aprobar el contrato.');

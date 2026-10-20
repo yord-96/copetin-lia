@@ -135,7 +135,9 @@ const periodFromCommercialRecord = (record) => {
 
 const normalizeLineQuantity = (line) => {
   const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
-  const explicitInternal = Number(line?.internalReservedQty);
+  const explicitInternal = line?.internalReservedQty == null || line.internalReservedQty === ''
+    ? Number.NaN
+    : Number(line.internalReservedQty);
   if (Number.isFinite(explicitInternal)) {
     return Math.max(0, Math.trunc(explicitInternal));
   }

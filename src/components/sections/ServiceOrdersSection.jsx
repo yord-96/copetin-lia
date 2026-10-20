@@ -1,6 +1,7 @@
 import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
 import { getContractWhatsAppContacts, openContractWhatsAppContact } from '../../utils/contractWhatsApp.js';
+import { buildContractPayloadFromQuote } from '../../utils/quoteConversion.js';
 import { economicDepositGroup, reviseEconomicDeposit } from '../../utils/economicDepositOperations';
 import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -8120,37 +8121,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       createdByRole: primaryResponsible?.role ?? undefined,
     };
   };
-
-  const buildContractPayloadFromQuote = (quote) => ({
-    ...quote,
-    id: undefined,
-    quoteCode: undefined,
-    quoteId: quote?.id ?? null,
-    status: 'borrador',
-    validUntil: null,
-    contractDate: quote?.contractDate ?? new Date().toISOString(),
-    discountMode: quote?.totals?.discountMode ?? quote?.discountMode ?? 'percent',
-    discountBs: quote?.totals?.discountBs ?? quote?.discountBs ?? 0,
-    discountPercent: quote?.totals?.discountPercent ?? quote?.discountPercent ?? 0,
-    guaranteeBs: quote?.totals?.guaranteeBs ?? quote?.guarantee?.amountBs ?? 0,
-    guaranteeStatus: quote?.guarantee?.status ?? quote?.payment?.guaranteeStatus ?? 'no_validado',
-    guaranteePaymentMethod: quote?.guarantee?.paymentMethod
-      ?? quote?.payment?.guaranteePaymentMethod
-      ?? 'efectivo',
-    guaranteePaymentAccount: quote?.guarantee?.paymentAccount
-      ?? quote?.payment?.guaranteePaymentAccount
-      ?? '',
-    paidAtApprovalBs: quote?.payment?.paidAtApprovalBs ?? 0,
-    prepaidAppliedBs: quote?.payment?.prepaidAppliedBs ?? quote?.prepaidAppliedBs ?? 0,
-    initialPaymentMethod: quote?.payment?.initialPaymentMethod ?? 'efectivo',
-    initialPaymentAccount: quote?.payment?.initialPaymentAccount ?? '',
-    deliveryFeeBs: quote?.totals?.deliveryFeeBs ?? quote?.deliveryFeeBs ?? 0,
-    items: Array.isArray(quote?.items) ? quote.items : [],
-    services: Array.isArray(quote?.services) ? quote.services : [],
-    supplierFulfillmentPlan: Array.isArray(quote?.supplierFulfillmentPlan)
-      ? quote.supplierFulfillmentPlan
-      : [],
-  });
 
   const handleSaveQuote = async ({
     approveNow,

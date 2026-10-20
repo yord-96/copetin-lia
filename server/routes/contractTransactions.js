@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { updateStateSnapshot } from '../storage/fileStateStore.js';
 import { getWebBridge } from '../../src/services/webBridge.js';
+import { buildContractPayloadFromQuote } from '../../src/utils/quoteConversion.js';
+import { cashMovementMatchesContractReferences } from '../../src/utils/contractCashLinks.js';
 
 const router = Router();
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
@@ -148,7 +150,7 @@ router.post('/__copetin_db/quotes/:action', requireInternalKey, async (req, res,
   }
 });
 
-router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contracts/:id/approve'], requireInternalKey, async (req, res, next) => {
+router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contracts/:id/approve', '/__copetin_db/quotes/:quoteId/convert'], requireInternalKey, async (req, res, next) => {
   const startedAt = Date.now();
   const timings = {};
   let lastMarkAt = startedAt;
@@ -164,8 +166,9 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
   };
   try {
     const existingId = String(req.params.id ?? '').trim();
-    const contractPayload = req.body?.contract;
-    if (!existingId && (!contractPayload || typeof contractPayload !== 'object' || Array.isArray(contractPayload))) {
+    const sourceQuoteId = String(req.params.quoteId ?? (!existingId ? req.body?.contract?.quoteId : '') ?? '').trim();
+    let contractPayload = req.body?.contract;
+    if (!sourceQuoteId && !existingId && (!contractPayload || typeof contractPayload !== 'object' || Array.isArray(contractPayload))) {
       res.status(400).json({ error: 'Debes enviar el contrato completo.' });
       return;
     }
@@ -173,13 +176,14 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
       res.status(409).json({ error: 'No se puede aprobar un contrato resumido.' });
       return;
     }
-    if (!existingId && !contractPayload.items?.length && !contractPayload.services?.length) {
+    if (!sourceQuoteId && !existingId && !contractPayload.items?.length && !contractPayload.services?.length) {
       res.status(400).json({ error: 'El contrato debe incluir sus items completos.' });
       return;
     }
 
     const trace = req.body?.trace && typeof req.body.trace === 'object' ? req.body.trace : {};
-    const expectedRevision = req.body?.revision;
+    // A quote conversion validates that quote's version, not unrelated database activity.
+    const expectedRevision = sourceQuoteId ? undefined : req.body?.revision;
     let responseBundle = null;
     mark('validation');
 
@@ -190,7 +194,12 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
       mark('beginBatch');
 
       try {
-      const existingContract = existingId ? (state.contracts ?? []).find((entry) => entry.id === existingId) : null;
+      const sourceQuote = sourceQuoteId ? (state.quotes ?? []).find(row => row.id === sourceQuoteId && !row.deletedAt) : null;
+      const blocked = message => { const error = new Error(message); error.statusCode = 409; return error; };
+      if (sourceQuoteId && !sourceQuote) throw blocked('La cotizacion ya no existe o fue eliminada.');
+      const linkedContracts = sourceQuoteId ? (state.contracts ?? []).filter(row => row.quoteId === sourceQuoteId && !row.deletedAt && !['anulado', 'rechazado'].includes(row.status)) : [];
+      if (linkedContracts.length > 1) throw blocked('La cotizacion tiene varios contratos vinculados. Revisa los existentes antes de convertirla.');
+      const existingContract = existingId ? (state.contracts ?? []).find((entry) => entry.id === existingId) : linkedContracts[0] ?? null;
       if (existingId && (!existingContract || existingContract.deletedAt || ['anulado', 'rechazado'].includes(existingContract.status))) {
         throw new Error('El contrato no existe o no admite aprobacion.');
       }
@@ -200,9 +209,23 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
       ));
       if (existingContract?.status === 'aprobado' && existingRental) {
         responseBundle = { contract: existingContract, rental: existingRental, changes: {
-          contracts: [existingContract], rentals: [existingRental],
+          contracts: [existingContract], rentals: [existingRental], quotes: sourceQuote ? [sourceQuote] : [],
+          items: (state.items ?? []).filter(item => (existingContract.items ?? []).some(line => line.itemId === item.id)),
+          deliveries: (state.deliveries ?? []).filter(row => row.rentalId === existingRental.id),
+          cashMovements: (state.cashMovements ?? []).filter(row => cashMovementMatchesContractReferences(row, { contractId: existingContract.id, rentalId: existingRental.id, orderCode: existingRental.orderCode })),
+          generatedReports: (state.generatedReports ?? []).filter(row => row.sourceId === existingRental.id),
+          supplierLoans: (state.supplierLoans ?? []).filter(row => row.sourceRentalId === existingRental.id || row.sourceContractId === existingContract.id),
         } };
         return await bridge.__storage.commitBatch();
+      }
+      if (sourceQuote) {
+        if (existingContract) throw blocked('Esta cotizacion ya tiene un contrato pendiente o incompleto. Abre ese contrato para revisarlo y aprobarlo sin crear otro.');
+        if (['rechazada', 'anulada', 'aprobada'].includes(sourceQuote.status)) throw blocked('La cotizacion no admite conversion. Revisa su estado y el contrato vinculado.');
+        const expectedQuoteUpdatedAt = req.body?.quoteUpdatedAt ?? contractPayload?.expectedQuoteUpdatedAt ?? contractPayload?.updatedAt;
+        if (expectedQuoteUpdatedAt === undefined || String(expectedQuoteUpdatedAt) !== String(sourceQuote.updatedAt ?? '')) {
+          throw blocked('La cotizacion cambio desde que la abriste. Vuelve a revisarla antes de convertirla.');
+        }
+        contractPayload = buildContractPayloadFromQuote(sourceQuote);
       }
       const repairingApproval = existingContract?.status === 'aprobado';
       const createdContract = existingContract ?? await bridge.contracts.create({
@@ -233,7 +256,7 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
         ? toMoney(createdContract?.totals?.guaranteeBs)
         : 0;
 
-      const currentState = await bridge.__storage.exportState();
+      const currentState = state;
       const localClient = (currentState.clients ?? []).find((entry) => entry.id === createdContract.clientId)
         ?? (currentState.clients ?? []).find((entry) => (
           String(entry?.name ?? '').trim().toLowerCase()
@@ -367,13 +390,15 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
             rentalId: createdRental.id,
             orderCode: createdRental.orderCode,
           });
+          const persistedQuote = state.quotes.find(entry => entry.id === linkedQuote.id);
+          persistedQuote.convertedContractId = updatedContract.id;
         }
       }
 
       mark('quoteUpdate');
 
       if (!historicalReconstruction && (createdContract.logisticsMode ?? 'envio') !== 'recojo') {
-        const stateAfterRental = await bridge.__storage.exportState();
+        const stateAfterRental = state;
         const linkedDeliveries = (stateAfterRental.deliveries ?? []).filter(
           (entry) => entry.rentalId === createdRental.id,
         );
@@ -481,7 +506,7 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
 
       mark('reports');
 
-      const finalState = await bridge.__storage.exportState();
+      const finalState = state;
       const finalContract = (finalState.contracts ?? []).find((entry) => entry.id === updatedContract.id);
       const finalRental = (finalState.rentals ?? []).find((entry) => entry.id === createdRental.id);
       if (!finalContract || !finalRental || finalContract.rentalId !== finalRental.id) {
@@ -493,11 +518,7 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
         || entry.orderCode === createdRental.orderCode
         || entry.contractId === createdContract.id
       ));
-      const linkedCashMovements = (finalState.cashMovements ?? []).filter((entry) => (
-        entry.rentalId === createdRental.id
-        || entry.orderCode === createdRental.orderCode
-        || entry.contractId === createdContract.id
-      ));
+      const linkedCashMovements = (finalState.cashMovements ?? []).filter(entry => cashMovementMatchesContractReferences(entry, { contractId: createdContract.id, rentalId: createdRental.id, orderCode: createdRental.orderCode }));
       const linkedSupplierLoans = (finalState.supplierLoans ?? []).filter((entry) => (
         entry.sourceRentalId === createdRental.id
         || entry.sourceContractId === createdContract.id
@@ -510,6 +531,7 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
         contract: finalContract,
         rental: finalRental,
         changes: {
+          items: (finalState.items ?? []).filter(item => approvalItems.some(line => line.itemId === item.id)),
           contracts: finalContract ? [finalContract] : [],
           rentals: finalRental ? [finalRental] : [],
           deliveries: linkedDeliveries,
@@ -563,6 +585,10 @@ router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contra
     });
   } catch (error) {
     logProfile('error', { code: error?.code, message: error?.message });
+    if (error?.statusCode) {
+      res.status(error.statusCode).json({ error: error.message, code: error.code });
+      return;
+    }
     if (error?.code === 'STATE_REVISION_CONFLICT') {
       res.status(409).json({
         error: 'Los datos fueron actualizados por otro usuario. Recarga antes de aprobar.',
