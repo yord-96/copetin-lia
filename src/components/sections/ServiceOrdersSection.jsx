@@ -6170,6 +6170,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     entityType,
     mode: entityType === 'contract' ? 'order' : 'quote',
     recordId: record?.id ?? '',
+    recordUpdatedAt: record?.updatedAt ?? '',
     rentalId: record?.rentalId ?? '',
     orderCode: record?.orderCode ?? '',
     quoteId: entityType === 'contract' ? String(record?.quoteId ?? '').trim() : '',
@@ -8315,6 +8316,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         const savedQuote = draft.recordId
           ? await onUpdateQuote?.({
             ...payload,
+            expectedUpdatedAt: draft.recordUpdatedAt,
             status: draft.recordStatus || payload.status,
           })
           : await onCreateQuote(payload);

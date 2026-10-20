@@ -2031,7 +2031,7 @@ export const useAppController = () => {
     setError('');
     try {
       const created = await api.quotes.create({ ...getCurrentUserTrace(), ...payload });
-      await loadData();
+      setQuotes(current => [created, ...current.filter(row => row.id !== created.id)]);
       return created;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo crear la cotizacion.');
@@ -2045,14 +2045,12 @@ export const useAppController = () => {
       const trace = getCurrentUserTrace();
       const updated = await api.quotes.update({
         ...payload,
+        expectedUpdatedAt: payload.expectedUpdatedAt ?? quotes.find(row => row.id === payload.id)?.updatedAt ?? '',
         updatedById: trace.userId,
         updatedByName: trace.userName,
         updatedByRole: trace.userRole,
       });
-      await loadData();
-      // El PATCH ya devuelve la cotizacion persistida. Fuerza esa version en
-      // el estado React despues del refresco general para que la tabla refleje
-      // inmediatamente responsable, total y estado sin exigir F5.
+      // Actualiza la fila confirmada sin esperar una recarga de toda la base.
       setQuotes((current) => {
         const updatedId = String(updated?.id ?? '').trim();
         if (!updatedId) return current;
@@ -2074,8 +2072,8 @@ export const useAppController = () => {
   const handleRemoveQuote = async (payload) => {
     setError('');
     try {
-      const removed = await api.quotes.remove(payload);
-      await loadData();
+      const removed = await api.quotes.remove({ ...payload, expectedUpdatedAt: quotes.find(row => row.id === payload.id)?.updatedAt ?? '' });
+      setQuotes(current => current.filter(row => row.id !== removed.id));
       return removed;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo eliminar la cotizacion.');

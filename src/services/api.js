@@ -2737,6 +2737,50 @@ const callBridge = async (domain, method, mutates, ...args) => {
 
 
 
+// Creating a quote must never fall back to replacing a partial browser database.
+// Retain the operation ID after an interrupted request so a retry cannot duplicate it.
+const quoteOperationIds = new Map();
+const mutateQuoteOnServer = (method, quote = {}) => {
+  if (!shouldUseServerState()) return callBridge('quotes', method, true, quote);
+  const key = getMutationKey('quotes', method, [quote]);
+  if (inFlightMutations.has(key)) return inFlightMutations.get(key);
+  if (!quoteOperationIds.has(key)) {
+    if (quoteOperationIds.size >= 100) quoteOperationIds.delete(quoteOperationIds.keys().next().value);
+    quoteOperationIds.set(key, globalThis.crypto.randomUUID());
+  }
+  const operationId = quoteOperationIds.get(key);
+  const request = enqueueMutation(async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+    const response = await fetch(getServerStateUrl(`/quotes/${method}`), {
+      method: 'POST', cache: 'no-store',
+      signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ quote, operationId }),
+    });
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500) quoteOperationIds.delete(key);
+      throw await createServerStateError(response, 'No se pudo guardar la cotizacion.');
+    }
+    const result = await response.json();
+    if (!result.quote?.id) throw new Error('El servidor no confirmo la cotizacion guardada.');
+    await mergeTransactionChangesIntoLocalState({ quotes: [result.quote] });
+    quoteOperationIds.delete(key);
+    ['quotes', 'clients', 'items'].forEach(name => loadedServerCollections.delete(name));
+    if (result.revision) { rememberServerRevision(result.revision); localServerCommitSerial += 1; }
+    announceDataChange({ domain: 'quotes', method, collections: ['quotes', 'clients', 'items'] });
+    return result.quote;
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('No se pudo confirmar el guardado a tiempo. Vuelve a intentar sin cerrar el formulario; se comprobara la misma operacion para evitar duplicados.');
+      throw error;
+    } finally { clearTimeout(timer); }
+  });
+  inFlightMutations.set(key, request);
+  request.then(() => inFlightMutations.delete(key), () => inFlightMutations.delete(key));
+  return request;
+};
+
 const callDirectInventoryItemRemove = async (payload = {}) => {
   if (!shouldUseServerState()) return callBridge('inventory', 'remove', true, payload);
   const itemId = String(payload?.id ?? '').trim();
@@ -3862,9 +3906,9 @@ export const api = {
   },
   quotes: {
     list: () => callBridge('quotes', 'list', false),
-    create: (payload) => callBridge('quotes', 'create', true, payload),
-    update: (payload) => callBridge('quotes', 'update', true, payload),
-    remove: (payload) => callBridge('quotes', 'remove', true, payload),
+    create: (payload) => mutateQuoteOnServer('create', payload),
+    update: (payload) => mutateQuoteOnServer('update', payload),
+    remove: (payload) => mutateQuoteOnServer('remove', payload),
   },
   contracts: {
     list: () => callBridge('contracts', 'list', false),

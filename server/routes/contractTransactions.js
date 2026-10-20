@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createHash } from 'node:crypto';
 import { updateStateSnapshot } from '../storage/fileStateStore.js';
 import { getWebBridge } from '../../src/services/webBridge.js';
 
@@ -69,6 +70,83 @@ const normalizeApprovalServices = (services) => (Array.isArray(services) ? servi
   serviceDate: service?.serviceDate ?? service?.date ?? null,
   serviceDayLabel: service?.serviceDayLabel ?? service?.dayLabel ?? '',
 }));
+
+const canonicalQuoteRequest = value => {
+  if (Array.isArray(value)) return value.map(canonicalQuoteRequest);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalQuoteRequest(value[key])]));
+  return value;
+};
+
+router.post('/__copetin_db/quotes/:action', requireInternalKey, async (req, res, next) => {
+  const startedAt = Date.now();
+  try {
+    const action = req.params.action;
+    if (!['create', 'update', 'remove'].includes(action)) return res.sendStatus(404);
+    const quote = req.body?.quote;
+    const operationId = String(req.body?.operationId ?? '').trim();
+    if (!quote || typeof quote !== 'object' || Array.isArray(quote) || quote._summaryOnly || !/^[\w-]{16,100}$/.test(operationId)) {
+      return res.status(400).json({ error: 'Debes enviar la cotizacion y un identificador de operacion valido.' });
+    }
+    const requestHash = createHash('sha256').update(JSON.stringify(canonicalQuoteRequest({ action, quote }))).digest('hex');
+    let created;
+    let duplicated = false;
+    const result = await updateStateSnapshot(async state => {
+      const previousUpdatedAt = (state.quotes ?? []).find(row => row.id === quote.id)?.updatedAt;
+      const existing = (state.quotes ?? []).find(row => action === 'create'
+        ? row.creationOperationId === operationId
+        : row.lastQuoteOperationId === operationId);
+      if (existing) {
+        if ((action === 'create' ? existing.creationRequestHash : existing.lastQuoteRequestHash) !== requestHash) {
+          const error = new Error('La operacion ya fue utilizada para otra cotizacion.');
+          error.statusCode = 409;
+          throw error;
+        }
+        created = existing;
+        duplicated = true;
+        return state;
+      }
+      if (action !== 'create') {
+        const current = (state.quotes ?? []).find(row => row.id === quote.id);
+        if (!current || current.deletedAt) {
+          const error = new Error('La cotizacion no existe o ya fue eliminada.');
+          error.statusCode = 404;
+          throw error;
+        }
+        if (quote.expectedUpdatedAt === undefined || String(quote.expectedUpdatedAt ?? '') !== String(current.updatedAt ?? '')) {
+          const error = new Error('Esta cotizacion cambio en otra sesion. Vuelve a abrirla antes de guardar para no sobrescribir cambios.');
+          error.statusCode = 409;
+          throw error;
+        }
+      }
+      const bridge = getWebBridge();
+      await bridge.__storage.beginBatch(state);
+      try {
+        created = await bridge.quotes[action](quote);
+        const persisted = state.quotes.find(row => row.id === created.id);
+        if (action !== 'create') persisted.updatedAt = new Date(Math.max(Date.now(), (Date.parse(previousUpdatedAt) || 0) + 1)).toISOString();
+        if (action === 'create') {
+          persisted.creationOperationId = operationId;
+          persisted.creationRequestHash = requestHash;
+        }
+        persisted.lastQuoteOperationId = operationId;
+        persisted.lastQuoteRequestHash = requestHash;
+        created = persisted;
+        return await bridge.__storage.commitBatch();
+      } catch (error) {
+        await bridge.__storage.rollbackBatch();
+        throw error;
+      }
+    });
+    if (!result.initialized) return res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
+    const durationMs = Date.now() - startedAt;
+    res.set('Server-Timing', `total;dur=${durationMs}`);
+    console.info('[quote-transaction]', { action, quoteId: created.id, duplicated, durationMs });
+    res.json({ ok: true, quote: created, duplicated, revision: result.revision });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
 
 router.post(['/__copetin_db/contracts/create-and-approve', '/__copetin_db/contracts/:id/approve'], requireInternalKey, async (req, res, next) => {
   const startedAt = Date.now();
