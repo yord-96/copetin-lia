@@ -203,12 +203,9 @@ const buildContractPdfFileName = (contract, rental) => {
 
 const buildQuotePdfFileName = (quote) => {
   const customer = sanitizeFilePart(quote?.customerName ?? '')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(' ');
-  const code = sanitizeFilePart(quote?.quoteCode ?? 'cotizacion');
-  return [customer, code].filter(Boolean).join(' ').toUpperCase() || 'COTIZACION';
+    .slice(0, 50).trim() || 'CLIENTE';
+  const code = sanitizeFilePart(quote?.quoteCode ?? '').slice(0, 24).trim();
+  return [customer, 'COTIZACION', code].filter(Boolean).join(' ').toUpperCase();
 };
 
 const normalizeContractPaperSize = (value) => (
@@ -590,6 +587,11 @@ router.get(
       res.setHeader('X-Document-Key', result.cacheKey);
       res.setHeader('X-Document-Duration-Ms', String(Date.now() - startedAt));
       res.setHeader('X-Quote-Paper-Size', paperSize);
+      const previewToken = createDocumentAccessToken({
+        kind: 'pdf-preview', identifier: `${result.cacheKey}/${result.fileName}`, ttlMs: 24 * 60 * 60 * 1000,
+      });
+      res.setHeader('X-Document-Viewer-Url', `/__copetin_db/pdf-preview/${result.cacheKey}/${encodeURIComponent(result.fileName)}?access_token=${encodeURIComponent(previewToken)}`);
+      res.setHeader('Access-Control-Expose-Headers', 'X-Document-Viewer-Url, X-Document-Cache, X-Document-Duration-Ms');
       res.send(result.buffer);
     } catch (error) {
       next(error);
