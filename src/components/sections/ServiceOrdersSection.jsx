@@ -14025,12 +14025,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 </header>
                 {contractEconomicsData.clientPendingItems.length > 0 ? (
                   <div style={{ display: 'grid', gap: 8, marginBottom: 10 }}>
-                    <div style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #f5c26b', background: '#fff7ed', color: '#92400e', display: 'grid', gap: 4 }}>
+                    <div className="contract-return-pending-summary" style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #f5c26b', background: '#fff7ed', color: '#92400e', display: 'grid', gap: 4 }}>
                       <strong>RETORNO PARCIAL · {contractEconomicsData.clientPendingUnits} unidad(es) todavía con el cliente</strong>
                       <span style={{ fontSize: 12 }}>No se consideran faltantes y no generan cargo mientras sigan registradas como pendientes de recojo.</span>
                     </div>
                     {contractEconomicsData.clientPendingItems.map((pending) => (
-                      <div key={pending.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(180px,.9fr)', gap: 10, alignItems: 'center', padding: '9px 11px', border: '1px solid #fde3b4', borderRadius: 9, background: '#fffaf0' }}>
+                      <div className="contract-return-pending-item" key={pending.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto minmax(180px,.9fr)', gap: 10, alignItems: 'center', padding: '9px 11px', border: '1px solid #fde3b4', borderRadius: 9, background: '#fffaf0' }}>
                         <strong>{pending.itemName}</strong>
                         <span style={{ fontWeight: 900, color: '#b45309' }}>{pending.pendingQty} con cliente</span>
                         <span style={{ color: '#7c5b24', fontSize: 12 }}>{pending.note || 'Pendiente de recojo'}</span>
@@ -14043,7 +14043,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     {contractEconomicsData.returnIssues.map((issue) => (
                       <div
                         key={issue.id}
-                        className={contractEconomicsData.damagesSettled ? 'is-cancelled' : ''}
+                        className={`contract-return-issue${contractEconomicsData.damagesSettled ? ' is-cancelled' : ''}`}
                         style={contractEconomicsData.damagesSettled ? {
                           background: '#ecfdf3',
                           borderColor: '#86efac',
@@ -14051,7 +14051,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         } : undefined}
                       >
                         <strong>{issue.itemName}</strong>
-                        <span>Danado: {issue.damagedQty} | Faltante: {issue.missingQty}</span>
+                        <span>Dañado: {issue.damagedQty} | Faltante: {issue.missingQty}</span>
                         <span>
                           {contractEconomicsData.damagesSettled
                             ? `CANCELADO | Cargo cobrado: ${formatBs(issue.penaltyBs)}`
@@ -14075,7 +14075,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           </button>
                         ) : null}
                         {returnChargeEditIssue?.id === issue.id ? (
-                          <div
+                          <div className="contract-return-charge-editor"
                             style={{
                               gridColumn: '1 / -1',
                               display: 'grid',

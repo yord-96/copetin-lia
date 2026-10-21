@@ -134,6 +134,13 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .contract-economics-modal h3,html[data-theme="dark"] .contract-economics-modal h4{color:#f0f5ff!important}
   html[data-theme="dark"] .contract-economics-modal p,html[data-theme="dark"] .contract-economics-modal label{color:#b5c6dc!important}
   html[data-theme="dark"] .contract-economics-modal input,html[data-theme="dark"] .contract-economics-modal select,html[data-theme="dark"] .contract-economics-modal textarea{background:#142033!important;color:#eef5ff!important;border-color:#435771!important}
+  html[data-theme="dark"] .contract-economics-modal .contract-return-issue{background:#263249!important;border-color:#53657d!important;color:#d7e3f3!important}
+  html[data-theme="dark"] .contract-economics-modal .contract-return-issue.is-cancelled{background:#173b32!important;border-color:#44866c!important;color:#a5edc9!important}
+  html[data-theme="dark"] .contract-economics-modal :is(.contract-return-issue,.contract-return-pending-item)>strong{color:#f0f5ff!important}
+  html[data-theme="dark"] .contract-economics-modal .contract-return-issue>small{color:#ffc494!important}
+  html[data-theme="dark"] .contract-economics-modal .contract-return-issue .contract-return-charge-editor{background:#19283a!important;border-color:#53657d!important;color:#e2ebf8!important}
+  html[data-theme="dark"] .contract-economics-modal :is(.contract-return-pending-summary,.contract-return-pending-item){background:#3b3021!important;border-color:#8c713f!important;color:#ffdb98!important}
+  html[data-theme="dark"] .contract-economics-modal .contract-return-pending-item>span{color:#ffdb98!important}
   html[data-theme="dark"] .contract-economics-current-state{background:linear-gradient(125deg,#18372f,#1b2d3d)!important;border-color:#3c7969!important}
   html[data-theme="dark"] .contract-economics-operation-center{background:#1b293b!important;border-color:#3a506c!important}
   html[data-theme="dark"] .contract-economics-operation-center > header{background:#22334a!important;border-color:#3a506c!important}
