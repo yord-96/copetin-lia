@@ -12069,10 +12069,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <td className={showReturnedStyle ? 'orders-contract-returned-cell' : ''}>
                           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 32 }}>
                             {row.damageStatus === 'none' ? (
-                              <span style={{ color: '#64748b', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>NO TIENE</span>
+                              <span className="orders-damage-status is-none" style={{ color: '#64748b', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>NO TIENE</span>
                             ) : row.damageStatus === 'paid' ? (
                               <span
                                 title={`Daños/faltantes: ${formatBs(row.damageChargeBs)} · Recuperado: ${formatBs(row.damageChargeBs)}`}
+                                className="orders-damage-status is-paid"
                                 style={{ color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 999, padding: '4px 8px', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}
                               >
                                 PAGADO
@@ -12080,6 +12081,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             ) : (
                               <span
                                 title={`Cargo total: ${formatBs(row.damageChargeBs)} · Pendiente: ${formatBs(row.damagePendingBs)}`}
+                                className="orders-damage-status is-pending"
                                 style={{ color: '#b45309', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 999, padding: '4px 8px', fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}
                               >
                                 {formatBs(row.damagePendingBs)}

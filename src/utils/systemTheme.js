@@ -155,6 +155,10 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .orders-document-paper-picker select:focus-visible{outline:2px solid #ff984a;outline-offset:2px}
   html[data-theme="dark"] .orders-document-paper-picker select:disabled{opacity:.55;cursor:wait}
   html[data-theme="dark"] .orders-document-paper-picker option{background:#24344a;color:#eef5ff}
+  html[data-theme="dark"] .orders-damage-status{display:inline-flex;align-items:center;justify-content:center;min-width:76px;box-sizing:border-box;line-height:1.25;border-radius:6px!important;padding:5px 8px!important;border:1px solid!important}
+  html[data-theme="dark"] .orders-damage-status.is-none{background:#233247!important;color:#d4dfed!important;border-color:#536680!important}
+  html[data-theme="dark"] .orders-damage-status.is-paid{background:#133e32!important;color:#9aefc3!important;border-color:#478e6c!important}
+  html[data-theme="dark"] .orders-damage-status.is-pending{background:#49361f!important;color:#ffdb9a!important;border-color:#947344!important}
   html[data-theme="dark"] .inventory-report-modal .inventory-report-panel{background:#1c293b!important;border-color:#42536b!important}
   html[data-theme="dark"] .inventory-report-modal .inventory-report-panel .inventory-report-section-head{background:#223147!important;border-color:#3b4d65!important}
   html[data-theme="dark"] .inventory-report-modal .inventory-report-section-head h4{color:#edf4ff!important}
