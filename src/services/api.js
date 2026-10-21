@@ -599,7 +599,7 @@ const fetchServerCollections = async (names, reason = 'deferred-load') => {
 
 
 const fetchMobileCalendarOverview = async () => {
-  const payload = await fetchServerJson(getServerStateUrl('/calendar/mobile-overview'), 'No se pudo cargar el resumen movil del calendario.');
+  const payload = await fetchServerJson(getServerStateUrl('/calendar/mobile-overview'), 'No se pudo cargar el resumen del calendario.');
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
@@ -614,7 +614,7 @@ const fetchMobileCalendarOverview = async () => {
 
 
 const fetchMobileOrdersOverview = async () => {
-  const payload = await fetchServerJson(getServerStateUrl('/orders/mobile-overview'), 'No se pudo cargar el resumen movil de Ordenes.');
+  const payload = await fetchServerJson(getServerStateUrl('/orders/mobile-overview'), 'No se pudo cargar el resumen de Órdenes.');
   if (payload?.revision) {
     lastSharedRevision = payload.revision;
     setCachedServerRevision(payload.revision);
