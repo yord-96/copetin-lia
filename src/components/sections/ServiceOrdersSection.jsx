@@ -42,6 +42,7 @@ import { isInventoryCatalogItemActive } from '../../utils/inventoryCatalogVisibi
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
 import { cashMovementMatchesContractReferences } from '../../utils/contractCashLinks';
 import { reconcileContractDocumentPayments } from '../../utils/contractDocumentPayments';
+import { getEconomicCommercialCashAmount } from '../../utils/commercialCashAmount.js';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
 import { getActiveEconomicLedger, resolveGuaranteeReceivedBs, calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
 import { buildGuaranteeApplicationPlan, getGuaranteeApplicationReceiptBalances } from '../../utils/guaranteeApplication';
@@ -782,25 +783,6 @@ const getEconomicDepositAllocations = (ledger = [], contractTotalBs = 0) => {
   });
 
   return allocations;
-};
-
-const getEconomicCommercialCashAmount = (movement) => {
-  const amountBs = Math.max(0, getCashMovementAmount(movement));
-  if (amountBs <= 0) return 0;
-
-  // Los recibos creados desde un deposito pueden contener dinero con destinos
-  // distintos dentro de un unico movimiento fisico (contrato + garantia +
-  // excedente). Para el saldo comercial solo cuenta lo aplicado al contrato.
-  const accountingTag = normalizeText(movement?.accountingTag);
-  const category = normalizeText(movement?.category);
-  if (accountingTag === 'contract_extra_collection' || category === 'cobro_extra_contrato') return 0;
-  const hasDepositAllocation = accountingTag === 'contract_deposit_receipt'
-    || category === 'abono_contrato';
-  if (hasDepositAllocation) {
-    return Math.max(0, toMoneyNumber(movement?.contractAllocationBs));
-  }
-
-  return amountBs;
 };
 
 const isEconomicGuaranteeBackedByCash = (entry, ledgerById = new Map()) => {
