@@ -3545,7 +3545,7 @@ const normalizeState = (state) => {
     const reservedQty = Math.max(0, Math.trunc(Number(activeReservedByItem.get(String(item.id)) ?? 0)));
     // Los registros legacy de stockRecoveries (lavado/mantenimiento) ya no
     // inmovilizan unidades. Solo las reservas activas reducen disponibilidad;
-    // danos y faltantes ya estan reflejados en totalStock.
+    // daños y faltantes ya estan reflejados en totalStock.
     item.availableStock = Math.max(0, totalStock - reservedQty);
   });
 
@@ -5285,7 +5285,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const cashBoxLabel = isGuaranteeDamageApplication
     ? 'Garantia retenida'
     : cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
-  const movementLabel = isOut ? 'Egreso' : 'Ingreso';
+  const movementLabel = isGuaranteeDamageApplication ? 'Aplicación interna' : isOut ? 'Egreso' : 'Ingreso';
   const title = isGuaranteeDamageApplication
     ? 'COMPROBANTE DE APLICACION DE GARANTIA'
     : isPersonnelAdvance
@@ -5304,7 +5304,8 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
   const reference = isPersonnelAdvance
     ? (movement.receipt || receiptCode)
     : contractCode ? `Contrato ${contractCode}` : movement.receipt || receiptCode;
-  const storedReceiptDetail = String(movement?.receiptDetail ?? '').trim();
+  const storedReceiptDetail = String(movement?.receiptDetail ?? '').trim()
+    .replace(/\bdanos?\b/gi, word => word.replace(/n/gi, letter => letter === 'N' ? 'Ñ' : 'ñ'));
   const rawDetailLines = storedReceiptDetail
     .split(/\n|\s*\|\s*/)
     .map((line) => line.trim())
@@ -5784,7 +5785,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
 
         <section class="receipt-total-row">
           <p class="amount-words"><strong>Son:</strong><span>${escapeHtml(amountToBolivianosText(amount))}</span></p>
-          <div class="total-box"><span>TOTAL ${isOut ? 'ENTREGADO' : 'RECIBIDO'}</span><b>${formatBs(amount)}</b></div>
+          <div class="total-box"><span>TOTAL ${isGuaranteeDamageApplication ? 'APLICADO' : isOut ? 'ENTREGADO' : 'RECIBIDO'}</span><b>${formatBs(amount)}</b></div>
         </section>
 
         <section class="receipt-signatures">
@@ -9192,7 +9193,7 @@ export const buildContractDocumentHtml = ({
   const economicTypeLabel = (entry) => ({
     deposit: 'Deposito / pago',
     guarantee: 'Garantia apartada',
-    charge: 'Dano / faltante',
+    charge: 'Daño / faltante',
     refund: 'Devolucion',
     note: 'Nota interna',
   }[entry?.type] ?? 'Movimiento');
@@ -12482,7 +12483,7 @@ const createWebBridge = () => ({
         if (Number(beforeItem.totalStock ?? 0) !== Number(item.totalStock ?? 0)) changes.push(`Stock fisico: ${beforeItem.totalStock ?? 0} -> ${item.totalStock ?? 0}`);
         if (Number(beforeItem.availableStock ?? 0) !== Number(item.availableStock ?? 0)) changes.push(`Stock disponible: ${beforeItem.availableStock ?? 0} -> ${item.availableStock ?? 0}`);
         if (Number(beforeItem.rentalPriceBs ?? 0) !== Number(item.rentalPriceBs ?? 0)) changes.push(`Precio alquiler: ${formatBs(beforeItem.rentalPriceBs ?? 0)} -> ${formatBs(item.rentalPriceBs ?? 0)}`);
-        if (Number(beforeItem.damagedUnitChargeBs ?? 0) !== Number(item.damagedUnitChargeBs ?? 0)) changes.push(`Cargo dano: ${formatBs(beforeItem.damagedUnitChargeBs ?? 0)} -> ${formatBs(item.damagedUnitChargeBs ?? 0)}`);
+        if (Number(beforeItem.damagedUnitChargeBs ?? 0) !== Number(item.damagedUnitChargeBs ?? 0)) changes.push(`Cargo daño: ${formatBs(beforeItem.damagedUnitChargeBs ?? 0)} -> ${formatBs(item.damagedUnitChargeBs ?? 0)}`);
         if (Number(beforeItem.missingUnitChargeBs ?? 0) !== Number(item.missingUnitChargeBs ?? 0)) changes.push(`Cargo perdida: ${formatBs(beforeItem.missingUnitChargeBs ?? 0)} -> ${formatBs(item.missingUnitChargeBs ?? 0)}`);
         if (Boolean(beforeItem.needsCleaningOnReturn) !== Boolean(item.needsCleaningOnReturn)) changes.push(`Limpieza al retorno: ${beforeItem.needsCleaningOnReturn ? 'Si' : 'No'} -> ${item.needsCleaningOnReturn ? 'Si' : 'No'}`);
         if (Boolean(beforeItem.controlsStock) !== Boolean(item.controlsStock)) changes.push(`Control de stock: ${beforeItem.controlsStock ? 'Activo' : 'Pendiente'} -> ${item.controlsStock ? 'Activo' : 'Pendiente'}`);
@@ -16701,7 +16702,7 @@ const createWebBridge = () => ({
         const initialPaymentMethod = normalizePaymentMethod(payload?.initialPaymentMethod);
         const guaranteePaymentAccount = guaranteePaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.guaranteePaymentAccount) : '';
         const initialPaymentAccount = initialPaymentMethod === 'qr' ? normalizeQrPaymentAccount(payload?.initialPaymentAccount) : '';
-        const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
+        const fallbackDamageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador daño');
         const fallbackMissingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
         const now = new Date();
         const historicalReconstruction = Boolean(payload?.historicalReconstruction)
@@ -17644,7 +17645,7 @@ const createWebBridge = () => ({
 
         const settings = state.settings ?? {};
         const missingMultiplier = toNumber(settings.missingMultiplier ?? 2, 'multiplicador faltante');
-        const damageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador dano');
+        const damageMultiplier = toNumber(settings.damageMultiplier ?? 1.2, 'multiplicador daño');
 
         const rental = state.rentals.find((entry) => entry.id === rentalId && !entry.deletedAt);
         if (!rental) {
@@ -19066,7 +19067,7 @@ const createWebBridge = () => ({
           derivedCommercialPendingBs - Number(settlement?.outstandingRentalBs ?? 0)
         ).toFixed(2));
         // En devoluciones se reemplaza solo la parte comercial antigua por el
-        // total vigente menos pagos, conservando danos y garantia aplicada.
+        // total vigente menos pagos, conservando daños y garantia aplicada.
         const currentPending = Number((isReturned
           ? Math.max(0, storedPendingBs + commercialSettlementDeltaBs)
           : Math.max(
@@ -19228,7 +19229,7 @@ const createWebBridge = () => ({
           defaultAccountingTag = 'transport_revenue';
         } else if (collectionTarget === 'damage') {
           movementType = 'ingreso_danos_faltantes';
-          defaultDescription = `Danos/faltantes cobrados al cliente: ${rental.customerName}`;
+          defaultDescription = `Daños/faltantes cobrados al cliente: ${rental.customerName}`;
           defaultCategory = 'cobro_danos_faltantes';
           defaultAccountingTag = 'contract_damage_collection';
         }

@@ -44,7 +44,7 @@ import { cashMovementMatchesContractReferences } from '../../utils/contractCashL
 import { reconcileContractDocumentPayments } from '../../utils/contractDocumentPayments';
 import { applyOrderTableControls } from '../../utils/orderTableControls';
 import { getActiveEconomicLedger, resolveGuaranteeReceivedBs, calculateGuaranteeSettlement, getGuaranteeLedgerEvidence } from '../../utils/guaranteeSettlement';
-import { buildGuaranteeApplicationPlan } from '../../utils/guaranteeApplication';
+import { buildGuaranteeApplicationPlan, getGuaranteeApplicationReceiptBalances } from '../../utils/guaranteeApplication';
 import { distributeComboUnits } from '../../utils/comboDistribution';
 import { api } from '../../services/api';
 import ProductImage from '../common/ProductImage';
@@ -608,7 +608,7 @@ const findByPriority = (rows, priorities = []) => {
 const ECONOMIC_LEDGER_TYPE_META = {
   deposit: { label: 'Deposito / pago', tone: 'blue' },
   guarantee: { label: 'Apartar garantia', tone: 'violet' },
-  charge: { label: 'Dano / faltante', tone: 'orange' },
+  charge: { label: 'Daño / faltante', tone: 'orange' },
   guarantee_apply: { label: 'Garantia aplicada', tone: 'orange' },
   refund: { label: 'Devolucion al cliente', tone: 'green' },
   extra: { label: 'Cobro extra', tone: 'blue' },
@@ -629,8 +629,8 @@ const ECONOMIC_COLLECTION_TARGETS = {
     category: 'transporte_cobrado',
   },
   damage: {
-    label: 'Danos / faltantes',
-    shortLabel: 'Danos',
+    label: 'Daños / faltantes',
+    shortLabel: 'Daños',
     tag: 'contract_damage_collection',
     category: 'cobro_danos_faltantes',
   },
@@ -2882,7 +2882,7 @@ function ServiceOrdersSection({
         toMoneyNumber(serverGuaranteeSummary?.paidBs),
         toMoneyNumber(serverCashSummary?.guaranteePaidBs),
       ], rawGuaranteeStatus === 'validado' ? guaranteeBs : 0);
-      // No considerar cualquier dano como garantia aplicada: solo cuenta una
+      // No considerar cualquier daño como garantia aplicada: solo cuenta una
       // aplicacion explicita registrada en la hoja economica. El resumen del
       // servidor prevalece cuando el bootstrap ya resolvio el cuaderno completo.
       const rowGuaranteeAppliedBs = Math.min(
@@ -4316,7 +4316,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     );
     // Las obligaciones pendientes se muestran como contexto, pero NO consumen la
     // garantia automaticamente. La garantia solo baja cuando el usuario la aplica
-    // explicitamente a danos (linea charge) o cuando registra una devolucion real.
+    // explicitamente a daños (linea charge) o cuando registra una devolucion real.
     const guaranteePendingObligationsBs = Math.max(
       0,
       Number((ledgerDebtBs + damagePendingBs).toFixed(2)),
@@ -4360,7 +4360,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const balanceDetailLabel = usesLedgerBalance
       ? `Cobrado con recibo ${formatBs(rentalCashReceivedBs)} + garantia aplicada ${formatBs(guaranteeAppliedToRentalBs)} - garantia en caja ${formatBs(guaranteeReserveBs)}`
       : pendingPaymentBs > 0
-      ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + danos ${formatBs(penaltiesBs)} - garantia ${formatBs(effectiveGuaranteeValidatedBs)}`
+      ? `Alquiler ${formatBs(outstandingRentalBs || totalBs)} + daños ${formatBs(penaltiesBs)} - garantia ${formatBs(effectiveGuaranteeValidatedBs)}`
       : `Total ${formatBs(totalBs)} - pagado ${formatBs(paidBs)}`;
 
     return {
@@ -4444,7 +4444,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         : guaranteeRefundAvailableBs <= 0 && totalGuaranteeAppliedBs > 0 && effectiveGuaranteeRefundedBs > 0
           ? 'Aplicada y devuelta'
           : totalGuaranteeAppliedBs >= guaranteeReserveBs && guaranteeReserveBs > 0
-          ? guaranteeAppliedToRentalBs > 0 ? 'Aplicada al contrato' : 'Cobrada por danos'
+          ? guaranteeAppliedToRentalBs > 0 ? 'Aplicada al contrato' : 'Cobrada por daños'
           : effectiveGuaranteeRefundedBs > 0 && guaranteeRefundAvailableBs <= 0
             ? 'Devuelta'
             : rawGuaranteeStatus === 'validado' || ledgerTotals.guaranteeBs > 0
@@ -9096,7 +9096,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         `Estado: ${summary?.finalLabel || 'en revision'}.`,
         `Entrega: ${summary?.isSent ? 'concluida' : 'pendiente'} | Devolucion: ${summary?.isReturned ? 'concluida' : 'pendiente'}.`,
         `Saldo: ${summary?.dueBs > 0 ? formatBs(summary.dueBs) : 'pagado'} | Garantia: ${summary?.guaranteeStatusLabel || 'sin novedad'}.`,
-        summary?.hasDamages ? 'Hay novedades registradas por danos/faltantes para revisar.' : 'Sin danos/faltantes registrados.',
+        summary?.hasDamages ? 'Hay novedades registradas por daños/faltantes para revisar.' : 'Sin daños/faltantes registrados.',
         summary?.receiptCodes?.length ? `Recibos: ${summary.receiptCodes.slice(0, 4).join(', ')}.` : 'Sin recibos pendientes por informar.',
       ].filter(Boolean).join('\n'),
     });
@@ -9310,7 +9310,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             if (toMoneyNumber(issue.missingQty) > 0) parts.push(`${issue.missingQty} faltante`);
             return `${issue.itemName}: ${parts.join(', ') || 'cargo'} (${formatBs(issue.penaltyBs)})`;
           });
-        lines.push(`Danos / faltantes: ${formatBs(entry.amountBs)}`);
+        lines.push(`Daños / faltantes: ${formatBs(entry.amountBs)}`);
         lines.push(...(issueLines.length ? issueLines : ['Cargos registrados en la devolucion del contrato.']));
       }
     });
@@ -10417,10 +10417,22 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     if (updated) resetContractEconomicLedgerForm();
   };
 
+  const getEconomicGuaranteeReceiptBalances = (entry) => {
+    const ledger = contractEconomicsData.economicLedger ?? [];
+    const ledgerById = new Map(ledger.map(row => [String(row.id), row]));
+    return getGuaranteeApplicationReceiptBalances({
+      entry, ledger, availableGuaranteeBs: contractEconomicsData.guaranteeRefundAvailableBs,
+      isCashCharge: isCashCollectedDamageLedgerEntry,
+      isConfirmedRefund: isEconomicLedgerEntryConfirmedInCash,
+      isBackedGuarantee: row => isEconomicGuaranteeBackedByCash(row, ledgerById),
+    });
+  };
+
   const handleApplyEconomicCharge = async () => {
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsLedger) return;
     const pendingChargeBs = Math.max(0, contractEconomicsData.penaltiesBs - contractEconomicsData.ledgerTotals.chargesBs);
-    const amount = Math.min(pendingChargeBs, contractEconomicsData.guaranteeRefundAvailableBs || contractEconomicsData.guaranteeReserveBs);
+    const guaranteeBeforeBs = Math.max(0, toMoneyNumber(contractEconomicsData.guaranteeRefundAvailableBs));
+    const amount = Math.min(pendingChargeBs, guaranteeBeforeBs);
     if (amount <= 0) return;
     const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? 'Sistema').trim() || 'Sistema';
     const entry = {
@@ -10429,22 +10441,28 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       amountBs: amount,
       paymentMethod: '',
       paymentAccount: '',
-      note: `Danos/faltantes aplicados contra la garantia de ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
+      note: `Daños/faltantes aplicados contra la garantia de ${contractEconomicsData.contract?.customerName || 'cliente'}.`,
       createdAt: new Date().toISOString(),
       createdByName,
     };
-    const receiptWindow = window.open('', '_blank', 'width=720,height=860');
-    const updated = await saveContractEconomicLedgerRows([...(contractEconomicsData.economicLedger ?? []), entry], 'Dano o faltante aplicado contra la garantia.');
+    let receiptWindow;
+    try { receiptWindow = openCashReceiptWindow(); } catch (error) {
+      setContractEconomicsError(error.message);
+      return;
+    }
+    const updated = await saveContractEconomicLedgerRows([...(contractEconomicsData.economicLedger ?? []), entry], 'Daño o faltante aplicado contra la garantia.');
     if (updated) {
       await printGuaranteeOperationReceipt({
         amountBs: amount,
         detail: 'Este importe fue descontado de la garantia para cubrir daños o faltantes registrados en la devolucion.',
-        guaranteeBeforeBs: contractEconomicsData.guaranteeReserveBs,
-        guaranteeAfterBs: Math.max(0, contractEconomicsData.guaranteeReserveBs - amount),
+        guaranteeBeforeBs,
+        guaranteeAfterBs: Math.max(0, guaranteeBeforeBs - amount),
         receiptWindow,
         entryId: entry.id,
       });
       resetContractEconomicLedgerForm();
+    } else if (receiptWindow && !receiptWindow.closed) {
+      receiptWindow.close();
     }
   };
 
@@ -12980,7 +12998,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       {contractEconomicsData.managedDebtBs > 0
                         ? `Saldo pendiente ${formatBs(contractEconomicsData.managedDebtBs)}`
                         : contractEconomicsData.damagePendingBs > 0
-                          ? `Alquiler pagado | Danos pendientes ${formatBs(contractEconomicsData.damagePendingBs)}`
+                          ? `Alquiler pagado | Daños pendientes ${formatBs(contractEconomicsData.damagePendingBs)}`
                           : contractEconomicsData.ledgerRefundSuggestedBs > 0
                             ? `Alquiler pagado | Excedente por devolver ${formatBs(contractEconomicsData.ledgerRefundSuggestedBs)}`
                           : contractEconomicsData.guaranteeRefundableBs > 0
@@ -12995,7 +13013,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     {contractEconomicsData.managedDebtBs > 0
                       ? 'Pendiente de cobro'
                       : contractEconomicsData.damagePendingBs > 0
-                        ? 'Danos pendientes'
+                        ? 'Daños pendientes'
                         : contractEconomicsData.ledgerRefundSuggestedBs > 0
                           ? 'Excedente pendiente'
                         : contractEconomicsData.guaranteeRefundableBs > 0
@@ -13026,7 +13044,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <small>{contractEconomicsData.guaranteeStatus}</small>
                   </article>
                   <article className={contractEconomicsData.damagePendingBs > 0 ? 'is-due' : 'is-paid'}>
-                    <span>Danos / faltantes</span>
+                    <span>Daños / faltantes</span>
                     <strong>{contractEconomicsData.damagePendingBs > 0 ? formatBs(contractEconomicsData.damagePendingBs) : 'Sin pendiente'}</strong>
                     <small>{contractEconomicsData.returnIssues.length} observación(es){contractEconomicsData.clientPendingUnits > 0 ? ` · ${contractEconomicsData.clientPendingUnits} con cliente` : ''}</small>
                   </article>
@@ -13469,7 +13487,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <strong>+ {formatBs(contractEconomicsData.effectiveGuaranteeRefundedBs)}</strong>
                   </div>
                   <div>
-                    <span>Danos cobrados por separado</span>
+                    <span>Daños cobrados por separado</span>
                     <strong>+ {formatBs(contractEconomicsData.collectionByTarget.damageBs)}</strong>
                   </div>
                   <footer>
@@ -13505,7 +13523,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     <article className="tone-green">
                       <span>Garantia disponible</span>
                       <strong>{formatBs(contractEconomicsData.guaranteeRefundableBs)}</strong>
-                      <small>Solo baja al aplicar danos o devolver dinero</small>
+                      <small>Solo baja al aplicar daños o devolver dinero</small>
                     </article>
                     <article className={contractEconomicsData.ledgerDebtBs > 0 ? 'tone-orange' : 'tone-green'}>
                       <span>{contractEconomicsData.ledgerDebtBs > 0 ? 'Falta por cobrar' : contractEconomicsData.ledgerRefundSuggestedBs > 0 ? 'Excedente a devolver' : 'Todo cubierto'}</span>
@@ -13728,7 +13746,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               : formatPaymentMethodLabel(entry.paymentMethod)}</em>
                           <small>{entry.paymentAccount || '-'}</small>
                           <p>
-                            {entry.note}
+                            {entry.note?.replace(/\bdanos?\b/gi, word => word.replace(/n/gi, letter => letter === 'N' ? 'Ñ' : 'ñ'))}
                             {depositAllocation ? (
                               <small style={{ display: 'block', marginTop: '3px' }}>
                                 Recibido {formatBs(depositAllocation.receivedBs)} = contrato {formatBs(depositAllocation.contractBs)}
@@ -13821,13 +13839,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 type="button"
                                 className="contract-economics-row-action"
                                 onClick={() => {
-                                  const beforeBs = contractEconomicsData.guaranteeReserveBs + toMoneyNumber(entry.amountBs);
+                                  const balances = getEconomicGuaranteeReceiptBalances(entry);
                                   const receiptWindow = openCashReceiptWindow();
                                   void printGuaranteeOperationReceipt({
                                     amountBs: entry.amountBs,
                                     detail: entry.note || 'Aplicacion de garantia a daños o faltantes.',
-                                    guaranteeBeforeBs: beforeBs,
-                                    guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs,
+                                    ...balances,
                                     entryId: entry.id,
                                     receiptWindow,
                                   });
@@ -13974,7 +13991,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           {internalReceipts.map((entry) => {
                             const contractCode = contractEconomicsData?.contract?.contractCode || contractEconomicsData?.contract?.id || '';
                             const receiptCode = getGuaranteeApplicationReceiptCode(entry.id, contractCode);
-                            const beforeBs = contractEconomicsData.guaranteeReserveBs + toMoneyNumber(entry.amountBs);
+                            const balances = getEconomicGuaranteeReceiptBalances(entry);
                             return (
                               <div className="contract-economics-table-row is-neutral" key={`internal-receipt-${entry.id}`}>
                                 <span className="contract-economics-table-date">
@@ -13985,7 +14002,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 <span className="contract-economics-movement-badge is-neutral">Garantía aplicada</span>
                                 <span className="contract-economics-table-detail">
                                   <small>COMPROBANTE INTERNO</small>
-                                  <b>{entry.note || 'Aplicación de garantía a daños o faltantes.'}</b>
+                                  <b>{entry.note?.replace(/\bdanos?\b/gi, word => word.replace(/n/gi, letter => letter === 'N' ? 'Ñ' : 'ñ')) || 'Aplicación de garantía a daños o faltantes.'}</b>
                                 </span>
                                 <strong className="contract-economics-table-amount is-neutral">{formatBs(entry.amountBs)}</strong>
                                 <span className="contract-economics-table-edit" style={{ color: '#64748b', fontSize: 11 }}>No mueve caja</span>
@@ -13998,8 +14015,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                       void printGuaranteeOperationReceipt({
                                         amountBs: entry.amountBs,
                                         detail: entry.note || 'Aplicación de garantía a daños o faltantes.',
-                                        guaranteeBeforeBs: beforeBs,
-                                        guaranteeAfterBs: contractEconomicsData.guaranteeReserveBs,
+                                        ...balances,
                                         entryId: entry.id,
                                         receiptWindow,
                                       });
@@ -14156,7 +14172,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     ))}
                   </div>
                 ) : (
-                  <p className="contract-economics-empty">Sin danos, faltantes ni cargos registrados.</p>
+                  <p className="contract-economics-empty">Sin daños, faltantes ni cargos registrados.</p>
                 )}
               </article>
             </div>
@@ -14726,7 +14742,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       <small>{selectedDocumentsClosureSummary.ledgerCount} linea(s) en cuaderno</small>
                     </article>
                     <article className={selectedDocumentsClosureSummary.hasDamages ? 'is-due' : 'is-ok'}>
-                      <span>Danos / faltantes</span>
+                      <span>Daños / faltantes</span>
                       <strong>{selectedDocumentsClosureSummary.hasDamages ? formatBs(selectedDocumentsClosureSummary.ledgerTotals.chargesBs) : 'Sin novedades'}</strong>
                       <small>{selectedDocumentsClosureSummary.returnIssues.length} item(s) observados</small>
                     </article>
