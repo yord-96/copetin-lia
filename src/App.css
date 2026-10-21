@@ -61793,6 +61793,16 @@ body:has(.accounting-bigcash-view) .workspace {
 
 
 /* Reporte operativo de inventario · modal sobrio Copetín */
+.petty-digital-accounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.accounting-pettycash-view .petty-digital-accounts .petty-kpi-card { min-height: 0; padding: 14px 16px; display: grid; gap: 6px; }
+.petty-digital-accounts small { font-weight: 800; color: #526783; }
+.petty-digital-accounts strong { font-size: 1.2rem; color: #164078; }
+
 .inventory-report-backdrop {
   padding: clamp(0.75rem, 2vw, 1.4rem);
   background: rgba(18, 28, 43, 0.46);

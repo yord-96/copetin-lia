@@ -2,6 +2,7 @@ import { buildFundDeliveryStatement, buildFundDeliveryDocumentHtml } from '../..
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { buildPettyCashFundTimeline } from '../../utils/pettyCashFund';
+import { matchesPettyCashChannel, pettyCashBoxLabel, PETTY_DIGITAL_ACCOUNTS } from '../../utils/pettyCashChannel.js';
 import { getPettyExpenseCategories } from '../../utils/pettyExpenseCategories';
 import DailyCashTable from '../DailyCashTable';
 import { resolveCashMovementTimestamp } from '../../utils/economicReceiptTimestamp';
@@ -583,8 +584,8 @@ function AccountingSection({
   clients = [],
   personnelBundle = { employees: [] },
   cashSummary = null,
-  cashMovements = [],
-  cashDebts = [],
+  cashMovements: allCashMovements = [],
+  cashDebts: allCashDebts = [],
   cashReturnIssues = [],
   cashMovementMeta = { total: 0, visible: 0, truncated: false },
   operationsLoading = false,
@@ -613,6 +614,15 @@ function AccountingSection({
   onPrintCashMovementReceipt,
   onPrintContractDocument,
 }) {
+  const isPettyView = activeModule.startsWith('contabilidad_caja_chica');
+  const isDigitalPetty = activeModule === 'contabilidad_caja_chica_digital';
+  const pettyChannel = isDigitalPetty ? 'digital' : 'cash';
+  const pettyMethod = isDigitalPetty ? 'qr' : 'efectivo';
+  const pettyLabel = pettyCashBoxLabel(pettyChannel);
+  const cashMovements = useMemo(() => allCashMovements.filter(row => !isPettyView
+    || !isPettyCash(row) || matchesPettyCashChannel(row, pettyChannel)), [allCashMovements, isPettyView, pettyChannel]);
+  const cashDebts = useMemo(() => allCashDebts.filter(row => !isPettyView
+    || matchesPettyCashChannel(row, pettyChannel)), [allCashDebts, isPettyView, pettyChannel]);
   const [selectedDate, setSelectedDate] = useState(() => getInputDate());
   const [legacyReceivableRows, setLegacyReceivableRows] = useState([]);
   const [supplierContractPreview, setSupplierContractPreview] = useState(null);
@@ -638,13 +648,13 @@ function AccountingSection({
     setNewPettyCategoryOpen(true); setPettyCategoryError('');
   };
   useEffect(() => {
-    if (activeModule !== 'contabilidad_caja_chica') return;
+    if (!isPettyView) return;
     let cancelled = false;
     api.cash.getPettyCategories().then(result => {
       if (!cancelled) { setCustomPettyCategories(result.categories ?? []); setPettyCategoryError(''); }
     }).catch(error => { if (!cancelled) setPettyCategoryError(error.message); });
     return () => { cancelled = true; };
-  }, [activeModule]);
+  }, [activeModule, isPettyView]);
   const savePettyCategory = async () => {
     if (pettyCategoryBusy) return;
     setPettyCategoryBusy(true); setPettyCategoryError('');
@@ -898,7 +908,7 @@ function AccountingSection({
       [sector]: { ...current[sector], loading: true, error: '' },
     }));
     try {
-      const result = await api.cash.getPettySector({ sector, offset, limit: 80, ...filters });
+      const result = await api.cash.getPettySector({ sector, offset, limit: 80, channel: pettyChannel, ...filters });
       if (pettySectorRequestRef.current[sector] !== requestId) return;
       setPettySectorPages((current) => ({
         ...current,
@@ -921,7 +931,7 @@ function AccountingSection({
         },
       }));
     }
-  }, []);
+  }, [pettyChannel]);
 
   const loadPettyHistoryPage = useCallback(async ({ append = false, offset = 0, filters = {} } = {}) => {
     const requestId = (pettySectorRequestRef.current.history ?? 0) + 1;
@@ -941,6 +951,7 @@ function AccountingSection({
       // para que la tabla y el reporte representen realmente todo el rango.
       while (hasMore) {
         const result = await api.cash.getPettySector({
+          channel: pettyChannel,
           sector: 'history',
           offset: nextOffset,
           limit: pageSize,
@@ -972,10 +983,10 @@ function AccountingSection({
     } finally {
       if (pettySectorRequestRef.current.history === requestId) setPettyHistoryLoading(false);
     }
-  }, []);
+  }, [pettyChannel]);
 
   useEffect(() => {
-    if (activeModule !== 'contabilidad_caja_chica') return undefined;
+    if (!isPettyView) return undefined;
     const timer = setTimeout(() => {
       const activeRange = pettyWorkspaceRanges[pettyWorkspaceTab] ?? {};
       if (pettyWorkspaceTab === 'expenses') {
@@ -994,7 +1005,7 @@ function AccountingSection({
       });
     }, pettyWorkspaceTab === 'expenses' && pettyCashQuery ? 250 : 0);
     return () => clearTimeout(timer);
-  }, [activeModule, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceRanges, pettyWorkspaceTab]);
+  }, [activeModule, isPettyView, loadPettySector, pettyCashQuery, pettyCashTypeFilter, pettyWorkspaceRanges, pettyWorkspaceTab]);
 
   useEffect(() => {
     if (!isPettyHistoryOpen) return undefined;
@@ -1426,13 +1437,13 @@ function AccountingSection({
   const pettyExpenseCountToDate = pettyLedgerThroughSelectedDate.filter((movement) => toNumber(movement.amountBs) < 0).length;
 
   const bigCashBalanceBs = toNumber(cashSummary?.bigCashBalanceBs ?? 0);
-  const pettyCashBalanceBs = toNumber(cashSummary?.pettyCashBalanceBs ?? 0);
+  const pettyCashBalanceBs = isPettyView ? sumBy(postedMovements.filter(isPettyCash), row => row.amountBs) : toNumber(cashSummary?.pettyCashBalanceBs ?? 0);
   const selectedMonthKey = getMonthKey(`${selectedDate}T12:00:00`);
   const monthStartDate = getMonthStartInput(selectedDate);
   const currentUserName = currentUser?.fullName || currentUser?.name || currentUser?.username || 'Contabilidad';
   const fundTimeline = useMemo(() => buildBigCashFundTimeline(sortedMovements), [sortedMovements]);
   const fundHistoryRows = useMemo(() => postedMovements
-    .filter(movement => activeModule === 'contabilidad_caja_chica' ? isPettyCash(movement) : isBigCash(movement))
+    .filter(movement => isPettyView ? isPettyCash(movement) : isBigCash(movement))
     .filter((movement) => {
       const tag = normalizeText(movement?.accountingTag);
       const category = normalizeText(movement?.category);
@@ -1446,7 +1457,7 @@ function AccountingSection({
         || normalizeText(movement?.category) === 'entrega_fondos'
       ) ? 'out' : 'in',
     }))
-    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements, activeModule]);
+    .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0)), [postedMovements, isPettyView]);
   const visibleFundHistoryRows = useMemo(() => (
     fundHistoryView === 'all'
       ? fundHistoryRows
@@ -1652,7 +1663,7 @@ function AccountingSection({
   const dailyReportDate = bigCashWorkspaceRanges.daily?.dateFrom || getInputDate();
   const pettyViewRef = useRef(null);
   useEffect(() => {
-    if (activeModule !== 'contabilidad_caja_chica') return;
+    if (!isPettyView) return;
     const topbar = document.querySelector('.topbar');
     const updateOffset = () => {
       const position = topbar && getComputedStyle(topbar).position;
@@ -1663,7 +1674,7 @@ function AccountingSection({
     const observer = new ResizeObserver(updateOffset);
     if (topbar) observer.observe(topbar);
     return () => observer.disconnect();
-  }, [activeModule]);
+  }, [activeModule, isPettyView]);
   const [serverDailyReport, setServerDailyReport] = useState(null);
   const [serverDailyError, setServerDailyError] = useState('');
   const [serverDailyLoading, setServerDailyLoading] = useState(false);
@@ -3749,6 +3760,7 @@ function AccountingSection({
       documentId: '',
       requestDate: selectedDate,
       ...patch,
+      ...(isPettyView ? { paymentMethod: pettyMethod, paymentAccount: isDigitalPetty ? patch.paymentAccount || '' : '' } : {}),
     });
     setCashActionError('');
     setCashActionFeedback('');
@@ -4131,7 +4143,7 @@ function AccountingSection({
     reportDate: fundForm.createdAt ? fundForm.createdAt.slice(0, 10) : dailyReportDate,
   }), [fundBoxType, pettyFundTimeline, sortedMovements, fundForm.createdAt, dailyReportDate]);
   const dailyDeliveryCoverage = useMemo(() => getFundDeliveryCoverage(sortedMovements, dailyReportDate), [sortedMovements, dailyReportDate]);
-  const fundBoxLabel = fundBoxType === 'PETTY_CASH' ? 'Caja Chica' : 'Caja Grande';
+  const fundBoxLabel = fundBoxType === 'PETTY_CASH' ? pettyLabel : 'Caja Grande';
   const modalPendingFundDeliveries = postedMovements.filter(row => row.cashBoxType === fundBoxType
     && row.category === 'entrega_fondos' && row.fundReportStatus !== 'approved');
   const renderPettyFund = (row) => row?.fundBalanceBs == null ? '—' : formatBs(row.fundBalanceBs);
@@ -4159,9 +4171,9 @@ function AccountingSection({
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     setFundForm({
       amountBs: '',
-      paymentMethod: 'efectivo',
+      paymentMethod: box === 'PETTY_CASH' ? pettyMethod : 'efectivo',
       paymentAccount: '',
-      description: `${kind === 'in' ? 'Ingreso' : 'Entrega'} de fondos ${box === 'PETTY_CASH' ? 'de Caja Chica' : 'de Caja Grande'}`,
+      description: `${kind === 'in' ? 'Ingreso' : 'Entrega'} de fondos de ${box === 'PETTY_CASH' ? pettyLabel : 'Caja Grande'}`,
       createdAt: box === 'BIG_CASH' ? `${dailyReportDate}T23:59` : now.toISOString().slice(0, 16),
       recipientName: '',
       recipientDocument: '',
@@ -4216,9 +4228,9 @@ function AccountingSection({
     popup.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Entrega de fondos ${esc(movement?.receiptCode ?? '')}</title><style>
       @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact}.head{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid #173a70;padding-bottom:12px}.brand{color:#173a70;font-weight:900;letter-spacing:.08em}.head h1{margin:5px 0 2px;font-size:24px}.meta{text-align:right;line-height:1.6}.status{display:inline-block;border:1px solid ${approved?'#7ac598':'#f0b76b'};background:${approved?'#edf9f1':'#fff8ea'};color:${approved?'#14733b':'#9a5a00'};padding:5px 9px;border-radius:999px;font-weight:800}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.summary article{border:1px solid #d7e0eb;border-radius:8px;padding:11px}.summary small{display:block;color:#64748b;text-transform:uppercase;font-weight:700}.summary strong{display:block;margin-top:5px;font-size:19px;color:#173a70}.summary .delivery strong{color:#d84a16}.detail{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.detail div{border:1px solid #dfe6ef;padding:9px}.detail span{display:block;color:#64748b;font-size:9px;text-transform:uppercase;font-weight:700}.detail strong{display:block;margin-top:4px}.composition{margin-top:16px}.composition h2{font-size:14px;color:#173a70;margin:0 0 7px}.composition table{width:100%;border-collapse:collapse}.composition td{border:1px solid #dbe3ed;padding:7px}.money{text-align:right;font-weight:800}.signatures{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:62px}.signature{text-align:center;border-top:1px solid #475569;padding-top:7px;min-height:70px}.signature strong{display:block}.signature small{color:#64748b}.note{margin-top:16px;border:1px solid #dbe3ed;background:#f8fafc;padding:10px;min-height:55px}.toolbar{text-align:right;margin:12px 0}.toolbar button{border:0;border-radius:7px;background:#173a70;color:#fff;padding:9px 14px;font-weight:800}@media print{.toolbar{display:none}}</style></head><body>
       <div class="toolbar"><button onclick="window.print()">Imprimir / guardar PDF</button></div>
-      <header class="head"><div><div class="brand">EL COPETÍN · ${movement?.cashBoxType === 'PETTY_CASH' ? 'CAJA CHICA' : 'CAJA GRANDE'}</div><h1>Entrega / rendición de fondos</h1><div>${esc(movement?.receiptCode ?? movement?.receipt ?? 'Sin número')}</div></div><div class="meta"><span class="status">${approved?'APROBADA':'PENDIENTE DE APROBACIÓN'}</span><br>${esc(formatDateTime(movement?.createdAt))}</div></header>
+      <header class="head"><div><div class="brand">EL COPETÍN · ${movement?.cashBoxType === 'PETTY_CASH' ? pettyLabel.toUpperCase() : 'CAJA GRANDE'}</div><h1>Entrega / rendición de fondos</h1><div>${esc(movement?.receiptCode ?? movement?.receipt ?? 'Sin número')}</div></div><div class="meta"><span class="status">${approved?'APROBADA':'PENDIENTE DE APROBACIÓN'}</span><br>${esc(formatDateTime(movement?.createdAt))}</div></header>
       <section class="summary"><article><small>Fondo antes</small><strong>${esc(formatBs(before.totalBs))}</strong></article><article class="delivery"><small>Total entregado</small><strong>${esc(formatBs(amountBs))}</strong></article><article><small>Fondo restante</small><strong>${esc(formatBs(after.totalBs))}</strong></article></section>
-      <section class="detail"><div><span>Medio entregado</span><strong>${esc(method)}</strong></div><div><span>Entregado a</span><strong>${esc(movement?.fundRecipientName || '-')}</strong></div><div><span>Documento / CI</span><strong>${esc(movement?.fundRecipientDocument || '-')}</strong></div><div><span>Registrado por</span><strong>${esc(getMovementUserLabel(movement))}</strong></div><div><span>Efectivo restante</span><strong>${esc(formatBs(after.cashBs))}</strong></div><div><span>Digital restante</span><strong>${esc(formatBs(after.digitalBs))}</strong></div></section>
+      <section class="detail"><div><span>Medio entregado</span><strong>${esc(method)}</strong></div><div><span>Entregado a</span><strong>${esc(movement?.fundRecipientName || '-')}</strong></div><div><span>Documento / CI</span><strong>${esc(movement?.fundRecipientDocument || '-')}</strong></div><div><span>Registrado por</span><strong>${esc(getMovementUserLabel(movement))}</strong></div><div><span>${movement?.cashBoxType === 'PETTY_CASH' ? 'Saldo restante de esta caja' : 'Efectivo restante'}</span><strong>${esc(formatBs(movement?.cashBoxType === 'PETTY_CASH' ? after.totalBs : after.cashBs))}</strong></div>${movement?.cashBoxType === 'PETTY_CASH' ? '' : `<div><span>Digital restante</span><strong>${esc(formatBs(after.digitalBs))}</strong></div>`}</section>
       <section class="composition"><h2>Composición del fondo restante</h2><table><tbody>${accountRows || '<tr><td>Sin saldo restante</td><td class="money">Bs 0,00</td></tr>'}</tbody></table></section>
       <div class="note"><strong>Observaciones</strong><br>${esc(movement?.notes || 'Sin observaciones.')}</div>
       <section class="signatures"><div class="signature"><strong>ENTREGADO POR</strong><small>${esc(getMovementUserLabel(movement))}</small></div><div class="signature"><strong>RECIBIDO POR</strong><small>${esc(movement?.fundRecipientName || 'Nombre / CI')}</small></div><div class="signature"><strong>APROBADO POR</strong><small>${approved ? esc(movement?.fundApprovedBy || 'Aprobado') : 'Nombre / cargo / firma'}</small></div></section>
@@ -4402,7 +4414,8 @@ function AccountingSection({
           amountBs,
           description: `Adelanto de sueldo - ${employeeName}`,
           category: 'adelanto_personal',
-          paymentMethod: 'efectivo',
+          paymentMethod: pettyMethod,
+          paymentAccount: isDigitalPetty ? cashForm.paymentAccount : '',
           responsible: employeeName,
           receipt: documentId ? `CI ${documentId}` : '',
           notes: `Fecha de solicitud: ${formatDate(requestDate)} | CI: ${documentId}${cashForm.notes ? ` | ${cashForm.notes}` : ''}`,
@@ -4449,6 +4462,10 @@ function AccountingSection({
           category: cashForm.category,
           sourceMovementId: linkedMovementId,
           sourceMovementReceipt: linkedMovementReceipt,
+          cashBoxType: 'PETTY_CASH',
+          paymentMethod: pettyMethod,
+          pettyCashChannel: pettyChannel,
+          paymentAccount: cashForm.paymentAccount,
           notes: cashForm.notes,
           createdBy: currentUserName,
         });
@@ -4460,6 +4477,8 @@ function AccountingSection({
           debtId: cashForm.debtId,
           amountBs,
           paymentDate: selectedDate,
+          paymentAccount: cashForm.paymentAccount,
+          pettyCashChannel: pettyChannel,
           paymentMethod: cashForm.paymentMethod,
           notes: cashForm.notes,
           paidBy: currentUserName,
@@ -4468,7 +4487,7 @@ function AccountingSection({
         await printCashReceipt(resolvePrintableCashMovementId(paid, 'PETTY_CASH'));
         setCashActionFeedback('Pago de deuda registrado en Caja Chica.');
       } else if (cashModal === 'supplierLoan') {
-        const loan = supplierLoanRows.find((entry) => String(entry.id) === String(cashForm.supplierLoanId));
+        const loan = [...supplierLoanRows, ...pagedSupplierLoanRows].find((entry) => String(entry.id) === String(cashForm.supplierLoanId));
         if (!loan) {
           throw new Error('Selecciona el prestamo de proveedor que vas a pagar.');
         }
@@ -4487,6 +4506,8 @@ function AccountingSection({
           receipt: cashForm.receipt || loan.loanCode,
           notes: cashForm.notes || `Prestamo ${loan.loanCode} | Contrato ${loan.reference} | ${loan.itemSummary || 'Items de proveedor'}`,
           accountingTag: 'supplier_loan_payment',
+          sourceId: loan.id,
+          sourceType: 'supplier_loan',
           linkedRentalId: loan.sourceRentalId ?? '',
           linkedContractId: loan.sourceContractId ?? '',
           linkedOrderCode: loan.sourceOrderCode ?? '',
@@ -4674,7 +4695,7 @@ function AccountingSection({
   const getCashModalTitle = () => {
     if (cashModal === 'openPetty') return 'Aperturar Caja Chica';
     if (cashModal === 'transfer') return 'Egreso de Caja Grande a Caja Chica';
-    if (cashModal === 'expense') return editingPettyExpense ? (Number(editingPettyExpense.amountBs) > 0 ? 'Editar ingreso de Caja Chica' : 'Editar gasto de Caja Chica') : 'Registrar gasto de Caja Chica';
+    if (cashModal === 'expense') return editingPettyExpense ? (Number(editingPettyExpense.amountBs) > 0 ? `Editar ingreso de ${pettyLabel}` : `Editar gasto de ${pettyLabel}`) : `Registrar gasto de ${pettyLabel}`;
     if (cashModal === 'advance') return 'Registrar adelanto de personal';
     if (cashModal === 'debt') return 'Registrar deuda';
     if (cashModal === 'payDebt') return 'Pagar deuda';
@@ -5064,7 +5085,7 @@ function AccountingSection({
         <section className="accounting-modal petty-history-modal" onClick={(event) => event.stopPropagation()}>
           <header>
             <div>
-              <h3>Historial completo de Caja Chica</h3>
+              <h3>Historial completo de {pettyLabel}</h3>
               <small>Ingresos de fondos, gastos, recibos anulados y movimientos vinculados.</small>
             </div>
             <button type="button" className="orders-modal-close" onClick={() => setIsPettyHistoryOpen(false)}>x</button>
@@ -5165,7 +5186,7 @@ function AccountingSection({
               onClick={() => printCashHistoryReport({
                 cashBoxType: 'PETTY_CASH',
                 rows: filteredPettyHistoryRows,
-                title: 'Libro de Caja Chica',
+                title: `Libro de ${pettyLabel}`,
                 dateFrom: pettyHistoryFilters.dateFrom,
                 dateTo: pettyHistoryFilters.dateTo,
               })}
@@ -5317,7 +5338,7 @@ function AccountingSection({
                 </label>
                 <label>
                   Metodo
-                  <select value={voidReceiptForm.paymentMethod} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
+                  <select disabled={isPettyView} value={voidReceiptForm.paymentMethod} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
                     <option value="efectivo">Efectivo</option>
                     <option value="qr">QR</option>
                     <option value="transferencia">Transferencia</option>
@@ -5330,7 +5351,7 @@ function AccountingSection({
                   Cuenta destino QR
                   <select value={voidReceiptForm.paymentAccount} onChange={(event) => setVoidReceiptForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
                     <option value="">Seleccionar cuenta</option>
-                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                    {(isPettyView ? PETTY_DIGITAL_ACCOUNTS : QR_ACCOUNT_OPTIONS).map((account) => <option key={account} value={account}>{account}</option>)}
                   </select>
                 </label>
               ) : null}
@@ -5364,7 +5385,7 @@ function AccountingSection({
                 <input
                   value={voidReceiptForm.receipt}
                   onChange={(event) => setVoidReceiptForm((current) => ({ ...current, receipt: event.target.value }))}
-                  placeholder="Recibo, factura, QR, nota interna..."
+                  placeholder={isPettyView && !isDigitalPetty ? "Recibo, factura, nota interna..." : "Recibo, factura, QR, nota interna..."}
                 />
               </label>
               {isPettyCash(voidReceiptModal) ? (
@@ -5612,26 +5633,25 @@ function AccountingSection({
               <label className={cashModal === 'advance' ? 'is-readonly-method' : ''}>
                 Metodo
                 <select
-                  value={cashModal === 'advance' ? 'efectivo' : cashForm.paymentMethod}
+                  value={isPettyView ? pettyMethod : cashModal === 'advance' ? 'efectivo' : cashForm.paymentMethod}
                   onChange={(event) => setCashForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}
-                  disabled={cashModal === 'advance'}
+                  disabled={isPettyView || cashModal === 'advance'}
                 >
-                  <option value="efectivo">Efectivo</option>
-                  <option value="qr">QR</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="otro">Otro</option>
+                  {isPettyView ? <option value={pettyMethod}>{isDigitalPetty ? 'QR' : 'Efectivo'}</option> : <>
+                  <option value="efectivo">Efectivo</option><option value="qr">QR</option>
+                  <option value="transferencia">Transferencia</option><option value="otro">Otro</option></>}
                 </select>
               </label>
             </div>
             {cashModal === 'expense' ? <label className="petty-expense-date">Fecha y hora del gasto
               <input type="datetime-local" value={cashForm.createdAt || ''} onChange={event => setCashForm(current => ({ ...current, createdAt: event.target.value }))} required />
             </label> : null}
-            {cashModal !== 'advance' && cashForm.paymentMethod === 'qr' ? (
+            {(cashModal !== 'advance' || isDigitalPetty) && cashForm.paymentMethod === 'qr' ? (
               <label>
                 Cuenta destino QR
                 <select value={cashForm.paymentAccount} onChange={(event) => setCashForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
                   <option value="">Seleccionar cuenta</option>
-                  {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                  {(isPettyView ? PETTY_DIGITAL_ACCOUNTS : QR_ACCOUNT_OPTIONS).map((account) => <option key={account} value={account}>{account}</option>)}
                 </select>
               </label>
             ) : null}
@@ -5748,7 +5768,7 @@ function AccountingSection({
                   <input
                     value={cashForm.receipt}
                     onChange={(event) => setCashForm((current) => ({ ...current, receipt: event.target.value }))}
-                    placeholder="Recibo, factura, QR, nota interna..."
+                    placeholder={isPettyView && !isDigitalPetty ? "Recibo, factura, nota interna..." : "Recibo, factura, QR, nota interna..."}
                   />
                 </label>
               </>
@@ -5845,7 +5865,7 @@ function AccountingSection({
                   Cuenta QR
                   <select value={guaranteeRefundForm.paymentAccount} onChange={(event) => setGuaranteeRefundForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
                     <option value="">Seleccionar cuenta</option>
-                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                    {(isPettyView ? PETTY_DIGITAL_ACCOUNTS : QR_ACCOUNT_OPTIONS).map((account) => <option key={account} value={account}>{account}</option>)}
                   </select>
                 </label>
               ) : <span />}
@@ -5932,7 +5952,7 @@ function AccountingSection({
                 Cuenta destino QR
                 <select value={collectForm.paymentAccount} onChange={(event) => setCollectForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
                   <option value="">Seleccionar cuenta</option>
-                  {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                  {(isPettyView ? PETTY_DIGITAL_ACCOUNTS : QR_ACCOUNT_OPTIONS).map((account) => <option key={account} value={account}>{account}</option>)}
                 </select>
               </label>
             ) : null}
@@ -5989,7 +6009,7 @@ function AccountingSection({
     let offset = 0;
     let hasMore = true;
     while (hasMore && offset < 10000) {
-      const result = await api.cash.getPettySector({ sector: section, offset, limit: 80, ...filters });
+      const result = await api.cash.getPettySector({ sector: section, offset, limit: 80, channel: pettyChannel, ...filters });
       const pageRows = Array.isArray(result?.rows) ? result.rows : [];
       rows.push(...pageRows);
       hasMore = Boolean(result?.hasMore) && pageRows.length > 0;
@@ -6048,16 +6068,16 @@ function AccountingSection({
   const getPettyReportDefinition = async (section) => {
     const rawRows = await fetchAllPettySectionRows(section);
     const range = pettyWorkspaceRanges[section] ?? {};
-    if (section === 'expenses') return { title: 'Movimientos de Caja Chica', subtitle: 'Ingresos y egresos propios según filtros actuales.', rows: rawRows,
-      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Proveedor / Destino', (r) => r.responsible || r.createdBy || '-'], ['Categoría', (r) => getPettyExpenseCategory(r).label], ['Comprobante', (r) => r.receipt || '-'], ['Registrado por', (r) => r.createdBy || r.responsible || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
-    if (section === 'advances') return { title: 'Adelantos al personal', subtitle: 'Adelantos pagados desde Caja Chica.', rows: rawRows,
-      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Trabajador', (r) => r.responsible || '-'], ['CI', (r) => String(r.receipt || '').replace(/^CI\s*/i, '').trim() || '-'], ['Concepto', (r) => r.description || '-'], ['Registrado por', (r) => getPersonnelAdvanceRegisteredBy(r)], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
+    if (section === 'expenses') return { title: `Movimientos de ${pettyLabel}`, subtitle: 'Ingresos y egresos propios según filtros actuales.', rows: rawRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Proveedor / Destino', (r) => r.responsible || r.createdBy || '-'], ['Categoría', (r) => getPettyExpenseCategory(r).label], ['Medio / Banco', (r) => getPaymentMethodLabel(r)], ['Comprobante', (r) => r.receipt || '-'], ['Registrado por', (r) => r.createdBy || r.responsible || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
+    if (section === 'advances') return { title: 'Adelantos al personal', subtitle: `Adelantos pagados desde ${pettyLabel}.`, rows: rawRows,
+      columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Trabajador', (r) => r.responsible || '-'], ['CI', (r) => String(r.receipt || '').replace(/^CI\s*/i, '').trim() || '-'], ['Medio / Banco', (r) => getPaymentMethodLabel(r)], ['Concepto', (r) => r.description || '-'], ['Registrado por', (r) => getPersonnelAdvanceRegisteredBy(r)], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
     if (section === 'suppliers') {
       const rows = rawRows.map(normalizeSupplierLoanRow);
       return { title: 'Préstamos de proveedores', subtitle: 'Material cubierto por proveedor y control de pagos.', rows,
         columns: [['Préstamo', (r) => r.loanCode || '-'], ['Fecha', (r) => formatDate(r.requestDate)], ['Proveedor', (r) => r.supplierName || '-'], ['Contrato', (r) => r.reference || '-'], ['Cliente', (r) => r.customerName || '-'], ['Ítems', (r) => r.itemSummary || '-'], ['Costo', (r) => toNumber(r.totalBs)], ['Estado', (r) => r.isPaid ? 'Liquidado' : 'Pendiente'], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
     }
-    return { title: 'Deudas de Caja Chica', subtitle: 'Deudas por pagar y reembolsos registrados.', rows: rawRows,
+    return { title: `Deudas de ${pettyLabel}`, subtitle: 'Deudas por pagar y reembolsos registrados.', rows: rawRows,
       columns: [['Código', (r) => r.code || '-'], ['Fecha', (r) => formatDate(r.debtDate || r.createdAt)], ['Tipo', (r) => getCashDebtMeta(r).shortLabel], ['Detalle', (r) => r.description || '-'], ['Responsable', (r) => r.personName || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Pagado', (r) => toNumber(r.paidBs)], ['Saldo', (r) => toNumber(r.balanceBs ?? r.amountBs)], ['Estado', (r) => toNumber(r.balanceBs ?? r.amountBs) <= 0 ? 'Pagada' : 'Pendiente'], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
   };
 
@@ -6256,7 +6276,7 @@ function AccountingSection({
             <section className="fund-history-modal" role="dialog" aria-modal="true" aria-label="Histórico de fondos" onClick={(event) => event.stopPropagation()}>
               <header className="fund-history-head">
                 <div>
-                  <span>{activeModule === 'contabilidad_caja_chica' ? 'CAJA CHICA' : 'CAJA GRANDE'} · DOCUMENTOS DE FONDO</span>
+                  <span>{isPettyView ? pettyLabel.toUpperCase() : 'CAJA GRANDE'} · DOCUMENTOS DE FONDO</span>
                   <h2>Histórico de fondos</h2>
                   <p>Consulta los ingresos y entregas registrados y vuelve a abrir el mismo documento emitido para cada movimiento.</p>
                 </div>
@@ -6315,7 +6335,7 @@ function AccountingSection({
                   <span>{fundBoxLabel.toUpperCase()} · FONDO OPERATIVO</span>
                   <h2>{fundModal === 'in' ? 'Ingreso de fondos' : 'Entrega de fondos'}</h2>
                   <p>{fundModal === 'in'
-                    ? 'Registra dinero que ingresa al fondo y conserva si fue recibido en efectivo o por una cuenta digital.'
+                    ? (fundBoxType === 'PETTY_CASH' ? `Registra un ingreso propio de ${pettyLabel}.` : 'Registra dinero que ingresa al fondo y conserva su medio de pago.')
                     : 'Registra la salida real del fondo. Se generará un reporte para firma y aprobación.'}</p>
                 </div>
                 <button type="button" className="bigcash-report-close" onClick={() => setFundModal(null)} disabled={fundSubmitting}>×</button>
@@ -6323,8 +6343,8 @@ function AccountingSection({
 
               <div className="fund-current-summary">
                 <article><small>Fondo total</small><strong>{formatBs(selectedFundSummary.totalBs)}</strong></article>
-                <article><small>Efectivo</small><strong>{formatBs(selectedFundSummary.cashBs)}</strong></article>
-                <article><small>Digital</small><strong>{formatBs(selectedFundSummary.digitalBs)}</strong></article>
+                {!isPettyView || !isDigitalPetty ? <article><small>Efectivo</small><strong>{formatBs(selectedFundSummary.cashBs)}</strong></article> : null}
+                {!isPettyView || isDigitalPetty ? <article><small>Digital</small><strong>{formatBs(selectedFundSummary.digitalBs)}</strong></article> : null}
               </div>
 
               <form className="fund-action-form" onSubmit={handleSubmitFundAction}>
@@ -6338,16 +6358,15 @@ function AccountingSection({
                 </label>
                 <label>
                   <span>Medio</span>
-                  <select value={fundForm.paymentMethod} onChange={(event) => setFundForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
-                    <option value="efectivo">Efectivo</option>
-                    <option value="qr">QR / digital</option>
+                  <select disabled={fundBoxType === 'PETTY_CASH'} value={fundForm.paymentMethod} onChange={(event) => setFundForm((current) => ({ ...current, paymentMethod: event.target.value, paymentAccount: event.target.value === 'qr' ? current.paymentAccount : '' }))}>
+                    {fundBoxType === 'PETTY_CASH' ? <option value={pettyMethod}>{isDigitalPetty ? 'QR / digital' : 'Efectivo'}</option> : <><option value="efectivo">Efectivo</option><option value="qr">QR / digital</option></>}
                   </select>
                 </label>
                 {fundForm.paymentMethod === 'qr' ? <label>
                   <span>Cuenta digital</span>
                   <select value={fundForm.paymentAccount} onChange={(event) => setFundForm((current) => ({ ...current, paymentAccount: event.target.value }))} required>
                     <option value="">Seleccionar cuenta</option>
-                    {QR_ACCOUNT_OPTIONS.map((account) => <option key={account} value={account}>{account}</option>)}
+                    {(isPettyView ? PETTY_DIGITAL_ACCOUNTS : QR_ACCOUNT_OPTIONS).map((account) => <option key={account} value={account}>{account}</option>)}
                   </select>
                 </label> : null}
                 <label className="fund-form-wide">
@@ -8376,14 +8395,14 @@ function AccountingSection({
     );
   }
 
-  if (activeModule === 'contabilidad_caja_chica') {
+  if (isPettyView) {
     return (
       <section ref={pettyViewRef} className="panel accounting-pettycash-view accounting-redesign">
         <header className="accounting-bigcash-head pettycash-head">
           <div>
-            <h2>Caja Chica</h2>
-            <p>Control independiente de ingresos, egresos, gastos y adelantos.</p>
-            <span className="accounting-source-badge"><i />Fondo propio de Caja Chica</span>
+            <h2>{pettyLabel}</h2>
+            <p>Control independiente de ingresos, egresos, gastos y adelantos. {isDigitalPetty ? 'Operaciones por QR, separadas por banco.' : 'Operaciones exclusivamente en efectivo.'}</p>
+            <span className="accounting-source-badge"><i />Fondo propio de {pettyLabel}</span>
           </div>
           <div className="accounting-overview-actions">
             <button type="button" className="accounting-overview-primary" onClick={() => openFundAction('in', 'PETTY_CASH')}>Ingreso de fondos</button>
@@ -8395,6 +8414,8 @@ function AccountingSection({
             </label>
           </div>
         </header>
+
+        {isDigitalPetty ? <div className="petty-digital-accounts" aria-label="Saldos por banco">{PETTY_DIGITAL_ACCOUNTS.map(account => <article className="petty-kpi-card" key={account}><small>{account}</small><strong>{formatBs(sumBy(postedMovements.filter(row => isPettyCash(row) && String(row.paymentAccount || '').toUpperCase() === account), row => row.amountBs))}</strong></article>)}</div> : null}
 
         <section className="petty-kpi-grid petty-money-grid">
           <article className="petty-kpi-card balance petty-balance-primary">
@@ -8440,7 +8461,7 @@ function AccountingSection({
               <div>
                 <strong>ACUMULADO HASTA LA FECHA</strong>
                 <h3 className="value-blue">{formatBs(pettyReceivedToDateBs)}</h3>
-                <p>Ingresos propios de Caja Chica</p>
+                <p>Ingresos propios de {pettyLabel}</p>
               </div>
             </div>
             <div className="petty-money-context">
@@ -8471,7 +8492,7 @@ function AccountingSection({
         <section className="petty-main-grid">
           <article className="bigcash-card petty-expenses-card" hidden={pettyWorkspaceTab !== 'expenses'}>
             <header className="petty-table-head">
-              <h3>MOVIMIENTOS DE CAJA CHICA</h3>
+              <h3>MOVIMIENTOS DE {pettyLabel.toUpperCase()}</h3>
               <div className="petty-action-pair">
                 <button
                   type="button"
@@ -8537,16 +8558,14 @@ function AccountingSection({
                     <th>Método / Cuenta</th>
                     <th>Ingresos</th>
                     <th>Egresos</th>
-                    <th>Fondo efectivo</th>
-                    <th>Fondo digital</th>
+                    <th>{isDigitalPetty ? 'Fondo digital' : 'Fondo efectivo'}</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pettyOpeningBalance ? <tr className="petty-opening-balance">
                     <th colSpan={7}>Saldo anterior<small>Fondo disponible antes del primer movimiento mostrado. No es un ingreso.</small></th>
-                    <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.cashBs)}</strong></td>
-                    <td className="petty-fund-cell"><strong>{formatBs(pettyOpeningBalance.digitalBs)}</strong></td>
+                    <td className="petty-fund-cell"><strong>{formatBs(isDigitalPetty ? pettyOpeningBalance.digitalBs : pettyOpeningBalance.cashBs)}</strong></td>
                     <td />
                   </tr> : null}
                   {pagedPettyExpenseRows.map((movement) => {
@@ -8588,13 +8607,12 @@ function AccountingSection({
                         <td className="petty-flow-method"><span className="petty-method-badge">{getPaymentMethodLabel({ ...movement, paymentMethod: movement.paymentMethod || 'efectivo' })}</span></td>
                         <td className="petty-flow-money value-green">{movement.amountBs > 0 ? <span className="petty-amount-badge is-income">+ {formatBs(movement.amountBs)}</span> : <span className="petty-empty-amount">—</span>}</td>
                         <td className="petty-flow-money value-orange">{movement.amountBs < 0 ? <span className="petty-amount-badge is-expense">− {formatBs(Math.abs(movement.amountBs))}</span> : <span className="petty-empty-amount">—</span>}</td>
-                        <td className="petty-fund-cell">{renderPettyFlowFund(movement, 'cash')}</td>
-                        <td className="petty-fund-cell">{renderPettyFlowFund(movement, 'digital')}</td>
+                        <td className="petty-fund-cell">{renderPettyFlowFund(movement, isDigitalPetty ? 'digital' : 'cash')}</td>
                         <td>{renderReceiptActions(movement)}</td>
                       </tr>
                     );
                   })}
-                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={10}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
+                  {!pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={9}><p className="status">Sin movimientos registrados.</p></td></tr> : null}
                   {pettySectorPages.expenses.loading && pagedPettyExpenseRows.length === 0 ? <tr><td colSpan={10}><p className="status">Cargando gastos...</p></td></tr> : null}
                 </tbody>
               </table>
@@ -8904,7 +8922,7 @@ function AccountingSection({
 
           <aside className="petty-side">
             <article className="petty-side-card petty-repositions">
-              <h3>ÚLTIMOS INGRESOS DE CAJA CHICA</h3>
+              <h3>ÚLTIMOS INGRESOS DE {pettyLabel.toUpperCase()}</h3>
               <div className="petty-reposition-list">
                 {pettyTransfersRows.slice(0, 4).map((movement) => (
                   <div key={movement.id}>

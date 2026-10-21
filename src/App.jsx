@@ -723,6 +723,7 @@ function AdminApp() {
 
         {String(controller.activeTab).startsWith('contabilidad') && (
           <AccountingSection
+            key={controller.activeTab}
             activeModule={controller.activeTab}
             clients={controller.clients}
             rentals={controller.rentals}

@@ -178,6 +178,9 @@ export function initializeSystemTheme() {
   html[data-theme="dark"] .inventory-report-modal .inventory-report-number.success{background:#174535!important;color:#8ae8b7!important}
   html[data-theme="dark"] .inventory-report-modal .inventory-report-number.danger{background:#542c37!important;color:#ffadb9!important}
   html[data-theme="dark"] .inventory-report-modal .inventory-report-number.muted{background:#26384e!important;color:#b3c5dc!important}
+  html[data-theme="dark"] .petty-digital-accounts strong{color:#a7caff!important}
+  html[data-theme="dark"] .petty-digital-accounts small{color:#b9cbe1!important}
+  html[data-theme="dark"] .accounting-pettycash-view .petty-table .status:not(.error){background:transparent!important;color:#b9cbe1!important;border-color:transparent!important}
   html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign{--accounting-surface:#1c293b;--accounting-line:#35465d;--petty-line:#35465d;background:#172232!important;color:#e4edf8!important;border-color:#35465d!important}
   html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign :is(.petty-kpi-card,.bigcash-card,.petty-side-card,.accounting-modal){background:#1c293b!important;border-color:#35465d!important;color:#e4edf8!important;box-shadow:0 8px 24px #080f1c26}
   html[data-theme="dark"] .accounting-pettycash-view.accounting-redesign .pettycash-head{background:linear-gradient(115deg,#16365a,#1b2a40)!important;border-color:#3b5675!important}

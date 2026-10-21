@@ -1,4 +1,5 @@
 import { manageAttendance } from '../utils/attendanceManagement.js';
+import { pettyCashChannel, pettyCashBoxLabel, assertPettyCashChannel, pettyCashChannelBalance, assertPettyCashReplacement } from '../utils/pettyCashChannel.js';
 import { attendanceNeedsPhoto } from '../utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
@@ -3442,6 +3443,10 @@ const normalizeState = (state) => {
       return {
         id: String(debt?.id ?? makeId('debt')).trim(),
         code: String(debt?.code ?? `DEU-${String(index + 1).padStart(5, '0')}`).trim(),
+        cashBoxType: debt?.cashBoxType || 'PETTY_CASH',
+        pettyCashChannel: pettyCashChannel(debt),
+        paymentMethod: pettyCashChannel(debt) === 'digital' ? 'qr' : 'efectivo',
+        paymentAccount: String(debt?.paymentAccount ?? '').trim(),
         description: String(debt?.description ?? debt?.detail ?? '').trim(),
         personName: String(debt?.personName ?? debt?.debtorName ?? debt?.responsible ?? '').trim(),
         amountBs,
@@ -5284,7 +5289,7 @@ const buildCashReceiptHtml = ({ state, movement, printedByName = '' }) => {
     : contractCustomer || movementResponsible || movementCreator || 'Administracion';
   const cashBoxLabel = isGuaranteeDamageApplication
     ? 'Garantia retenida'
-    : cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? 'Caja Chica' : 'Caja Grande';
+    : cashBoxType === CASH_BOX_TYPES.PETTY_CASH ? pettyCashBoxLabel(pettyCashChannel(movement)) : 'Caja Grande';
   const movementLabel = isGuaranteeDamageApplication ? 'Aplicación interna' : isOut ? 'Egreso' : 'Ingreso';
   const title = isGuaranteeDamageApplication
     ? 'COMPROBANTE DE APLICACION DE GARANTIA'
@@ -18156,6 +18161,7 @@ const createWebBridge = () => ({
         .sort((a, b) => new Date(b.createdAt ?? b.debtDate) - new Date(a.createdAt ?? a.debtDate));
     },
     createDebt: async (payload) => {
+      const channelFields = assertPettyCashChannel(payload);
       const description = String(payload?.description ?? payload?.detail ?? '').trim();
       const amountBs = toNumber(payload?.amountBs ?? 0, 'monto de deuda');
       const personName = String(payload?.personName ?? payload?.responsible ?? '').trim();
@@ -18179,6 +18185,8 @@ const createWebBridge = () => ({
       transaction((state) => {
         createdDebt = {
           id: makeId('debt'),
+          ...channelFields,
+          cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
           code: nextDebtCode(state),
           description,
           personName,
@@ -18208,7 +18216,6 @@ const createWebBridge = () => ({
       const debtId = String(payload?.debtId ?? payload?.id ?? '').trim();
       const amountBs = toNumber(payload?.amountBs ?? 0, 'monto de pago');
       const paymentDate = payload?.paymentDate ? new Date(payload.paymentDate).toISOString() : new Date().toISOString();
-      const paymentMethod = String(payload?.paymentMethod ?? 'efectivo').trim() || 'efectivo';
       const notes = String(payload?.notes ?? '').trim();
       const paidBy = String(payload?.paidBy ?? payload?.createdBy ?? '').trim() || 'Contabilidad';
       let result = null;
@@ -18225,6 +18232,7 @@ const createWebBridge = () => ({
         if (!debt) {
           throw new Error('No se encontro la deuda seleccionada.');
         }
+        const channelFields = assertPettyCashChannel(payload, debt);
         if (normalizeCashDebtKind(debt.debtKind ?? debt.category) !== 'payable') {
           throw new Error('Esta deuda es por cobrar/reembolsar y no se paga desde Caja Chica.');
         }
@@ -18236,7 +18244,7 @@ const createWebBridge = () => ({
         if (!activeSession) {
           throw new Error('Debes abrir caja chica antes de pagar una deuda.');
         }
-        const availablePettyCashBs = calculateSessionBalance(state, activeSession.id, CASH_BOX_TYPES.PETTY_CASH);
+        const availablePettyCashBs = pettyCashChannelBalance(state.cashMovements, channelFields.paymentMethod, channelFields.paymentAccount);
         const payableBs = Math.min(toPositiveRoundedNumber(amountBs), toPositiveRoundedNumber(debt.balanceBs));
         if (payableBs > availablePettyCashBs) {
           throw new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${availablePettyCashBs.toFixed(2)}.`);
@@ -18245,6 +18253,7 @@ const createWebBridge = () => ({
         const movement = buildCashMovement({
           sessionId: activeSession.id,
           type: 'egreso_pago_deuda',
+          paymentAccount: channelFields.paymentAccount,
           amountBs: -payableBs,
           description: `Pago deuda ${debt.code}: ${debt.description}`,
           sourceType: 'cash_debt',
@@ -18252,7 +18261,7 @@ const createWebBridge = () => ({
           createdBy: paidBy,
           cashBoxType: CASH_BOX_TYPES.PETTY_CASH,
           category: 'pago_deuda',
-          paymentMethod,
+          paymentMethod: channelFields.paymentMethod,
           responsible: debt.personName || paidBy,
           receipt: debt.code,
           receiptCode: nextCashReceiptCode(state),
@@ -18516,6 +18525,7 @@ const createWebBridge = () => ({
     },
     createManualMovement: async (payload) => {
       assertIndependentCashMovement(payload);
+      if (payload?.cashBoxType === 'PETTY_CASH') assertPettyCashChannel(payload);
       const movementType = String(payload?.type ?? '').trim();
       const amountRaw = toNumber(payload?.amountBs ?? 0, 'monto');
       const description = String(payload?.description ?? '').trim();
@@ -18588,7 +18598,7 @@ const createWebBridge = () => ({
         if (movementType === 'transferencia' && amountRaw > availableBigCashBs) {
           throw new Error(`Caja Grande no tiene saldo suficiente. Disponible: Bs ${availableBigCashBs.toFixed(2)}.`);
         }
-        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH && amountRaw > availablePettyCashBs) {
+        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH && amountRaw > Math.min(availablePettyCashBs, pettyCashChannelBalance(state.cashMovements, paymentMethod, paymentAccount))) {
           throw new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${availablePettyCashBs.toFixed(2)}.`);
         }
         if (isBigCashFundDelivery && amountRaw > availableBigCashBs) {
@@ -18661,7 +18671,7 @@ const createWebBridge = () => ({
             amountBs: signedAmount,
             description,
             sourceType: 'manual',
-            sourceId: null,
+            sourceId: payload?.sourceId ?? null,
             createdBy,
             cashBoxType,
             category,
@@ -18710,6 +18720,7 @@ const createWebBridge = () => ({
         const movement = state.cashMovements.find((entry) => String(entry?.id ?? '') === movementId);
         if (!movement) throw new Error('No se encontro el movimiento asociado al recibo.');
         if (isVoidedCashMovement(movement)) throw new Error('No se puede editar un recibo anulado.');
+        if (movement.cashBoxType === 'PETTY_CASH') assertPettyCashReplacement(state.cashMovements, movement, payload);
         const now = new Date().toISOString();
         const previousMetadata = {
           receiptCode: movement.receiptCode ?? movement.receipt ?? '',
@@ -18831,6 +18842,11 @@ const createWebBridge = () => ({
         }
         if (Number(original.amountBs ?? 0) === 0) {
           throw new Error('Este movimiento no tiene importe y no requiere recibo.');
+        }
+        if (original.cashBoxType === 'PETTY_CASH') {
+          assertPettyCashReplacement(state.cashMovements, original, amountRaw > 0 ? {
+            ...replacement, amountBs: Number(original.amountBs) < 0 ? -amountRaw : amountRaw,
+          } : null);
         }
 
         const now = new Date().toISOString();

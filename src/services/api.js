@@ -1,5 +1,6 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
 import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
+import { matchesPettyCashChannel } from '../utils/pettyCashChannel.js';
 import { compareCashLedgerOrder } from '../utils/cashLedgerOrder.js';
 import { addPettyExpenseCategory, renamePettyExpenseCategory } from '../utils/pettyExpenseCategories.js';
 import { getWebBridge, getWebRuntimeInfo, WEB_DB_STORAGE_KEY } from './webBridge.js';
@@ -4412,8 +4413,8 @@ export const api = {
           rows = await callBridge('cash', 'listDebts', false);
         } else {
           const movements = await callBridge('cash', 'listMovements', false);
-          const timeline = buildPettyCashFundTimeline(movements);
-          const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && !movement.accountingArchivedAt && movement.accountingPeriodStatus !== 'archived')
+          const timeline = buildPettyCashFundTimeline(movements.filter(row => matchesPettyCashChannel(row, filters.channel)));
+          const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && matchesPettyCashChannel(movement, filters.channel) && !movement.accountingArchivedAt && movement.accountingPeriodStatus !== 'archived')
             .map(row => {
               const balance = timeline.byMovementId.get(String(row.id));
               return { ...row, fundBalanceBs: balance?.totalBs ?? null, fundCashBalanceBs: balance?.cashBs ?? null, fundDigitalBalanceBs: balance?.digitalBs ?? null };
@@ -4429,6 +4430,7 @@ export const api = {
           }
         }
         rows = Array.isArray(rows) ? rows : [];
+        if (normalizedSector === 'debts') rows = rows.filter(row => matchesPettyCashChannel(row, filters.channel));
         rows.sort((a, b) => normalizedSector === 'expenses' ? compareCashLedgerOrder(a, b)
           : new Date(b?.createdAt ?? b?.debtDate ?? b?.requestDate ?? 0) - new Date(a?.createdAt ?? a?.debtDate ?? a?.requestDate ?? 0));
         return {

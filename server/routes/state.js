@@ -4,6 +4,7 @@ import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
 import { createOrdersCashIndex } from '../services/ordersCashIndex.js';
+import { matchesPettyCashChannel, assertPettyCashChannel, assertPettyCashReplacement } from '../../src/utils/pettyCashChannel.js';
 import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary } from '../services/ordersEconomicSummary.js';
 import { setImmediate as yieldToRequests } from 'node:timers/promises';
 import { buildPersonnelOverview } from '../../src/utils/personnelOverview.js';
@@ -4388,6 +4389,9 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
   try {
     const rawPayload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     const payload = normalizeDirectCashMovementPayload(rawPayload);
+    if (payload.cashBoxType === 'PETTY_CASH' || payload.type === 'egreso' && !isBigCashFundDeliveryPayload(payload)) {
+      Object.assign(payload, assertPettyCashChannel(rawPayload));
+    }
     assertIndependentCashMovement(payload);
     const amountBs = directMoney(payload.amountBs);
 
@@ -4687,6 +4691,9 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
       }
       const oldAmountBs = Math.abs(Number(movement.amountBs ?? 0));
       const isIncome = Number(movement.amountBs) > 0;
+      assertPettyCashReplacement(state.cashMovements, movement, {
+        ...payload, amountBs: isIncome ? amountBs : -amountBs,
+      });
       const availableIncludingCurrent = directMoney(getDirectCurrentCashBalance(state, 'PETTY_CASH') + oldAmountBs);
       if ((!isIncome && amountBs > availableIncludingCurrent) || (isIncome && getDirectCurrentCashBalance(state, 'PETTY_CASH') - oldAmountBs + amountBs < -0.009)) {
         const error = new Error(isIncome ? 'No puedes reducir este ingreso a ese monto: sus fondos ya fueron utilizados.' : `Caja Chica no tiene saldo suficiente. Maximo editable: Bs ${availableIncludingCurrent.toFixed(2)}.`);
@@ -4752,6 +4759,7 @@ router.delete('/__copetin_db/cash/petty-expense/:movementId', async (req, res, n
       if (String(movement?.cashBoxType ?? '').toUpperCase() !== 'PETTY_CASH' || Number(movement?.amountBs ?? 0) === 0 || movement?.isInternalTransfer) {
         const error = new Error('Solo se pueden eliminar movimientos de Caja Chica.'); error.statusCode = 409; throw error;
       }
+      assertPettyCashReplacement(state.cashMovements, movement);
       if (Number(movement.amountBs) > 0 && getDirectCurrentCashBalance(state, 'PETTY_CASH') - Number(movement.amountBs) < -0.009) {
         const error = new Error('No puedes eliminar este ingreso: sus fondos ya fueron utilizados.'); error.statusCode = 409; throw error;
       }
@@ -7369,11 +7377,12 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
       return 'other';
     };
 
+    const channel = ['cash', 'digital'].includes(req.query.channel) ? req.query.channel : null;
     const pettyMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
       // Los eliminados siguen visibles en Caja Chica como historial tachado,
       // pero summarizeDirectCashState ya los excluye de saldos y totales.
       .filter((movement) => !movement?.accountingArchivedAt && movement?.accountingPeriodStatus !== 'archived')
-      .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH');
+      .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && matchesPettyCashChannel(movement, channel));
     const pettyTimeline = buildPettyCashFundTimeline(pettyMovements);
     pettyMovements.forEach(row => {
       const balance = pettyTimeline.byMovementId.get(String(row.id));
@@ -7388,10 +7397,14 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
     };
     let rows;
     if (sector === 'suppliers') {
-      rows = (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).filter((loan) => !loan?.deletedAt && !hiddenLoans.has(String(loan.id))).map(withPaymentFund);
+      rows = (Array.isArray(state.supplierLoans) ? state.supplierLoans : []).filter((loan) => !loan?.deletedAt && !hiddenLoans.has(String(loan.id)))
+        .filter(loan => {
+          const payment = state.cashMovements?.find(row => !row.deletedAt && !row.voidedAt && row.sourceId === loan.id && row.cashBoxType === 'PETTY_CASH');
+          return !payment || matchesPettyCashChannel(payment, channel);
+        }).map(withPaymentFund);
     } else if (sector === 'debts') {
       rows = (Array.isArray(state.cashDebts) ? state.cashDebts : [])
-        .filter((debt) => !isArchivedAccountingRecord(debt) && (debt.cashBoxType || 'PETTY_CASH') === 'PETTY_CASH').map(withPaymentFund);
+        .filter((debt) => !isArchivedAccountingRecord(debt) && (debt.cashBoxType || 'PETTY_CASH') === 'PETTY_CASH' && matchesPettyCashChannel(debt, channel)).map(withPaymentFund);
     } else if (sector === 'advances') {
       rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
     } else if (sector === 'expenses') {
@@ -7419,7 +7432,7 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
         }
         if (['expenses', 'history'].includes(sector) && categoryFilter !== 'all' && expenseCategory(row) !== categoryFilter) return false;
         if (!search) return true;
-        return [row?.description, row?.receipt, row?.receiptCode, row?.responsible, row?.createdBy, row?.category, row?.notes, row?.personName, row?.supplierName, row?.loanCode]
+        return [row?.description, row?.receipt, row?.receiptCode, row?.responsible, row?.createdBy, row?.category, row?.notes, row?.personName, row?.supplierName, row?.loanCode, row?.paymentAccount]
           .some((value) => normalizeValue(value).includes(normalizeValue(search)));
       })
       .sort((a, b) => sector === 'expenses' ? compareCashLedgerOrder(a, b)

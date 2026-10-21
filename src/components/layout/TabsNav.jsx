@@ -57,7 +57,8 @@ const operationTabs = [
     hint: '',
     children: [
       { id: 'contabilidad_caja_grande', label: 'Caja Grande', targetId: 'contabilidad_caja_grande' },
-      { id: 'contabilidad_caja_chica', label: 'Caja Chica', targetId: 'contabilidad_caja_chica' },
+      { id: 'contabilidad_caja_chica', label: 'Caja Chica Efectivo', targetId: 'contabilidad_caja_chica' },
+      { id: 'contabilidad_caja_chica_digital', label: 'Caja Chica Digital', targetId: 'contabilidad_caja_chica_digital' },
     ],
   },
 ];
