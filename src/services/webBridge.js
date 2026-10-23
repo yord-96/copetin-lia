@@ -4,7 +4,7 @@ import { attendanceNeedsPhoto } from '../utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
-import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
+import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest, getOutstandingInventoryLineQuantity } from '../utils/availability.js';
 import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
 import { reconcileContractDocumentPayments } from '../utils/contractDocumentPayments.js';
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
@@ -75,38 +75,8 @@ const getInventoryLineKey = (line, index = 0) => String(
   ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
 ).trim();
 
-const getOutstandingReservedQtyForRentalLine = (rental, line, index = 0) => {
-  if (!line || line?.controlsStock === false) return 0;
-  const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
-  const supplierBackedQty = Math.max(0, Math.trunc(Number(line?.supplierBackedQty ?? 0)));
-  const hasStoredReservedQty = line?.internalReservedQty !== undefined
-    && line?.internalReservedQty !== null
-    && line?.internalReservedQty !== '';
-  const reservedQty = hasStoredReservedQty
-    ? Math.max(0, Math.trunc(Number(line?.internalReservedQty ?? 0)))
-    : Math.max(0, quantity - supplierBackedQty);
-  if (reservedQty <= 0) return 0;
-
-  const lineKey = getInventoryLineKey(line, index);
-  const processedQty = (Array.isArray(rental?.partialReturnReport?.items) ? rental.partialReturnReport.items : [])
-    .filter((entry) => (
-      String(entry?.lineKey ?? '') === String(lineKey)
-      || (!entry?.lineKey && String(entry?.itemId ?? '') === String(line?.itemId ?? ''))
-    ))
-    .reduce((sum, entry) => {
-      const legacyPending = !Object.prototype.hasOwnProperty.call(entry ?? {}, 'pendingClientQty')
-        && Boolean(rental?.operational?.clientPendingPickup?.active);
-      const confirmedMissingQty = legacyPending
-        ? 0
-        : Math.max(0, Math.trunc(Number(entry?.missingQty ?? 0)));
-      return sum
-        + Math.max(0, Math.trunc(Number(entry?.returnedQty ?? 0)))
-        + Math.max(0, Math.trunc(Number(entry?.damagedQty ?? 0)))
-        + confirmedMissingQty;
-    }, 0);
-
-  return Math.max(0, reservedQty - processedQty);
-};
+const getOutstandingReservedQtyForRentalLine = (rental, line, index = 0) =>
+  !line || line.controlsStock === false ? 0 : getOutstandingInventoryLineQuantity(rental, line, index);
 
 const rentalAffectsCurrentStock = (rental) => {
   if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;

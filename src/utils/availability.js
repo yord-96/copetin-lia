@@ -151,15 +151,40 @@ const controlsStock = (item) =>
   && String(item?.adoptionSource ?? '').trim() !== 'service_order_quick_item'
   && !(Number(item?.totalStock ?? 0) <= 0 && Number(item?.availableStock ?? 0) <= 0 && !(item?.itemLoanAllocations?.length > 0));
 
+export const getOutstandingInventoryLineQuantity = (record, line, index = 0) => {
+  const reserved = normalizeLineQuantity(line);
+  const lineKey = String(line?.lineKey ?? line?.returnLineKey
+    ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`);
+  const uniqueItem = (record?.items ?? []).filter((entry) => entry.itemId === line.itemId).length === 1;
+  const reports = Array.isArray(record?.partialReturnReport?.items) ? record.partialReturnReport.items : [];
+  const processed = reports.filter((entry) => entry.lineKey
+    ? String(entry.lineKey) === lineKey
+    : uniqueItem && String(entry.itemId) === String(line.itemId)).reduce((sum, entry) => {
+    // These fields already distinguish our inventory from supplier units.
+    if (entry.returnedToAvailableQty != null) {
+      return sum + Math.max(0, Number(entry.returnedToAvailableQty) || 0)
+        + Math.max(0, Number(entry.movedToCleaningQty) || 0)
+        + Math.max(0, Number(entry.stockLossQty
+          ?? (Number(entry.damagedStockLossQty || 0) + Number(entry.missingStockLossQty || 0))) || 0);
+    }
+    const legacyPending = !Object.prototype.hasOwnProperty.call(entry, 'pendingClientQty')
+      && record?.operational?.clientPendingPickup?.active;
+    return sum + Math.max(0, Number(entry.returnedQty) || 0)
+      + Math.max(0, Number(entry.damagedQty) || 0)
+      + (legacyPending ? 0 : Math.max(0, Number(entry.missingQty) || 0));
+  }, 0);
+  return Math.max(0, reserved - Math.trunc(processed));
+};
+
 const recordItemLines = (record) =>
   (Array.isArray(record?.items) ? record.items : [])
-    .map((line) => {
+    .map((line, index) => {
       const stockControlledLine = line?.controlsStock !== false
         && String(line?.verificationStatus ?? '').trim() !== 'pending_verification';
       if (!stockControlledLine) return null;
       return {
         itemId: String(line?.itemId ?? '').trim(),
-        quantity: normalizeLineQuantity(line),
+        quantity: getOutstandingInventoryLineQuantity(record, line, index),
         itemName: String(line?.itemName ?? line?.name ?? '').trim(),
       };
     })
