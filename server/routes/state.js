@@ -1,5 +1,5 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
-import { applyInventoryStockMovement } from '../../src/services/webBridge.js';
+import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
 import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
@@ -10306,6 +10306,41 @@ router.get('/__copetin_db/accounting/base-overview', async (req, res, next) => {
     await sendJsonPayload(req, res, baseOverviewPayload);
   } catch (error) {
     next(error);
+  }
+});
+
+router.post('/__copetin_db/clients/:id/update', async (req, res) => {
+  try {
+    const payload = { ...(req.body ?? {}), id: String(req.params.id ?? '').trim() };
+    const operationId = String(payload.clientOperationId ?? '').trim();
+    if (!operationId) return res.status(400).json({ error: 'Falta el identificador del guardado del cliente.' });
+    const fingerprint = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+    let client;
+    let movements = [];
+    const result = await updateStateSnapshot((state) => {
+      const existing = (state.clients ?? []).find(row => row.id === payload.id);
+      const duplicate = existing?._profileOperations?.find(row => row.id === operationId);
+      if (duplicate) {
+        if (duplicate.fingerprint !== fingerprint) {
+          const error = new Error('Esta operacion ya guardo otros datos. Vuelve a abrir Editar antes de cambiar el cliente.');
+          error.statusCode = 409; throw error;
+        }
+        client = structuredClone(existing);
+        movements = (state.cashMovements ?? []).filter(row => row.clientProfileOperationId === operationId);
+        return state;
+      }
+      const previousIds = new Set((state.cashMovements ?? []).map(row => row.id));
+      applyClientUpdate(state, payload);
+      const updated = state.clients.find(row => row.id === payload.id);
+      updated._profileOperations = [...(updated._profileOperations ?? []), { id: operationId, fingerprint, createdAt: new Date().toISOString() }];
+      movements = (state.cashMovements ?? []).filter(row => !previousIds.has(row.id));
+      movements.forEach(row => { row.clientProfileOperationId = operationId; });
+      client = structuredClone(updated);
+      return state;
+    });
+    await sendJsonPayload(req, res, { client, movements, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ error: error.message || 'No se pudo actualizar el cliente.' });
   }
 });
 

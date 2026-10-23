@@ -12315,6 +12315,163 @@ export const applyInventoryStockMovement = (state, payload = {}) => {
   return createdMovement;
 };
 
+export const applyClientUpdate = (state, payload = {}) => {
+  const id = String(payload?.id ?? '').trim();
+  if (!id) throw new Error('Debes indicar el cliente a actualizar.');
+
+  state.clients = Array.isArray(state.clients) ? state.clients : [];
+  state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
+  let updated = null;
+
+    const client = state.clients.find((entry) => entry.id === id);
+    if (!client || client.deletedAt) throw new Error('Cliente no encontrado.');
+    if (payload.expectedUpdatedAt && payload.expectedUpdatedAt !== client.updatedAt) {
+      const error = new Error('El cliente cambio en otra sesion. Vuelve a abrir Editar para revisar sus datos actualizados.');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    if (payload.name !== undefined) {
+      const name = String(payload.name ?? '').trim();
+      if (!name) throw new Error('El nombre del cliente es obligatorio.');
+      client.name = name;
+    }
+    if (payload.companyName !== undefined) {
+      client.companyName = String(payload.companyName ?? '').trim() || client.companyName;
+    }
+    if (payload.contactName !== undefined) {
+      client.contactName = String(payload.contactName ?? '').trim() || client.contactName;
+    }
+    if (payload.contactRole !== undefined) {
+      client.contactRole = String(payload.contactRole ?? '').trim() || client.contactRole;
+    }
+    if (payload.customerType !== undefined) {
+      client.customerType = String(payload.customerType ?? '').trim() || client.customerType;
+    }
+    if (payload.nitCi !== undefined) {
+      client.nitCi = String(payload.nitCi ?? '').trim();
+    }
+    if (payload.phone !== undefined) {
+      const nextPhone = String(payload.phone ?? '').trim();
+      if (!nextPhone) throw new Error('El telefono no puede estar vacio.');
+      client.phone = nextPhone;
+    }
+    if (payload.whatsapp !== undefined) {
+      client.whatsapp = String(payload.whatsapp ?? '').trim();
+    }
+    if (payload.referencePhone !== undefined) {
+      client.referencePhone = String(payload.referencePhone ?? '').trim();
+    }
+    if (payload.email !== undefined) {
+      const nextEmail = String(payload.email ?? '').trim().toLowerCase();
+      const duplicate = state.clients.some((entry) => entry.id !== id && entry.email === nextEmail);
+      if (nextEmail && duplicate) throw new Error('Ya existe otro cliente con ese email.');
+      client.email = nextEmail;
+    }
+    if (payload.address !== undefined) {
+      client.address = String(payload.address ?? '').trim();
+    }
+    if (payload.city !== undefined) {
+      client.city = String(payload.city ?? '').trim();
+    }
+    if (payload.observations !== undefined) {
+      client.observations = String(payload.observations ?? '').trim();
+    }
+    if (payload.isBlacklisted !== undefined) {
+      const nextIsBlacklisted = Boolean(payload.isBlacklisted);
+      client.isBlacklisted = nextIsBlacklisted;
+      client.blacklistedAt = nextIsBlacklisted ? client.blacklistedAt ?? new Date().toISOString() : null;
+      if (!nextIsBlacklisted) {
+        client.blacklistReason = '';
+        client.blacklistNotes = '';
+      }
+    }
+    if (payload.blacklistReason !== undefined) {
+      client.blacklistReason = client.isBlacklisted
+        ? normalizeBlacklistReason(payload.blacklistReason)
+        : '';
+    }
+    if (payload.blacklistNotes !== undefined) {
+      client.blacklistNotes = client.isBlacklisted ? String(payload.blacklistNotes ?? '').trim() : '';
+    }
+    if (payload.prepaidEnabled !== undefined) {
+      client.prepaidEnabled = Boolean(payload.prepaidEnabled);
+      client.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client.prepaidBalanceBs ?? 0));
+      client.prepaidTotalDepositedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalDepositedBs ?? 0));
+      client.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalUsedBs ?? 0));
+      client.prepaidMovements = normalizePrepaidMovements(client.prepaidMovements, client.prepaidBalanceBs);
+    }
+    const prepaidTopUpBs = Math.max(0, toPositiveRoundedNumber(payload?.prepaidTopUpBs ?? 0));
+    if (prepaidTopUpBs > 0) {
+      client.prepaidEnabled = true;
+      client.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client.prepaidBalanceBs ?? 0));
+      client.prepaidTotalDepositedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalDepositedBs ?? 0));
+      client.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalUsedBs ?? 0));
+      client.prepaidMovements = normalizePrepaidMovements(client.prepaidMovements, client.prepaidBalanceBs);
+      const nextBalance = Number((client.prepaidBalanceBs + prepaidTopUpBs).toFixed(2));
+      client.prepaidBalanceBs = nextBalance;
+      client.prepaidTotalDepositedBs = Number((client.prepaidTotalDepositedBs + prepaidTopUpBs).toFixed(2));
+      client.prepaidMovements.push({
+        id: makeId('pre'),
+        type: 'deposit',
+        amountBs: prepaidTopUpBs,
+        description: String(payload?.prepaidTopUpNotes ?? 'Abono prepago').trim() || 'Abono prepago',
+        sourceType: 'client',
+        sourceId: client.id,
+        orderCode: null,
+        balanceAfterBs: nextBalance,
+        createdAt: new Date().toISOString(),
+      });
+      state.cashMovements.push(buildCashMovement({
+        sessionId: getActiveSession(state)?.id ?? null,
+        type: 'ingreso_prepago_cliente',
+        amountBs: prepaidTopUpBs,
+        description: `Abono prepago cliente: ${client.name}`,
+        sourceType: 'client',
+        sourceId: client.id,
+        cashBoxType: CASH_BOX_TYPES.BIG_CASH,
+      }));
+    }
+    if (payload.deliveryAddresses !== undefined) {
+      client.deliveryAddresses = Array.isArray(payload.deliveryAddresses)
+        ? payload.deliveryAddresses
+          .map((entry) => ({
+            id: entry?.id ?? makeId('addr'),
+            label: String(entry?.label ?? 'Principal').trim() || 'Principal',
+            address: String(entry?.address ?? '').trim(),
+            city: String(entry?.city ?? '').trim(),
+            reference: String(entry?.reference ?? '').trim(),
+            isPrimary: Boolean(entry?.isPrimary),
+          }))
+          .filter((entry) => entry.address || entry.city)
+        : [];
+    }
+    if (payload.attachments !== undefined) {
+      client.attachments = Array.isArray(payload.attachments)
+        ? payload.attachments
+          .map((entry) => ({
+            id: entry?.id ?? makeId('att'),
+            name: String(entry?.name ?? '').trim(),
+            mimeType: String(entry?.mimeType ?? '').trim(),
+            size: Number(entry?.size ?? 0),
+            dataUrl: entry?.dataUrl ?? null,
+            url: entry?.url ?? null,
+            uploadedAt: entry?.uploadedAt ?? new Date().toISOString(),
+          }))
+          .filter((entry) => entry.name)
+        : [];
+    }
+    if (payload.status !== undefined) {
+      client.status = String(payload.status ?? '').trim() || client.status;
+    }
+    client.updatedAt = new Date().toISOString();
+    updated = deepClone(client);
+
+
+  return updated;
+
+};
+
 const createWebBridge = () => ({
   inventory: {
     list: async () => {
@@ -13190,148 +13347,11 @@ const createWebBridge = () => ({
       return created;
     },
     update: async (payload) => {
-      const id = String(payload?.id ?? '').trim();
-      if (!id) throw new Error('Debes indicar el cliente a actualizar.');
-
-      let updated = null;
+      let updated;
       transaction((state) => {
-        const client = state.clients.find((entry) => entry.id === id);
-        if (!client) throw new Error('Cliente no encontrado.');
-
-        if (payload.name !== undefined) client.name = String(payload.name ?? '').trim() || client.name;
-        if (payload.companyName !== undefined) {
-          client.companyName = String(payload.companyName ?? '').trim() || client.companyName;
-        }
-        if (payload.contactName !== undefined) {
-          client.contactName = String(payload.contactName ?? '').trim() || client.contactName;
-        }
-        if (payload.contactRole !== undefined) {
-          client.contactRole = String(payload.contactRole ?? '').trim() || client.contactRole;
-        }
-        if (payload.customerType !== undefined) {
-          client.customerType = String(payload.customerType ?? '').trim() || client.customerType;
-        }
-        if (payload.nitCi !== undefined) {
-          client.nitCi = String(payload.nitCi ?? '').trim();
-        }
-        if (payload.phone !== undefined) {
-          const nextPhone = String(payload.phone ?? '').trim();
-          if (!nextPhone) throw new Error('El telefono no puede estar vacio.');
-          client.phone = nextPhone;
-        }
-        if (payload.whatsapp !== undefined) {
-          client.whatsapp = String(payload.whatsapp ?? '').trim();
-        }
-        if (payload.referencePhone !== undefined) {
-          client.referencePhone = String(payload.referencePhone ?? '').trim();
-        }
-        if (payload.email !== undefined) {
-          const nextEmail = String(payload.email ?? '').trim().toLowerCase();
-          const duplicate = state.clients.some((entry) => entry.id !== id && entry.email === nextEmail);
-          if (nextEmail && duplicate) throw new Error('Ya existe otro cliente con ese email.');
-          client.email = nextEmail;
-        }
-        if (payload.address !== undefined) {
-          client.address = String(payload.address ?? '').trim();
-        }
-        if (payload.city !== undefined) {
-          client.city = String(payload.city ?? '').trim();
-        }
-        if (payload.observations !== undefined) {
-          client.observations = String(payload.observations ?? '').trim();
-        }
-        if (payload.isBlacklisted !== undefined) {
-          const nextIsBlacklisted = Boolean(payload.isBlacklisted);
-          client.isBlacklisted = nextIsBlacklisted;
-          client.blacklistedAt = nextIsBlacklisted ? client.blacklistedAt ?? new Date().toISOString() : null;
-          if (!nextIsBlacklisted) {
-            client.blacklistReason = '';
-            client.blacklistNotes = '';
-          }
-        }
-        if (payload.blacklistReason !== undefined) {
-          client.blacklistReason = client.isBlacklisted
-            ? normalizeBlacklistReason(payload.blacklistReason)
-            : '';
-        }
-        if (payload.blacklistNotes !== undefined) {
-          client.blacklistNotes = client.isBlacklisted ? String(payload.blacklistNotes ?? '').trim() : '';
-        }
-        if (payload.prepaidEnabled !== undefined) {
-          client.prepaidEnabled = Boolean(payload.prepaidEnabled);
-          client.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client.prepaidBalanceBs ?? 0));
-          client.prepaidTotalDepositedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalDepositedBs ?? 0));
-          client.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalUsedBs ?? 0));
-          client.prepaidMovements = normalizePrepaidMovements(client.prepaidMovements, client.prepaidBalanceBs);
-        }
-        const prepaidTopUpBs = Math.max(0, toPositiveRoundedNumber(payload?.prepaidTopUpBs ?? 0));
-        if (prepaidTopUpBs > 0) {
-          client.prepaidEnabled = true;
-          client.prepaidBalanceBs = Math.max(0, toPositiveRoundedNumber(client.prepaidBalanceBs ?? 0));
-          client.prepaidTotalDepositedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalDepositedBs ?? 0));
-          client.prepaidTotalUsedBs = Math.max(0, toPositiveRoundedNumber(client.prepaidTotalUsedBs ?? 0));
-          client.prepaidMovements = normalizePrepaidMovements(client.prepaidMovements, client.prepaidBalanceBs);
-          const nextBalance = Number((client.prepaidBalanceBs + prepaidTopUpBs).toFixed(2));
-          client.prepaidBalanceBs = nextBalance;
-          client.prepaidTotalDepositedBs = Number((client.prepaidTotalDepositedBs + prepaidTopUpBs).toFixed(2));
-          client.prepaidMovements.push({
-            id: makeId('pre'),
-            type: 'deposit',
-            amountBs: prepaidTopUpBs,
-            description: String(payload?.prepaidTopUpNotes ?? 'Abono prepago').trim() || 'Abono prepago',
-            sourceType: 'client',
-            sourceId: client.id,
-            orderCode: null,
-            balanceAfterBs: nextBalance,
-            createdAt: new Date().toISOString(),
-          });
-          state.cashMovements.push(buildCashMovement({
-            sessionId: getActiveSession(state)?.id ?? null,
-            type: 'ingreso_prepago_cliente',
-            amountBs: prepaidTopUpBs,
-            description: `Abono prepago cliente: ${client.name}`,
-            sourceType: 'client',
-            sourceId: client.id,
-            cashBoxType: CASH_BOX_TYPES.BIG_CASH,
-          }));
-        }
-        if (payload.deliveryAddresses !== undefined) {
-          client.deliveryAddresses = Array.isArray(payload.deliveryAddresses)
-            ? payload.deliveryAddresses
-              .map((entry) => ({
-                id: entry?.id ?? makeId('addr'),
-                label: String(entry?.label ?? 'Principal').trim() || 'Principal',
-                address: String(entry?.address ?? '').trim(),
-                city: String(entry?.city ?? '').trim(),
-                reference: String(entry?.reference ?? '').trim(),
-                isPrimary: Boolean(entry?.isPrimary),
-              }))
-              .filter((entry) => entry.address || entry.city)
-            : [];
-        }
-        if (payload.attachments !== undefined) {
-          client.attachments = Array.isArray(payload.attachments)
-            ? payload.attachments
-              .map((entry) => ({
-                id: entry?.id ?? makeId('att'),
-                name: String(entry?.name ?? '').trim(),
-                mimeType: String(entry?.mimeType ?? '').trim(),
-                size: Number(entry?.size ?? 0),
-                dataUrl: entry?.dataUrl ?? null,
-                url: entry?.url ?? null,
-                uploadedAt: entry?.uploadedAt ?? new Date().toISOString(),
-              }))
-              .filter((entry) => entry.name)
-            : [];
-        }
-        if (payload.status !== undefined) {
-          client.status = String(payload.status ?? '').trim() || client.status;
-        }
-        client.updatedAt = new Date().toISOString();
-        updated = deepClone(client);
+        updated = applyClientUpdate(state, payload);
         return state;
       });
-
       return updated;
     },
   },

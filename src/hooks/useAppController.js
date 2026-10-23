@@ -1184,8 +1184,13 @@ export const useAppController = () => {
   const handleUpdateClient = async (payload) => {
     setError('');
     try {
-      await api.clients.update(payload);
-      await loadData();
+      const result = await api.clients.update(payload);
+      setClients(current => current.map(client => client.id === result.client.id ? { ...client, ...result.client } : client));
+      if (result.movements?.length) {
+        const ids = new Set(result.movements.map(row => row.id));
+        setCashMovements(current => [...result.movements, ...current.filter(row => !ids.has(row.id))]);
+      }
+      return result.client;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo actualizar el cliente.');
       throw requestError;

@@ -2787,6 +2787,42 @@ const mutateQuoteOnServer = (method, quote = {}) => {
   return request;
 };
 
+const callDirectClientUpdate = async (payload = {}) => {
+  if (!shouldUseServerState()) return { client: await callBridge('clients', 'update', true, payload), movements: [] };
+  const id = String(payload.id ?? '').trim();
+  if (!id) throw new Error('Debes indicar el cliente a actualizar.');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  let result;
+  try {
+    const response = await fetch(getServerStateUrl(`/clients/${encodeURIComponent(id)}/update`), {
+      method: 'POST', cache: 'no-store', signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ ...payload, clientOperationId: payload.clientOperationId || crypto.randomUUID() }),
+    });
+    if (!response.ok) throw await createServerStateError(response, 'No se pudo actualizar el cliente.');
+    result = await response.json();
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('No se pudo confirmar el cambio a tiempo. Reintenta desde este formulario para comprobar el mismo guardado sin duplicarlo.');
+    throw error;
+  } finally { clearTimeout(timer); }
+  if (result.revision) { rememberServerRevision(result.revision); localServerCommitSerial += 1; }
+  try {
+    const snapshot = await exportLocalCollections(['clients']);
+    const exists = (snapshot.clients ?? []).some(row => row.id === result.client.id);
+    await mergeLocalState({ clients: exists
+      ? snapshot.clients.map(row => row.id === result.client.id ? { ...row, ...result.client } : row)
+      : [...(snapshot.clients ?? []), result.client] });
+    if (result.movements?.length && loadedServerCollections.has('cashMovements')) {
+      const cash = await exportLocalCollections(['cashMovements']);
+      const ids = new Set(result.movements.map(row => row.id));
+      await mergeLocalState({ cashMovements: [...result.movements, ...(cash.cashMovements ?? []).filter(row => !ids.has(row.id))] });
+    }
+  } catch { loadedServerCollections.delete('clients'); loadedServerCollections.delete('cashMovements'); }
+  announceDataChange({ domain: 'clients', method: 'update', collections: ['clients', ...(result.movements?.length ? ['cashMovements'] : [])] });
+  return result;
+};
+
 const callDirectInventoryMovement = async (payload = {}) => {
   if (!shouldUseServerState()) {
     const movement = await callBridge('inventory', 'createMovement', true, payload);
@@ -4068,7 +4104,7 @@ export const api = {
   clients: {
     list: () => callBridge('clients', 'list', false),
     create: (payload) => callBridge('clients', 'create', true, payload),
-    update: (payload) => callBridge('clients', 'update', true, payload),
+    update: callDirectClientUpdate,
   },
   users: {
     list: () => callBridge('users', 'list', false),

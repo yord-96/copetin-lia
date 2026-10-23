@@ -386,6 +386,9 @@ function ClientsSection({
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const clientSaveRef = useRef(false);
+  const clientOperationRef = useRef('');
+  const originalClientRef = useRef(null);
   const [detailClient, setDetailClient] = useState(null);
   const [documentPreview, setDocumentPreview] = useState(null);
   const [documentError, setDocumentError] = useState('');
@@ -680,6 +683,8 @@ function ClientsSection({
   }, [detailClient, getRelatedClientRecords]);
 
   const openCreateModal = () => {
+    clientOperationRef.current = crypto.randomUUID();
+    originalClientRef.current = null;
     setModalMode('create');
     setClientModalTab('basic');
     setForm({ ...EMPTY_FORM, deliveryAddresses: [newAddress()], attachments: [] });
@@ -687,6 +692,8 @@ function ClientsSection({
   };
 
   const openEditModal = (client) => {
+    clientOperationRef.current = crypto.randomUUID();
+    originalClientRef.current = client;
     setModalMode('edit');
     setClientModalTab('basic');
     setDetailClient(null);
@@ -704,6 +711,7 @@ function ClientsSection({
 
     setForm({
       id: client.id,
+      expectedUpdatedAt: client.updatedAt ?? null,
       customerType: client.customerType || 'persona',
       name: client.name || '',
       companyName: client.companyName || '',
@@ -736,7 +744,7 @@ function ClientsSection({
   };
 
   const closeModal = () => {
-    if (isSubmitting) return;
+    if (clientSaveRef.current) return;
     setModalMode(null);
     setClientModalTab('basic');
     setFormError('');
@@ -824,6 +832,7 @@ function ClientsSection({
 
   const handleSubmitClient = async (event) => {
     event.preventDefault();
+    if (clientSaveRef.current) return;
     setFormError('');
 
     const name = String(form.name ?? '').trim();
@@ -853,6 +862,7 @@ function ClientsSection({
 
     const payload = {
       customerType,
+      clientOperationId: clientOperationRef.current,
       name,
       companyName,
       contactName: String(form.contactName ?? '').trim() || name,
@@ -879,9 +889,15 @@ function ClientsSection({
         mimeType: entry.mimeType,
         size: entry.size,
         dataUrl: entry.dataUrl ?? null,
+        url: entry.url ?? null,
         uploadedAt: entry.uploadedAt ?? new Date().toISOString(),
       })),
     };
+
+    // Existing files remain on the server when only profile text changes.
+    if (modalMode === 'edit' && JSON.stringify(form.attachments ?? []) === JSON.stringify(originalClientRef.current?.attachments ?? [])) {
+      delete payload.attachments;
+    }
 
     const validationError = validateClient(payload);
     if (validationError) {
@@ -889,11 +905,13 @@ function ClientsSection({
       return;
     }
 
+    clientSaveRef.current = true;
     setIsSubmitting(true);
     try {
       if (modalMode === 'edit' && form.id) {
         await onUpdateClient?.({
           id: form.id,
+          expectedUpdatedAt: form.expectedUpdatedAt,
           ...payload,
         });
       } else {
@@ -902,10 +920,12 @@ function ClientsSection({
           status: 'active',
         });
       }
+      clientSaveRef.current = false;
       closeModal();
     } catch (error) {
       setFormError(error?.message || 'No se pudo guardar el cliente.');
     } finally {
+      clientSaveRef.current = false;
       setIsSubmitting(false);
     }
   };
