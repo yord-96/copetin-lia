@@ -1,4 +1,5 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
+import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
 import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
@@ -8114,7 +8115,10 @@ const summarizeAvailabilityRecord = (record = {}) => ({
   address: record.address ?? '',
   destination: record.destination ?? '',
   city: record.city ?? '',
-  items: (Array.isArray(record.items) ? record.items : []).map(summarizeAvailabilityLine),
+  items: (Array.isArray(record.items) ? record.items : []).map((line, index) => ({
+    ...summarizeAvailabilityLine(line),
+    internalReservedQty: getOutstandingInventoryLineQuantity(record, line, index),
+  })),
   _summaryOnly: true,
   _availabilitySummaryOnly: true,
 });
