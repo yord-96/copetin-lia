@@ -1650,11 +1650,17 @@ export const useAppController = () => {
   const handleCreateInventoryMovement = async (payload) => {
     setError('');
     try {
-      await api.inventory.createMovement({
+      const result = await api.inventory.createMovement({
         ...payload,
         ...getCurrentUserTrace(),
       });
-      await loadData();
+      if (result?.item?.id) {
+        setItems(current => current.map(item => item.id === result.item.id ? { ...item, ...result.item } : item));
+      }
+      if (result?.movement?.id) {
+        setInventoryMovements(current => [result.movement, ...current.filter(row => row.id !== result.movement.id)]);
+      }
+      return result;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo registrar el movimiento de inventario.');
       throw requestError;

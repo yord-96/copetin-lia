@@ -1,4 +1,5 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
+import { applyInventoryStockMovement } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
 import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
@@ -10090,6 +10091,25 @@ router.get('/__copetin_db/inventory/movements-overview', async (req, res, next) 
     });
   } catch (error) {
     next(error);
+  }
+});
+
+router.post('/__copetin_db/inventory/movements', async (req, res) => {
+  try {
+    const payload = req.body ?? {};
+    if (!String(payload.clientOperationId ?? '').trim()) {
+      return res.status(400).json({ error: 'Falta el identificador de la operacion de inventario.' });
+    }
+    let movement;
+    let item;
+    const result = await updateStateSnapshot((state) => {
+      movement = structuredClone(applyInventoryStockMovement(state, payload));
+      item = structuredClone(state.items.find(row => row.id === movement.itemId));
+      return state;
+    });
+    await sendJsonPayload(req, res, { movement, item, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+  } catch (error) {
+    res.status(error.statusCode || 400).json({ error: error.message || 'No se pudo registrar el movimiento de inventario.' });
   }
 });
 

@@ -12183,6 +12183,138 @@ const syncRouteStopsToDeliveries = (state, route) => {
   });
 };
 
+export const applyInventoryStockMovement = (state, payload = {}) => {
+  const itemId = payload?.itemId;
+  const type = String(payload?.type ?? '').trim();
+  const reason = String(payload?.reason ?? '').trim();
+  const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
+  const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
+  const quantity = payload?.quantity !== undefined ? toInteger(payload.quantity, 'cantidad') : 0;
+  const targetTotalStock =
+    payload?.targetTotalStock !== undefined ? toInteger(payload.targetTotalStock, 'stock fisico') : null;
+  const requestedValue = Number(type === 'ajuste' ? payload.targetTotalStock : payload.quantity);
+  if (!Number.isSafeInteger(requestedValue)) throw new Error('La cantidad debe ser un numero entero valido.');
+
+  if (!itemId) {
+    throw new Error('Debes seleccionar un item para registrar movimiento.');
+  }
+  if (!['entrada', 'salida', 'ajuste'].includes(type)) {
+    throw new Error('Tipo de movimiento invalido.');
+  }
+  if (!reason) {
+    throw new Error('Debes registrar el motivo del movimiento.');
+  }
+
+  state.items = Array.isArray(state.items) ? state.items : [];
+  state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
+  const operationId = String(payload?.clientOperationId ?? '').trim();
+  const fingerprint = JSON.stringify([itemId, type, reason, type === 'ajuste' ? targetTotalStock : quantity]);
+  const existing = operationId && state.inventoryMovements.find(row => row.clientOperationId === operationId);
+  if (existing) {
+    if (existing.operationFingerprint !== fingerprint) {
+      const error = new Error('Esta operacion ya se utilizo para otro movimiento. Abre un formulario nuevo.');
+      error.statusCode = 409;
+      throw error;
+    }
+    return existing;
+  }
+  let createdMovement = null;
+
+  const item = state.items.find((entry) => entry.id === itemId);
+  if (!item || item.deletedAt) {
+    throw new Error('El item seleccionado no existe.');
+  }
+
+  const beforeTotalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
+  if (type === 'entrada' && !Number.isSafeInteger(beforeTotalStock + quantity)) {
+    throw new Error('El stock resultante supera la cantidad permitida.');
+  }
+  if (type === 'ajuste' && payload?.expectedTotalStock != null && Number(payload.expectedTotalStock) !== beforeTotalStock) {
+    const error = new Error('El stock cambio mientras editabas. Actualiza el producto antes de ajustar.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const beforeAvailableStock = Math.max(0, Math.trunc(Number(item.availableStock ?? 0)));
+  const {
+    reservedStock,
+    recoveryStock,
+    minimumPhysicalStock,
+  } = getInventoryStockCommitment(state, item.id);
+  const realAvailableStock = Math.max(0, beforeTotalStock - minimumPhysicalStock);
+
+  let deltaUnits = 0;
+  let movementDetail = '';
+
+  if (type === 'entrada') {
+    if (quantity <= 0) {
+      throw new Error('La cantidad de entrada debe ser mayor a 0.');
+    }
+    deltaUnits = quantity;
+    movementDetail = `Entrada de ${quantity} unidades`;
+    item.totalStock = beforeTotalStock + quantity;
+    item.availableStock = Math.max(0, item.totalStock - minimumPhysicalStock);
+  }
+
+  if (type === 'salida') {
+    if (quantity <= 0) {
+      throw new Error('La cantidad de salida debe ser mayor a 0.');
+    }
+    if (quantity > realAvailableStock) {
+      throw new Error(`No hay stock fisico libre suficiente para salida. Disponible real: ${realAvailableStock}.`);
+    }
+    deltaUnits = -quantity;
+    movementDetail = `Salida de ${quantity} unidades`;
+    item.totalStock = beforeTotalStock - quantity;
+    item.availableStock = Math.max(0, item.totalStock - minimumPhysicalStock);
+  }
+
+  if (type === 'ajuste') {
+    if (targetTotalStock === null) {
+      throw new Error('Debes indicar el stock fisico final para el ajuste.');
+    }
+    if (targetTotalStock < 0 || targetTotalStock < minimumPhysicalStock) {
+      throw new Error(
+        `El stock fisico no puede ser menor a ${minimumPhysicalStock}: `
+        + `${reservedStock} comprometido(s) y ${recoveryStock} en mantenimiento o recuperacion.`,
+      );
+    }
+    deltaUnits = targetTotalStock - beforeTotalStock;
+    movementDetail = `Ajuste de stock fisico final a ${targetTotalStock}`;
+    item.totalStock = targetTotalStock;
+    item.availableStock = Math.max(0, targetTotalStock - minimumPhysicalStock);
+  }
+
+  item.updatedAt = new Date().toISOString();
+
+  createdMovement = {
+    clientOperationId: operationId || null,
+    operationFingerprint: fingerprint,
+    id: makeId('mov'),
+    itemId: item.id,
+    itemName: item.name,
+    category: item.category,
+    type,
+    reason,
+    detail: movementDetail,
+    deltaUnits,
+    beforeTotalStock,
+    afterTotalStock: item.totalStock,
+    beforeAvailableStock,
+    afterAvailableStock: item.availableStock,
+    reservedStockAfter: reservedStock,
+    recoveryStockAfter: recoveryStock,
+    minimumPhysicalStockAfter: minimumPhysicalStock,
+    userName,
+    userRole,
+    createdAt: new Date().toISOString(),
+  };
+
+  state.inventoryMovements.push(createdMovement);
+
+
+  return createdMovement;
+};
+
 const createWebBridge = () => ({
   inventory: {
     list: async () => {
@@ -12719,111 +12851,12 @@ const createWebBridge = () => ({
       return deletedCombo;
     },
     createMovement: async (payload) => {
-      const itemId = payload?.itemId;
-      const type = String(payload?.type ?? '').trim();
-      const reason = String(payload?.reason ?? '').trim();
-      const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
-      const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
-      const quantity = payload?.quantity !== undefined ? toInteger(payload.quantity, 'cantidad') : 0;
-      const targetTotalStock =
-        payload?.targetTotalStock !== undefined ? toInteger(payload.targetTotalStock, 'stock fisico') : null;
-
-      if (!itemId) {
-        throw new Error('Debes seleccionar un item para registrar movimiento.');
-      }
-      if (!['entrada', 'salida', 'ajuste'].includes(type)) {
-        throw new Error('Tipo de movimiento invalido.');
-      }
-      if (!reason) {
-        throw new Error('Debes registrar el motivo del movimiento.');
-      }
-
-      let createdMovement = null;
+      let movement;
       transaction((state) => {
-        const item = state.items.find((entry) => entry.id === itemId);
-        if (!item) {
-          throw new Error('El item seleccionado no existe.');
-        }
-
-        const beforeTotalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));
-        const beforeAvailableStock = Math.max(0, Math.trunc(Number(item.availableStock ?? 0)));
-        const {
-          reservedStock,
-          recoveryStock,
-          minimumPhysicalStock,
-        } = getInventoryStockCommitment(state, item.id);
-        const realAvailableStock = Math.max(0, beforeTotalStock - minimumPhysicalStock);
-
-        let deltaUnits = 0;
-        let movementDetail = '';
-
-        if (type === 'entrada') {
-          if (quantity <= 0) {
-            throw new Error('La cantidad de entrada debe ser mayor a 0.');
-          }
-          deltaUnits = quantity;
-          movementDetail = `Entrada de ${quantity} unidades`;
-          item.totalStock = beforeTotalStock + quantity;
-          item.availableStock = Math.max(0, item.totalStock - minimumPhysicalStock);
-        }
-
-        if (type === 'salida') {
-          if (quantity <= 0) {
-            throw new Error('La cantidad de salida debe ser mayor a 0.');
-          }
-          if (quantity > realAvailableStock) {
-            throw new Error(`No hay stock fisico libre suficiente para salida. Disponible real: ${realAvailableStock}.`);
-          }
-          deltaUnits = -quantity;
-          movementDetail = `Salida de ${quantity} unidades`;
-          item.totalStock = beforeTotalStock - quantity;
-          item.availableStock = Math.max(0, item.totalStock - minimumPhysicalStock);
-        }
-
-        if (type === 'ajuste') {
-          if (targetTotalStock === null) {
-            throw new Error('Debes indicar el stock fisico final para el ajuste.');
-          }
-          if (targetTotalStock < minimumPhysicalStock) {
-            throw new Error(
-              `El stock fisico no puede ser menor a ${minimumPhysicalStock}: `
-              + `${reservedStock} comprometido(s) y ${recoveryStock} en mantenimiento o recuperacion.`,
-            );
-          }
-          deltaUnits = targetTotalStock - beforeTotalStock;
-          movementDetail = `Ajuste de stock fisico final a ${targetTotalStock}`;
-          item.totalStock = targetTotalStock;
-          item.availableStock = Math.max(0, targetTotalStock - minimumPhysicalStock);
-        }
-
-        item.updatedAt = new Date().toISOString();
-
-        createdMovement = {
-          id: makeId('mov'),
-          itemId: item.id,
-          itemName: item.name,
-          category: item.category,
-          type,
-          reason,
-          detail: movementDetail,
-          deltaUnits,
-          beforeTotalStock,
-          afterTotalStock: item.totalStock,
-          beforeAvailableStock,
-          afterAvailableStock: item.availableStock,
-          reservedStockAfter: reservedStock,
-          recoveryStockAfter: recoveryStock,
-          minimumPhysicalStockAfter: minimumPhysicalStock,
-          userName,
-          userRole,
-          createdAt: new Date().toISOString(),
-        };
-
-        state.inventoryMovements.push(createdMovement);
+        movement = applyInventoryStockMovement(state, payload);
         return state;
       });
-
-      return createdMovement;
+      return movement;
     },
     processRecovery: async (payload) => {
       const recoveryId = String(payload?.recoveryId ?? '').trim();

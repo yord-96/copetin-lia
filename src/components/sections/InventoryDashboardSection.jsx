@@ -1637,6 +1637,9 @@ function InventoryDashboardSection({
   const [movementModalOpen, setMovementModalOpen] = useState(false);
   const [movementForm, setMovementForm] = useState(EMPTY_MOVEMENT_FORM);
   const [movementError, setMovementError] = useState('');
+  const [isSavingMovement, setIsSavingMovement] = useState(false);
+  const movementSaveRef = useRef(false);
+  const movementOperationRef = useRef('');
   const [movementItemQuery, setMovementItemQuery] = useState('');
   const [categoryModalMode, setCategoryModalMode] = useState(null);
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
@@ -4077,6 +4080,7 @@ function InventoryDashboardSection({
   };
 
   const openMovementModal = (row, type = 'ajuste') => {
+    movementOperationRef.current = crypto.randomUUID();
     const initialTarget = type === 'ajuste' ? String(row?.total ?? row?.afterStock ?? '') : '';
     setMovementForm({
       itemId: row?.itemId ?? row?.id ?? '',
@@ -4084,6 +4088,7 @@ function InventoryDashboardSection({
       quantity: '1',
       targetTotalStock: initialTarget,
       reason: '',
+      expectedTotalStock: row?.total ?? row?.afterStock ?? null,
     });
     setMovementItemQuery(row?.name ?? row?.itemName ?? '');
     setMovementError('');
@@ -4091,6 +4096,7 @@ function InventoryDashboardSection({
   };
 
   const closeMovementModal = () => {
+    if (movementSaveRef.current) return;
     setMovementModalOpen(false);
     setMovementForm(EMPTY_MOVEMENT_FORM);
     setMovementItemQuery('');
@@ -4676,11 +4682,13 @@ function InventoryDashboardSection({
 
   const handleSubmitMovement = async (event) => {
     event.preventDefault();
+    if (movementSaveRef.current) return;
     setMovementError('');
     const payload = {
       itemId: movementForm.itemId,
       type: movementForm.type,
       reason: String(movementForm.reason ?? '').trim(),
+      clientOperationId: movementOperationRef.current,
     };
     if (!payload.itemId) {
       setMovementError('Debes seleccionar un producto.');
@@ -4697,6 +4705,7 @@ function InventoryDashboardSection({
         return;
       }
       payload.targetTotalStock = targetTotalStock;
+      payload.expectedTotalStock = movementForm.expectedTotalStock;
     } else {
       const quantity = Math.trunc(Number(movementForm.quantity ?? 0));
       if (!Number.isFinite(quantity) || quantity <= 0) {
@@ -4706,16 +4715,22 @@ function InventoryDashboardSection({
       payload.quantity = quantity;
     }
 
+    movementSaveRef.current = true;
+    setIsSavingMovement(true);
     try {
-      await onCreateInventoryMovement?.(payload);
+      await onCreateInventoryMovement(payload);
       showMessage(
         payload.type === 'ajuste'
           ? `Stock fisico ajustado al valor final ${payload.targetTotalStock}.`
           : 'Movimiento registrado correctamente.',
       );
+      movementSaveRef.current = false;
       closeMovementModal();
     } catch (error) {
       setMovementError(error?.message || 'No se pudo registrar el movimiento.');
+    } finally {
+      movementSaveRef.current = false;
+      setIsSavingMovement(false);
     }
   };
 
@@ -6913,7 +6928,7 @@ function InventoryDashboardSection({
                 ) : (
                   <div className="inventory-kardex-history-wrap">
                     <table className="inventory-kardex-history">
-                      <thead><tr><th>{['available', 'outside'].includes(productKardexModal.metric) ? 'Fecha evento' : 'Fecha y hora'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
+                      <thead><tr><th>{['available', 'outside'].includes(productKardexModal.metric) ? 'Fecha evento' : 'Fecha de registro'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
                       <tbody>
                         {(productKardexModal.data.movements ?? []).map((movement) => {
                           const availabilityMetric = productKardexModal.metric === 'available';
@@ -7452,7 +7467,7 @@ function InventoryDashboardSection({
           <form className="reset-modal inventory-movement-modal" onSubmit={handleSubmitMovement} onClick={(event) => event.stopPropagation()}>
             <h3>Registrar Movimiento</h3>
             <p>Registra entradas, salidas o ajustes para mantener trazabilidad del stock.</p>
-            <div className="inventory-modal-grid">
+            <fieldset className="inventory-modal-grid" disabled={isSavingMovement} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               <div className="full-width inventory-movement-product-picker">
                 Producto
                 <input
@@ -7471,6 +7486,7 @@ function InventoryDashboardSection({
                         setMovementForm((current) => ({
                           ...current,
                           itemId: row.id,
+                          expectedTotalStock: row.total,
                           targetTotalStock:
                             current.type === 'ajuste' ? String(row.total) : current.targetTotalStock,
                         }))}
@@ -7528,13 +7544,13 @@ function InventoryDashboardSection({
                 Motivo
                 <input value={movementForm.reason} onChange={(event) => setMovementForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Ej: Conteo fisico, reposicion, rotura, etc." required />
               </label>
-            </div>
+            </fieldset>
             {movementError ? <p className="status error reset-modal-error">{movementError}</p> : null}
             <div className="reset-modal-actions">
-              <button type="button" className="ghost-button" onClick={closeMovementModal}>
+              <button type="button" className="ghost-button" disabled={isSavingMovement} onClick={closeMovementModal}>
                 Cancelar
               </button>
-              <button type="submit" className="primary-button">Guardar movimiento</button>
+              <button type="submit" className="primary-button" disabled={isSavingMovement}>{isSavingMovement ? 'Guardando movimiento...' : 'Guardar movimiento'}</button>
             </div>
           </form>
         </div>

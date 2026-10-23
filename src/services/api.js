@@ -2787,6 +2787,41 @@ const mutateQuoteOnServer = (method, quote = {}) => {
   return request;
 };
 
+const callDirectInventoryMovement = async (payload = {}) => {
+  if (!shouldUseServerState()) {
+    const movement = await callBridge('inventory', 'createMovement', true, payload);
+    const snapshot = await exportLocalCollections(['items']);
+    return { movement, item: snapshot.items?.find(row => row.id === movement.itemId) };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  let result;
+  try {
+    const response = await fetch(getServerStateUrl('/inventory/movements'), {
+      method: 'POST', cache: 'no-store', signal: controller.signal,
+      headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ ...payload, clientOperationId: payload.clientOperationId || crypto.randomUUID() }),
+    });
+    if (!response.ok) throw await createServerStateError(response, 'No se pudo registrar el movimiento de inventario.');
+    result = await response.json();
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('No se pudo confirmar el movimiento a tiempo. Reintenta desde este formulario para comprobar la misma operacion sin duplicarla.');
+    throw error;
+  } finally { clearTimeout(timer); }
+  if (result.revision) { rememberServerRevision(result.revision); localServerCommitSerial += 1; }
+  // A confirmed purchase must never become a failed save because a cache refresh failed.
+  try {
+    const snapshot = await exportLocalCollections(['items', 'inventoryMovements']);
+    const patch = { items: (snapshot.items ?? []).map(row => row.id === result.item.id ? result.item : row) };
+    if (loadedServerCollections.has('inventoryMovements')) {
+      patch.inventoryMovements = [result.movement, ...(snapshot.inventoryMovements ?? []).filter(row => row.id !== result.movement.id)];
+    }
+    await mergeLocalState(patch);
+  } catch { loadedServerCollections.delete('items'); loadedServerCollections.delete('inventoryMovements'); }
+  announceDataChange({ domain: 'inventory', method: 'createMovement', collections: ['items', 'inventoryMovements'] });
+  return result;
+};
+
 const callDirectInventoryItemRemove = async (payload = {}) => {
   if (!shouldUseServerState()) return callBridge('inventory', 'remove', true, payload);
   const itemId = String(payload?.id ?? '').trim();
@@ -3867,7 +3902,7 @@ export const api = {
     updateCombo: (payload) => callBridge('inventory', 'updateCombo', true, payload),
     removeCombo: (payload) => callBridge('inventory', 'removeCombo', true, payload),
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
-    createMovement: (payload) => callBridge('inventory', 'createMovement', true, payload),
+    createMovement: callDirectInventoryMovement,
     getDamageLossOverview: fetchInventoryDamageLossOverview,
     searchMovementHistory: fetchInventoryMovementHistory,
     getLegacyContracts: fetchLegacyContracts,
