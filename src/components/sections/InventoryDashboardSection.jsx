@@ -1610,6 +1610,7 @@ function InventoryDashboardSection({
   const [movementHistoryRows, setMovementHistoryRows] = useState(null);
   const [movementHistoryTotal, setMovementHistoryTotal] = useState(0);
   const [movementHistoryLoading, setMovementHistoryLoading] = useState(false);
+  const inventoryMovementVersion = `${inventoryMovements.length}:${inventoryMovements[0]?.id ?? ''}`;
   const [adjustStatusFilter, setAdjustStatusFilter] = useState('all');
   const [categoryUsageFilter, setCategoryUsageFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -1973,7 +1974,7 @@ function InventoryDashboardSection({
   ]);
 
   useEffect(() => {
-    if (!isMovementsModule) {
+    if (!isMovementsModule && !isAdjustModule) {
       setMovementHistoryRows(null);
       setMovementHistoryTotal(0);
       return undefined;
@@ -1985,7 +1986,7 @@ function InventoryDashboardSection({
         query: deferredQuery,
         from: dateFrom,
         to: dateTo,
-        type: movementTypeFilter,
+        type: isAdjustModule ? 'ajuste' : movementTypeFilter,
         user: movementUserFilter,
         limit: INVENTORY_MOVEMENT_RENDER_LIMIT,
         offset: 0,
@@ -2015,6 +2016,8 @@ function InventoryDashboardSection({
     movementTypeFilter,
     movementUserFilter,
     isMovementsModule,
+    isAdjustModule,
+    inventoryMovementVersion,
   ]);
 
   useEffect(() => {
@@ -3250,8 +3253,8 @@ function InventoryDashboardSection({
         reference: linkedContract?.contractCode ?? linkedRental?.contractCode ?? movement.reference ?? movement.id,
         deltaUnits: Number(movement.deltaUnits ?? 0),
         operationalQuantity: Number(movement.operationalQuantity ?? Math.abs(Number(movement.deltaUnits ?? 0))),
-        beforeStock: movement.beforeAvailableStock ?? movement.beforeTotalStock ?? null,
-        afterStock: movement.afterAvailableStock ?? movement.afterTotalStock ?? null,
+        beforeStock: isAdjustModule ? movement.beforeTotalStock : movement.beforeAvailableStock ?? movement.beforeTotalStock ?? null,
+        afterStock: isAdjustModule ? movement.afterTotalStock : movement.afterAvailableStock ?? movement.afterTotalStock ?? null,
         userName: responsibleName,
         userRole: responsibleRole,
         registeredByName: movementUserName,
@@ -3272,7 +3275,7 @@ function InventoryDashboardSection({
       || movementTypeFilter !== 'all'
       || movementUserFilter !== 'all'
     );
-    const serviceOrderRows = hasExplicitMovementFilter ? [] : rentalsForTrace.flatMap((rental) => {
+    const serviceOrderRows = isAdjustModule || hasExplicitMovementFilter ? [] : rentalsForTrace.flatMap((rental) => {
       const reference = rental.orderCode ?? rental.id;
       const contract = contractById.get(String(rental.contractId ?? '')) ?? null;
       const displayReference = contract?.contractCode ?? rental.contractCode ?? reference;
@@ -3327,7 +3330,7 @@ function InventoryDashboardSection({
     return [...persistedRows, ...serviceOrderRows]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, INVENTORY_MOVEMENT_RENDER_LIMIT);
-  }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows, movementHistoryRows, deferredQuery, dateFrom, dateTo, movementTypeFilter, movementUserFilter]);
+  }, [activeRentals, cancelledRentals, contracts, inventoryMovements, inventoryRows, movementHistoryRows, deferredQuery, dateFrom, dateTo, movementTypeFilter, movementUserFilter, isAdjustModule]);
 
   const movementStats = useMemo(() => {
     const counts = inventoryMovementStats
@@ -3486,7 +3489,7 @@ function InventoryDashboardSection({
     if (isAdjustModule) {
       const pending = adjustRows.filter((row) => row.status === 'pendiente').length;
       return [
-        { tone: 'lilac', icon: 'box', value: adjustRows.length, label: 'Ajustes este mes', link: 'Ver historial' },
+        { tone: 'lilac', icon: 'box', value: movementHistoryTotal || adjustRows.length, label: 'Ajustes registrados', link: 'Ver historial' },
         { tone: 'mint', icon: 'check', value: formatBs(adjustRows.reduce((sum, row) => sum + row.valueAmount, 0)), label: 'Valor total de ajustes', link: 'Ver resumen' },
         { tone: 'peach', icon: 'tag', value: pending, label: 'Pendientes de aprobar', link: 'Ver pendientes' },
         { tone: 'sky', icon: 'check', value: `${totals.availability.toFixed(1)}%`, label: 'Precision de inventario', link: 'Ver reportes' },
@@ -3523,7 +3526,7 @@ function InventoryDashboardSection({
       { tone: 'sky', icon: 'bag', value: totals.lowStockCount, label: 'Stock bajo minimo', link: 'Revisar alertas' },
       { tone: 'peach', icon: 'tag', value: formatBs(totals.value), label: 'Valor total del inventario', link: 'Ver valuacion' },
     ];
-  }, [adjustRows, categoriesList, comboRows, formatBs, isAdjustModule, isCategoriesModule, isCombosModule, isMovementsModule, movementStats, totals]);
+  }, [adjustRows, categoriesList, comboRows, formatBs, isAdjustModule, isCategoriesModule, isCombosModule, isMovementsModule, movementStats, totals, movementHistoryTotal]);
 
   const recentActivity = useMemo(() => {
     return movementRows.slice(0, 4).map((movement) => ({
@@ -6442,7 +6445,7 @@ function InventoryDashboardSection({
                     ))}
                     {pagedRows.length === 0 ? (
                       <tr>
-                        <td colSpan={11}><p className="status">No hay ajustes para los filtros actuales.</p></td>
+                        <td colSpan={11}><p className="status">{movementHistoryLoading ? 'Cargando historial de ajustes...' : 'No hay ajustes para los filtros actuales.'}</p></td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -6735,9 +6738,9 @@ function InventoryDashboardSection({
               <span>
                 {isProductsModule && productKardexLoading
                   ? 'Actualizando cifras del kardex...'
-                  : isMovementsModule && movementHistoryLoading
+                  : (isMovementsModule || isAdjustModule) && movementHistoryLoading
                     ? 'Buscando en todo el historial del VPS...'
-                    : isMovementsModule
+                    : isMovementsModule || isAdjustModule
                       ? `Mostrando ${pagedRows.length} de ${filteredRows.length} cargados · ${movementHistoryTotal || filteredRows.length} coincidencia(s) en todo el historial`
                       : `Mostrando ${pagedRows.length} de ${filteredRows.length} ${isAdjustModule ? 'ajustes' : isCombosModule ? 'combos' : isCategoriesModule ? 'categorias' : 'productos'}`}
               </span>
