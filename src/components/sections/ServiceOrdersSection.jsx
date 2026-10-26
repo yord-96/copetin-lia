@@ -1,3 +1,4 @@
+import ContractCancellationModal from './ContractCancellationModal';
 import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
 import { getContractWhatsAppContacts, openContractWhatsAppContact } from '../../utils/contractWhatsApp.js';
@@ -2016,7 +2017,6 @@ function ServiceOrdersSection({
   const [orderToCancel, setOrderToCancel] = useState(null);
   const [zeroInitialPaymentConfirmation, setZeroInitialPaymentConfirmation] = useState(null);
   const [supplierPlanRemovalConfirmation, setSupplierPlanRemovalConfirmation] = useState(null);
-  const cancelReasonRef = useRef(null);
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
@@ -2738,7 +2738,7 @@ function ServiceOrdersSection({
       const economicInternalNotes = getEconomicInternalNotes({ economicLedger });
       const hasEconomicLedger = economicLedger
         .some((entry) => toMoneyNumber(entry?.amountBs) > 0);
-      const guaranteeBs = Number(contract?.totals?.guaranteeBs ?? 0);
+      const guaranteeBs = contract.cancellationSettlement ? 0 : Number(contract?.totals?.guaranteeBs ?? 0);
       const servicesBs = (Array.isArray(contract?.services) ? contract.services : [])
         .reduce((sum, service) => sum + toMoneyNumber(service?.lineTotalBs), 0);
       const transportBs = toMoneyNumber(contract?.totals?.deliveryFeeBs ?? contract?.deliveryFeeBs);
@@ -3039,8 +3039,8 @@ function ServiceOrdersSection({
         totalBs,
         managedTotalBs,
         paidOnAccountBs,
-        customerCreditBs,
-        dueBs,
+        customerCreditBs: contract.cancellationSettlement ? 0 : customerCreditBs,
+        dueBs: contract.cancellationSettlement ? 0 : dueBs,
         contractPendingBs: receivableBreakdown.contractPendingBs,
         transportPendingBs: receivableBreakdown.transportPendingBs,
         totalReceivableBs: receivableBreakdown.totalPendingBs,
@@ -9137,9 +9137,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       printWindow.document.write(result.html);
       printWindow.document.close();
       printWindow.focus();
+      return true;
     } catch (error) {
       if (printWindow && !printWindow.closed) printWindow.close();
       setContractEconomicsError(error.message || 'No se pudo abrir el recibo.');
+      return false;
     }
   };
 
@@ -11184,32 +11186,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     setOrderToCancel(null);
   };
 
-  const confirmCancelOrder = async () => {
-    if (!orderToCancel) return;
-    const cancellationReason = String(cancelReasonRef.current?.value ?? '').trim();
-    if (!cancellationReason) {
-      setFormError('Debes escribir por que se esta anulando el contrato.');
-      cancelReasonRef.current?.focus();
-      return;
-    }
-    if (!beginSubmit()) return;
+  const confirmCancelOrder = async (settlementPayload) => {
+    if (!orderToCancel || !beginSubmit()) throw new Error('Ya hay una operacion en curso.');
     setFormError('');
     try {
-      const cancelled = await onCancelOrderContract?.({
-        id: orderToCancel.rentalId,
-        contractId: orderToCancel.contractId,
-        reason: cancellationReason,
+      const cancelled = await onCancelOrderContract({
+        id: orderToCancel.rentalId, contractId: orderToCancel.contractId, ...settlementPayload,
       });
-      const penaltyBs = Number(cancelled?.cancellationPenaltyBs ?? orderToCancel.cancellationPenaltyBs ?? 0);
-      setActionFeedback(
-        `Contrato ${orderToCancel.contractCode || orderToCancel.orderCode} anulado. Penalidad aplicada: ${formatBs(penaltyBs)}.`,
-      );
-      setOrderToCancel(null);
-    } catch (requestError) {
-      setFormError(requestError.message || 'No se pudo anular el contrato.');
-    } finally {
-      endSubmit();
-    }
+      setActionFeedback('Contrato anulado y liquidado. Se conserva el ingreso original y solo se registra la devolucion acordada.');
+      return cancelled;
+    } finally { endSubmit(); }
   };
 
   const handleOpenReportsClick = () => {
@@ -12169,7 +12155,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         </td>
                         <td className={`orders-total ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
                           <span className="orders-total-with-economics">
-                            {row.customerCreditBs > 0.009 ? `A favor ${formatBs(row.customerCreditBs)}` : row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
+                            {row.cancellationSettlement ? 'Liquidado' : row.customerCreditBs > 0.009 ? `A favor ${formatBs(row.customerCreditBs)}` : row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
                             {row.hasEconomicLedger ? (
                               <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
                             ) : null}
@@ -12293,7 +12279,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       <div className="orders-mobile-contract-money">
                         <small>Debe</small>
                         <b className={`orders-total-with-economics ${row.dueBs <= 0 ? 'is-paid' : 'is-due'}`}>
-                          {row.customerCreditBs > 0.009 ? `A favor ${formatBs(row.customerCreditBs)}` : row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
+                          {row.cancellationSettlement ? 'Liquidado' : row.customerCreditBs > 0.009 ? `A favor ${formatBs(row.customerCreditBs)}` : row.dueBs <= 0 ? 'Pagado' : formatBs(row.dueBs)}
                           {row.hasEconomicLedger ? (
                             <i title="Seguimiento economico iniciado" aria-label="Seguimiento economico iniciado" />
                           ) : null}
@@ -12557,6 +12543,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           {menuState.type === 'contract' && activeContractMenuRow ? (
             activeContractMenuRow.status === 'anulado' ? (
               <>
+                <button type="button" onClick={() => handleCancelContractClick(activeContractMenuRow)}>Ver liquidacion de anulacion</button>
                 <button
                   type="button"
                   onClick={() => handleOpenDocumentsFromContract(activeContractMenuRow)}
@@ -15227,50 +15214,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       ) : null}
 
       {orderToCancel ? (
-        <div className="orders-modal-backdrop" onClick={closeCancelOrderDialog}>
-          <div className="orders-confirm-modal" onClick={(event) => event.stopPropagation()}>
-            <header>
-              <span className="orders-confirm-icon">!</span>
-              <div>
-                <h3>Anular contrato y orden</h3>
-                <p>
-                  Se permite hasta el dia de envio. Si la fecha ya paso, solo se anulara cuando la orden nunca salio,
-                  no fue entregada y no registra cobros. El contrato conservara su codigo y los items quedaran liberados.
-                </p>
-              </div>
-            </header>
-
-            <div className="orders-confirm-summary">
-              <strong>{orderToCancel.contractCode || orderToCancel.orderCode}</strong>
-              <span>{orderToCancel.client} · {formatBs(orderToCancel.totalBs)}</span>
-              <small>
-                La penalidad se aplicara dentro del plazo normal. Para una orden vencida que nunca salio y no tiene cobros,
-                la anulacion administrativa no generara penalidad.
-              </small>
-            </div>
-
-            <label className="orders-note-field">
-              Motivo de anulacion
-              <textarea
-                ref={cancelReasonRef}
-                defaultValue={String(orderToCancel?.cancellationReason ?? '').trim()}
-                placeholder="Ej: cliente posterga el evento."
-                required
-              />
-            </label>
-
-            {formError ? <p className="status error">{formError}</p> : null}
-
-            <footer>
-              <button type="button" className="ghost-button" onClick={closeCancelOrderDialog} disabled={isSubmitting}>
-                Cancelar
-              </button>
-              <button type="button" className="danger-button" onClick={confirmCancelOrder} disabled={isSubmitting}>
-                {isSubmitting ? 'Anulando...' : 'Confirmar anulacion'}
-              </button>
-            </footer>
-          </div>
-        </div>
+        <ContractCancellationModal key={orderToCancel.contractId || orderToCancel.rentalId}
+          order={orderToCancel} onClose={closeCancelOrderDialog} onConfirm={confirmCancelOrder}
+          isSubmitting={isSubmitting} formatBs={formatBs} onPrintReceipt={handlePrintEconomicReceipt} />
       ) : null}
 
       {quoteToDelete ? (

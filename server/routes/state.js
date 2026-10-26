@@ -1,4 +1,5 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
+import { cancellationRecords, cancellationPreview, applyCancellationSettlement } from '../services/contractCancellation.js';
 import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
@@ -2168,6 +2169,18 @@ const normalizeDirectCashMovementPayload = (payload = {}) => {
 };
 
 
+router.get('/__copetin_db/contracts/cancellation/preview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const { contract, rental } = cancellationRecords(snapshot.state, req.query);
+    res.set('Cache-Control', 'private, no-store');
+    res.json(cancellationPreview(snapshot.state, contract, rental));
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
   try {
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
@@ -2221,6 +2234,21 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
         throw error;
       }
       if (rental.status === 'cancelled') {
+        const saved = rental.cancellationSettlement;
+        const draft = req.body.economicSettlement;
+        if (saved && draft?.operationId === saved.operationId
+          && reason === saved.reason
+          && Number(draft.retainedPenaltyBs) === saved.retainedPenaltyBs && Number(draft.refundBs) === saved.refundBs
+          && String(draft.paymentMethod || 'efectivo') === saved.paymentMethod
+          && String(draft.paymentAccount || '').trim() === saved.paymentAccount) {
+          responseData = { rental: structuredClone(rental), contract: structuredClone(contractFromId ?? state.contracts.find(row => row.rentalId === rental.id)),
+            cashMovements: (state.cashMovements ?? []).filter(row => row.id === saved.refundMovementId),
+            items: (state.items ?? []).filter(item => (rental.items ?? []).some(line => line.itemId === item.id)),
+            inventoryMovements: (state.inventoryMovements ?? []).filter(row => row.reference === rental.orderCode && row.createdAt === rental.cancelledAt),
+            deliveries: (state.deliveries ?? []).filter(row => row.rentalId === rental.id || row.orderCode === rental.orderCode),
+            supplierLoans: (state.supplierLoans ?? []).filter(row => row.rentalId === rental.id || row.orderCode === rental.orderCode), cancellation: saved };
+          return state;
+        }
         const error = new Error('Esta orden ya fue anulada.');
         error.statusCode = 409;
         throw error;
@@ -2269,6 +2297,8 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
         || returnReview.reviewedAt
         || returnReview.reviewedByName
         || (Array.isArray(rental.returnReport) && rental.returnReport.length > 0)
+        || (Array.isArray(rental.partialReturnReport?.items) && rental.partialReturnReport.items.length > 0)
+        || operational.clientPendingPickup?.active
       );
       const hasExplicitInventoryDispatch = Boolean(
         operational.inventoryDispatchedAt
@@ -2344,7 +2374,16 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
       const canCancelUnfulfilledAfterCutoff = !wasOperationallySent
         && recordedCollectedBs <= 0.009
         && !guaranteeWasCollected;
-      if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff) {
+      const hasEconomicSettlement = Boolean(req.body.economicSettlement);
+      if (hasEconomicSettlement && (hasReturnEvidence || hasExplicitInventoryDispatch || hasExplicitTransportDispatch || deliveriesShowExecution)) {
+        const error = new Error('El material ya registra salida, entrega o retorno. Resuelve primero su situacion operativa antes de anular con devolucion.');
+        error.statusCode = 409; throw error;
+      }
+      if (!hasEconomicSettlement && (recordedCollectedBs > 0.009 || guaranteeWasCollected)) {
+        const error = new Error('Este contrato tiene dinero recibido. Debes revisar la liquidacion de devolucion y multa antes de anular.');
+        error.statusCode = 409; throw error;
+      }
+      if (!isWithinCancellationWindow && !canCancelUnfulfilledAfterCutoff && !hasEconomicSettlement) {
         const error = new Error(
           `El plazo de anulacion vencio el ${toDayKey(cutoffDate)}. `
           + 'Solo puede anularse despues de esa fecha cuando la orden nunca salio, no fue entregada y no registra cobros.',
@@ -2355,19 +2394,20 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
 
       const totalBs = Number(contract?.totals?.totalBs ?? rental?.totals?.totalBs ?? 0);
       const configuredPenaltyPercent = Math.max(0, Number(state.settings?.contractCancellationPenaltyPercent ?? 20));
-      const penaltyPercent = isWithinCancellationWindow ? configuredPenaltyPercent : 0;
-      const penaltyBs = Number((totalBs * (penaltyPercent / 100)).toFixed(2));
+      let penaltyPercent = isWithinCancellationWindow ? configuredPenaltyPercent : 0;
+      const settlementResult = hasEconomicSettlement
+        ? applyCancellationSettlement(state, contract, rental, req.body, payload => buildDirectMovement(state, payload)) : null;
+      const penaltyBs = settlementResult?.penaltyBs ?? Number((totalBs * (penaltyPercent / 100)).toFixed(2));
+      if (settlementResult) penaltyPercent = totalBs > 0 ? Number((penaltyBs / totalBs * 100).toFixed(4)) : 0;
       const userId = req.body?.userId ?? req.body?.createdById ?? null;
       const userName = String(req.body?.userName ?? req.body?.createdByName ?? req.body?.createdBy ?? 'Sistema').trim() || 'Sistema';
       const userRole = String(req.body?.userRole ?? req.body?.createdByRole ?? 'Operacion').trim() || 'Operacion';
 
       state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
-      (rental.items ?? []).forEach((line) => {
+      (rental.items ?? []).forEach((line, lineIndex) => {
         const item = (state.items ?? []).find((entry) => entry.id === line.itemId);
         if (!item || line?.controlsStock === false) return;
-        const reservedQty = Number.isFinite(Number(line?.internalReservedQty))
-          ? Math.max(0, Math.trunc(Number(line.internalReservedQty)))
-          : Math.max(0, Math.trunc(Number(line?.quantity ?? 0) - Number(line?.supplierBackedQty ?? 0)));
+        const reservedQty = getOutstandingInventoryLineQuantity(rental, line, lineIndex);
         if (reservedQty <= 0) return;
         const beforeTotalStock = Number(item.totalStock ?? 0);
         const beforeAvailableStock = Number(item.availableStock ?? 0);
@@ -2464,10 +2504,14 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
         rental: structuredClone(rental),
         deliveries: structuredClone(linkedDeliveries),
         supplierLoans: changedSupplierLoans,
+        cashMovements: settlementResult?.movement ? [structuredClone(settlementResult.movement)] : [],
+        items: (state.items ?? []).filter(item => (rental.items ?? []).some(line => line.itemId === item.id)),
+        inventoryMovements: state.inventoryMovements.filter(row => row.reference === rental.orderCode && row.createdAt === now),
         cancellation: {
           administrative: !isWithinCancellationWindow,
           reconciledStaleOperationalMarks: deliveriesShowNoExecution && hasOperationalDispatchEvidence,
           penaltyBs,
+          settlement: settlementResult?.settlement ?? null,
         },
       };
       return state;
@@ -7631,6 +7675,7 @@ const summarizeOrdersContract = (contract = {}, cashMovements = []) => {
   observations: contract.observations ?? '',
   cancellationPenaltyPercent: Number(contract.cancellationPenaltyPercent ?? 0),
   cancellationPenaltyBs: Number(contract.cancellationPenaltyBs ?? 0),
+  cancellationSettlement: contract.cancellationSettlement ?? null,
   cancellationReason: contract.cancellationReason ?? '',
   accountingStatus: contract.accountingStatus ?? '',
   paymentStatus: contract.paymentStatus ?? '',

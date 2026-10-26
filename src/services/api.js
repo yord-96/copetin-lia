@@ -3243,6 +3243,19 @@ const updateRentalReturnChargeOnServer = async (payload = {}) => {
 };
 
 
+const fetchCancellationPreview = async (payload = {}) => {
+  const query = new URLSearchParams();
+  if (payload.contractId) query.set('contractId', payload.contractId);
+  if (payload.id || payload.rentalId) query.set('id', payload.id || payload.rentalId);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(getServerStateUrl(`/contracts/cancellation/preview?${query}`), { cache: 'no-store', signal: controller.signal, headers: getInternalHeaders() });
+    if (!response.ok) throw await createServerStateError(response, 'No se pudo cargar la liquidacion de anulacion.');
+    return response.json();
+  } finally { clearTimeout(timer); }
+};
+
 const cancelContractOnServer = async (payload = {}) => {
   if (!shouldUseServerState()) return null;
 
@@ -3266,8 +3279,9 @@ const cancelContractOnServer = async (payload = {}) => {
     }
 
     const result = await response.json();
-    if (result?.revision) rememberServerRevision(result.revision);
+    if (result?.revision) { rememberServerRevision(result.revision); localServerCommitSerial += 1; }
 
+    try {
     const collections = {};
     if (result?.contract?.id) {
       const snapshot = await exportLocalCollections(['contracts']);
@@ -3291,23 +3305,33 @@ const cancelContractOnServer = async (payload = {}) => {
       const snapshot = await exportLocalCollections(['deliveries']);
       const rows = Array.isArray(snapshot?.deliveries) ? snapshot.deliveries : [];
       const changed = new Map(result.deliveries.map((entry) => [String(entry?.id ?? ''), entry]));
-      collections.deliveries = rows.map((entry) => changed.get(String(entry?.id ?? '')) ?? entry);
+      collections.deliveries = [...result.deliveries, ...rows.filter(entry => !changed.has(String(entry?.id ?? '')))];
     }
     if (Array.isArray(result?.supplierLoans)) {
       const snapshot = await exportLocalCollections(['supplierLoans']);
       const rows = Array.isArray(snapshot?.supplierLoans) ? snapshot.supplierLoans : [];
       const changed = new Map(result.supplierLoans.map((entry) => [String(entry?.id ?? ''), entry]));
-      collections.supplierLoans = rows.map((entry) => changed.get(String(entry?.id ?? '')) ?? entry);
+      collections.supplierLoans = [...result.supplierLoans, ...rows.filter(entry => !changed.has(String(entry?.id ?? '')))];
+    }
+    for (const name of ['items', 'cashMovements', 'inventoryMovements']) {
+      if (!result[name]?.length) continue;
+      const snapshot = await exportLocalCollections([name]);
+      const rows = snapshot[name] ?? [];
+      const changed = new Map(result[name].map(row => [row.id, row]));
+      collections[name] = [...result[name], ...rows.filter(row => !changed.has(row.id))];
     }
     if (Object.keys(collections).length) await mergeLocalState(collections);
 
+    } catch {
+      ['items', 'contracts', 'rentals', 'cashMovements', 'inventoryMovements', 'deliveries', 'supplierLoans'].forEach(name => loadedServerCollections.delete(name));
+    }
     markServerStateStale('rentals.cancel:direct');
     announceDataChange({
       domain: 'rentals',
       method: 'cancel',
-      collections: ['items', 'contracts', 'rentals', 'deliveries', 'supplierLoans', 'inventoryMovements', 'systemAuditLog'],
+      collections: ['items', 'contracts', 'rentals', 'deliveries', 'supplierLoans', 'cashMovements', 'inventoryMovements', 'systemAuditLog'],
     });
-    return result?.rental ?? result;
+    return result?.rental ? { ...result.rental, __cancellationResult: result } : result;
   } catch (error) {
     if (error?.name === 'AbortError') {
       throw new Error('El servidor tardo demasiado en confirmar la anulacion. No la repitas: vuelve a abrir el contrato para verificar su estado.');
@@ -4238,14 +4262,16 @@ export const api = {
     create: (payload) => callBridge('rentals', 'create', true, payload),
     updateOperational: updateRentalOperationalOnServer,
     cancel: async (payload) => {
+      if (payload.economicSettlement && !shouldUseServerState()) throw new Error('La anulacion con liquidacion economica requiere conexion con el servidor.');
       try {
         const cancelled = await cancelContractOnServer(payload);
         if (cancelled) return cancelled;
       } catch (error) {
-        if (!shouldFallbackToBridgeOperation(error)) throw error;
+        if (payload.economicSettlement || !shouldFallbackToBridgeOperation(error)) throw error;
       }
       return callBridge('rentals', 'cancel', true, payload);
     },
+    getCancellationPreview: fetchCancellationPreview,
     remove: (payload) => callBridge('rentals', 'remove', true, payload),
     registerReturn: async (payload) => {
       if (shouldUseServerState()) return callDirectRentalReturnOperation(payload);

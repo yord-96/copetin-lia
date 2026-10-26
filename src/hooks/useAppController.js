@@ -2139,10 +2139,11 @@ export const useAppController = () => {
   const handleCancelOrderContract = async (payload) => {
     setError('');
     try {
-      const cancelled = await api.rentals.cancel({
+      const cancellationResult = await api.rentals.cancel({
         ...payload,
         ...getCurrentUserTrace(),
       });
+      const { __cancellationResult: bundle, ...cancelled } = cancellationResult;
       setRentals((current) => current.map((rental) => (
         rental.id === cancelled.id ? { ...rental, ...cancelled } : rental
       )));
@@ -2158,10 +2159,25 @@ export const useAppController = () => {
             cancellationPenaltyBs: cancelled.cancellationPenaltyBs,
             cancellationReason: cancelled.cancellationReason,
             cancellationCutoffDate: cancelled.cancellationCutoffDate,
+            cancellationSettlement: cancelled.cancellationSettlement,
+            ...(bundle?.contract ?? {}),
           }
           : contract
       )));
-      void loadData({ silent: true });
+      if (bundle) {
+        const merge = (current, rows) => {
+          const ids = new Set((rows ?? []).map(row => row.id));
+          return [...(rows ?? []), ...current.filter(row => !ids.has(row.id))];
+        };
+        setItems(current => merge(current, bundle.items));
+        setCashMovements(current => merge(current, bundle.cashMovements));
+        setInventoryMovements(current => merge(current, bundle.inventoryMovements));
+        setDeliveries(current => merge(current, bundle.deliveries));
+        setSupplierBundle(current => ({ ...current, loans: merge(current.loans ?? [], bundle.supplierLoans) }));
+        accountingOverviewLoadedRef.current = false;
+        accountingCommercialLoadedRef.current = false;
+        accountingCommercialStaleRef.current = true;
+      } else { void loadData({ silent: true }); }
       return cancelled;
     } catch (requestError) {
       setError(requestError.message || 'No se pudo anular el contrato.');

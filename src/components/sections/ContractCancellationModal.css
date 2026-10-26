@@ -1,0 +1,15 @@
+.orders-confirm-modal.contract-cancellation-modal { width:min(780px,96vw); max-height:92vh; overflow:auto; }
+.contract-cancellation-modal .cancellation-money-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:18px 0; }
+.cancellation-money-grid article { padding:12px; border:1px solid #8b98aa60; border-radius:10px; }
+.cancellation-money-grid span,.cancellation-receipts span { display:block; font-size:12px; opacity:.8; }
+.cancellation-money-grid strong { display:block; margin-top:5px; font-size:20px; }
+.contract-cancellation-modal .cancellation-receipts { max-height:120px; overflow:auto; border-bottom:1px solid #8b98aa60; }
+.contract-cancellation-modal .cancellation-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:0; border:0; margin:16px 0; }
+.cancellation-form-grid label { display:grid; gap:6px; font-size:13px; font-weight:700; min-width:0; }
+.cancellation-form-grid input,.cancellation-form-grid select,.cancellation-form-grid textarea { width:100%; min-width:0; box-sizing:border-box; border-radius:8px; padding:10px; }
+.cancellation-form-grid .cancellation-full { grid-column:1/-1; }
+.cancellation-form-grid textarea { min-height:75px; resize:vertical; }
+.contract-cancellation-modal .cancellation-final { display:flex; flex-wrap:wrap; gap:12px; padding:12px; border:1px solid #34966d; border-radius:9px; }
+.contract-cancellation-modal .cancellation-settled { padding:16px; border:1px solid #34966d; border-radius:10px; margin-top:14px; }
+.contract-cancellation-modal .cancellation-explanation { line-height:1.5; margin-top:14px; }
+@media(max-width:520px) { .contract-cancellation-modal .cancellation-form-grid,.contract-cancellation-modal .cancellation-money-grid { grid-template-columns:1fr; } }
