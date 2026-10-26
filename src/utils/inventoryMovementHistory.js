@@ -14,6 +14,11 @@ const getMovementDateKey = (movement = {}) => {
   return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
 };
 
+export const isStockAdjustmentMovement = (movement = {}) => movement.type === 'ajuste'
+  || movement.sourceType === 'manual_stock_movement'
+  || (!movement.sourceType && ['entrada', 'salida'].includes(movement.type)
+    && Object.prototype.hasOwnProperty.call(movement, 'minimumPhysicalStockAfter'));
+
 const getMovementTypeGroup = (movement = {}) => {
   const type = String(movement.type ?? '').trim().toLowerCase();
   if (type === 'entrada' || type === 'reinsercion') return 'entrada';
@@ -33,7 +38,8 @@ export const filterInventoryMovementHistory = (movements, filters = {}) => {
     const movementDate = getMovementDateKey(movement);
     if (from && (!movementDate || movementDate < from)) return false;
     if (to && (!movementDate || movementDate > to)) return false;
-    if (type !== 'all' && getMovementTypeGroup(movement) !== type) return false;
+    if (type === 'stock_adjustments' ? !isStockAdjustmentMovement(movement)
+      : type !== 'all' && getMovementTypeGroup(movement) !== type) return false;
     if (user && normalizeMovementSearchText(movement.userName) !== user) return false;
     if (queryTokens.length === 0) return true;
 

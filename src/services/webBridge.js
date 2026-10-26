@@ -1,4 +1,5 @@
 import { manageAttendance } from '../utils/attendanceManagement.js';
+import { normalizeInventoryPurchase } from '../utils/inventoryPurchase.js';
 import { pettyCashChannel, pettyCashBoxLabel, assertPettyCashChannel, pettyCashChannelBalance, assertPettyCashReplacement } from '../utils/pettyCashChannel.js';
 import { attendanceNeedsPhoto } from '../utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
@@ -12187,6 +12188,7 @@ export const applyInventoryStockMovement = (state, payload = {}) => {
   const itemId = payload?.itemId;
   const type = String(payload?.type ?? '').trim();
   const reason = String(payload?.reason ?? '').trim();
+  const purchase = type === 'entrada' ? normalizeInventoryPurchase(payload) : { purchaseDate: '', purchaseCostBs: null };
   const userName = String(payload?.userName ?? payload?.createdByName ?? payload?.createdBy ?? '').trim() || 'Sistema';
   const userRole = String(payload?.userRole ?? payload?.createdByRole ?? '').trim() || 'Operacion';
   const quantity = payload?.quantity !== undefined ? toInteger(payload.quantity, 'cantidad') : 0;
@@ -12208,7 +12210,9 @@ export const applyInventoryStockMovement = (state, payload = {}) => {
   state.items = Array.isArray(state.items) ? state.items : [];
   state.inventoryMovements = Array.isArray(state.inventoryMovements) ? state.inventoryMovements : [];
   const operationId = String(payload?.clientOperationId ?? '').trim();
-  const fingerprint = JSON.stringify([itemId, type, reason, type === 'ajuste' ? targetTotalStock : quantity]);
+  const fingerprintParts = [itemId, type, reason, type === 'ajuste' ? targetTotalStock : quantity];
+  if (purchase.purchaseDate || purchase.purchaseCostBs !== null) fingerprintParts.push(purchase);
+  const fingerprint = JSON.stringify(fingerprintParts);
   const existing = operationId && state.inventoryMovements.find(row => row.clientOperationId === operationId);
   if (existing) {
     if (existing.operationFingerprint !== fingerprint) {
@@ -12287,6 +12291,11 @@ export const applyInventoryStockMovement = (state, payload = {}) => {
   item.updatedAt = new Date().toISOString();
 
   createdMovement = {
+    sourceType: 'manual_stock_movement',
+    purchaseDate: purchase.purchaseDate || null,
+    purchaseCostBs: purchase.purchaseCostBs,
+    valueAmount: purchase.purchaseCostBs ?? 0,
+    operationDate: purchase.purchaseDate ? `${purchase.purchaseDate}T12:00:00-04:00` : null,
     clientOperationId: operationId || null,
     operationFingerprint: fingerprint,
     id: makeId('mov'),

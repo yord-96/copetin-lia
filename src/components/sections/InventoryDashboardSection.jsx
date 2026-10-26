@@ -4,6 +4,8 @@ import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '..
 import ProductImage from '../common/ProductImage';
 import { api } from '../../services/api';
 import InventoryOpsSection from './InventoryOpsSection';
+import { inventoryBusinessDate } from '../../utils/inventoryPurchase';
+import { isStockAdjustmentMovement } from '../../utils/inventoryMovementHistory';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -1527,6 +1529,8 @@ const EMPTY_COMBO_FORM = {
 };
 
 const EMPTY_MOVEMENT_FORM = {
+  purchaseDate: '',
+  purchaseCostBs: '',
   itemId: '',
   type: 'ajuste',
   quantity: '1',
@@ -1986,7 +1990,7 @@ function InventoryDashboardSection({
         query: deferredQuery,
         from: dateFrom,
         to: dateTo,
-        type: isAdjustModule ? 'ajuste' : movementTypeFilter,
+        type: isAdjustModule ? 'stock_adjustments' : movementTypeFilter,
         user: movementUserFilter,
         limit: INVENTORY_MOVEMENT_RENDER_LIMIT,
         offset: 0,
@@ -3235,6 +3239,7 @@ function InventoryDashboardSection({
           : linkedRental?.createdByRole ?? movement.userRole ?? 'Operacion';
       return {
         id: movement.id,
+        isStockAdjustment: isStockAdjustmentMovement(movement),
         createdAt: movement.operationDate
           ?? movement.deliveryDate
           ?? (isReservation ? linkedContract?.deliveryDate ?? linkedRental?.rentalDate : null)
@@ -3407,12 +3412,12 @@ function InventoryDashboardSection({
   const adjustRows = useMemo(
     () =>
       movementRows
-        .filter((row) => row.typeKey === 'ajuste')
+        .filter((row) => row.isStockAdjustment)
         .map((row, index) => ({
           ...row,
           adjustId: row.reference?.startsWith('AJ-') ? row.reference : `AJ-${String(index + 1).padStart(5, '0')}`,
           reason: row.observation,
-          reasonDetail: 'Ajuste de stock',
+          reasonDetail: row.typeLabel === 'Entrada' ? 'Entrada de stock' : row.typeLabel === 'Salida' ? 'Salida de stock' : 'Ajuste de stock',
         })),
     [movementRows],
   );
@@ -4087,6 +4092,8 @@ function InventoryDashboardSection({
     movementOperationRef.current = crypto.randomUUID();
     const initialTarget = type === 'ajuste' ? String(row?.total ?? row?.afterStock ?? '') : '';
     setMovementForm({
+      purchaseDate: inventoryBusinessDate(),
+      purchaseCostBs: '',
       itemId: row?.itemId ?? row?.id ?? '',
       type,
       quantity: '1',
@@ -4717,6 +4724,10 @@ function InventoryDashboardSection({
         return;
       }
       payload.quantity = quantity;
+      if (payload.type === 'entrada') {
+        payload.purchaseDate = movementForm.purchaseDate;
+        payload.purchaseCostBs = movementForm.purchaseCostBs;
+      }
     }
 
     movementSaveRef.current = true;
@@ -6376,7 +6387,7 @@ function InventoryDashboardSection({
                       <tr key={row.id}>
                         <td className="adjust-id-cell">
                           <strong>{row.adjustId}</strong>
-                          <span>Creado: {formatDateTime(row.createdAt)}</span>
+                          <span>Registrado: {formatDateTime(row.registeredAt ?? row.createdAt)}</span>
                         </td>
                         <td className="movement-date-cell">
                           <strong>{formatDateTime(row.createdAt).split(',')[0]}</strong>
@@ -6933,7 +6944,7 @@ function InventoryDashboardSection({
                 ) : (
                   <div className="inventory-kardex-history-wrap">
                     <table className="inventory-kardex-history">
-                      <thead><tr><th>{['available', 'outside'].includes(productKardexModal.metric) ? 'Fecha evento' : 'Fecha de registro'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
+                      <thead><tr><th>{['available', 'outside'].includes(productKardexModal.metric) ? 'Fecha evento' : 'Fecha del movimiento'}</th><th>Tipo / motivo</th><th>Referencia</th><th>Cambio</th><th>Anterior</th><th>Nuevo</th><th>Responsable</th></tr></thead>
                       <tbody>
                         {(productKardexModal.data.movements ?? []).map((movement) => {
                           const availabilityMetric = productKardexModal.metric === 'available';
@@ -6951,8 +6962,8 @@ function InventoryDashboardSection({
                             : '';
                           return (
                             <tr key={movement.id}>
-                              <td><strong>{datedCommitmentMetric ? (availabilityDateLabel || 'Sin fecha') : formatDateTime(movement.createdAt ?? movement.operationDate)}</strong></td>
-                              <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.displayReason || movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && (movement.displayReason || movement.reason) ? <small>{movement.detail}</small> : null}</td>
+                              <td><strong>{datedCommitmentMetric ? (availabilityDateLabel || 'Sin fecha') : formatDateTime(movement.operationDate ?? movement.createdAt)}</strong>{movement.purchaseDate ? <small>Registrado: {formatDateTime(movement.createdAt)}</small> : null}</td>
+                              <td><span className={`inventory-kardex-type ${delta >= 0 ? 'positive' : 'negative'}`}>{movement.type || 'Movimiento'}</span><strong>{movement.displayReason || movement.reason || movement.detail || 'Sin detalle'}</strong>{movement.detail && (movement.displayReason || movement.reason) ? <small>{movement.detail}</small> : null}{movement.purchaseCostBs != null ? <small>Costo total de compra: {formatBs(movement.purchaseCostBs)}</small> : null}</td>
                               <td>{movement.displayReference || movement.contractCode || movement.reference || '-'}</td>
                               <td><strong className={delta >= 0 ? 'positive' : 'negative'}>{delta > 0 ? `+${delta}` : delta}</strong></td>
                               <td>{before ?? '-'}</td>
@@ -7547,8 +7558,22 @@ function InventoryDashboardSection({
               )}
               <label className="full-width">
                 Motivo
-                <input value={movementForm.reason} onChange={(event) => setMovementForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Ej: Conteo fisico, reposicion, rotura, etc." required />
+                <input value={movementForm.reason} onChange={(event) => setMovementForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Ej: Compra, conteo fisico, reposicion, rotura..." required />
               </label>
+              {movementForm.type === 'entrada' ? (
+                <>
+                  <label>
+                    Fecha de compra / entrada
+                    <input type="date" value={movementForm.purchaseDate} max={inventoryBusinessDate()} onChange={event => setMovementForm(current => ({ ...current, purchaseDate: event.target.value }))} required />
+                    <small>Puedes registrar una compra de una fecha pasada.</small>
+                  </label>
+                  <label>
+                    Costo total de compra (Bs, opcional)
+                    <input type="number" min="0" step="0.01" value={movementForm.purchaseCostBs} onChange={event => setMovementForm(current => ({ ...current, purchaseCostBs: event.target.value }))} placeholder="Sin costo registrado" />
+                    <small>Valor de referencia para el historial de inventario.</small>
+                  </label>
+                </>
+              ) : null}
             </fieldset>
             {movementError ? <p className="status error reset-modal-error">{movementError}</p> : null}
             <div className="reset-modal-actions">

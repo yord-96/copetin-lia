@@ -38,7 +38,7 @@ test('small stock operations persist purchases and kardex atomically without upl
   const headers = { 'X-App-Internal-Key': 'stock-movement-test', 'Content-Type': 'application/json' };
   const send = payload => fetch(`${base}/inventory/movements`, { method: 'POST', headers, body: JSON.stringify(payload) });
   const get = async url => { const response = await fetch(base + url, { headers }); assert.equal(response.status, 200); return response.json(); };
-  const purchase = { itemId: 'plate', type: 'entrada', quantity: 350, reason: 'COMPRA EL 02/09/2026 DE DIA CRUZ MELISA', userName: 'Inventario', clientOperationId: 'purchase-1' };
+  const purchase = { itemId: 'plate', type: 'entrada', quantity: 350, purchaseDate: '2026-09-02', purchaseCostBs: 1750, reason: 'COMPRA EL 02/09/2026 DE DIA CRUZ MELISA', userName: 'Inventario', clientOperationId: 'purchase-1' };
   try {
     const responses = await Promise.all([send(purchase), send(purchase)]);
     for (const response of responses) assert.equal(response.status, 200, await response.clone().text());
@@ -49,8 +49,15 @@ test('small stock operations persist purchases and kardex atomically without upl
     assert.equal(first.movement.beforeTotalStock, 200);
     assert.equal(first.movement.afterTotalStock, 550);
     assert.equal(first.movement.reason, purchase.reason);
+    assert.equal(first.movement.purchaseDate, '2026-09-02');
+    assert.equal(first.movement.purchaseCostBs, 1750);
+    assert.equal(first.movement.valueAmount, 1750);
+    assert.equal(first.movement.operationDate, '2026-09-02T12:00:00-04:00');
     assert.ok(Number.isFinite(Date.parse(first.movement.createdAt)));
     assert.equal((await send({ ...purchase, quantity: 351 })).status, 409);
+    assert.equal((await send({ ...purchase, purchaseCostBs: 1800 })).status, 409);
+    assert.equal((await send({ ...purchase, clientOperationId: 'future', purchaseDate: '2999-01-01' })).status, 400);
+    assert.equal((await send({ ...purchase, clientOperationId: 'invalid-cost', purchaseCostBs: -1 })).status, 400);
     assert.equal((await send({ ...purchase, clientOperationId: 'negative', quantity: -1 })).status, 400);
     assert.equal((await send({ ...purchase, clientOperationId: 'stale', type: 'ajuste', targetTotalStock: 201, expectedTotalStock: 200 })).status, 409);
     const removal = await send({ itemId: 'plate', type: 'salida', quantity: 15, reason: 'ROTURA EN ALMACEN', clientOperationId: 'loss-1' });
@@ -60,6 +67,11 @@ test('small stock operations persist purchases and kardex atomically without upl
     assert.equal(increases.movements[0].physicalDelta, 350);
     assert.equal(increases.movements[0].reason, purchase.reason);
     assert.equal(increases.movements[0].userName, 'Inventario');
+    assert.equal(increases.movements[0].purchaseCostBs, 1750);
+    const historical = await get('/inventory/movements-history?type=stock_adjustments&from=2026-09-02&to=2026-09-02');
+    assert.equal(historical.total, 1);
+    assert.equal(historical.rows[0].id, first.movement.id);
+    assert.equal(historical.rows[0].purchaseCostBs, 1750);
     const decreases = await get('/inventory/products/plate/kardex?metric=decreases');
     assert.equal(decreases.movements.length, 1);
     assert.equal(decreases.movements[0].physicalDelta, -15);
@@ -71,6 +83,7 @@ test('small stock operations persist purchases and kardex atomically without upl
     const snapshot = (await getStateSnapshot()).state;
     assert.deepEqual(snapshot.deliveries, deliveries);
     assert.equal(snapshot.inventoryMovements.length, 2);
+    assert.deepEqual(snapshot.cashMovements ?? [], []);
   } finally {
     await new Promise(resolve => server.close(resolve));
     await fs.rm(directory, { recursive: true, force: true });

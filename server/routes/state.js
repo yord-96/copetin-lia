@@ -8248,7 +8248,7 @@ const summarizeInventoryMovement = (movement = {}) => {
     'beforeAvailableStock', 'afterAvailableStock', 'reservedStockAfter', 'userName',
     'userRole', 'createdAt', 'operationDate', 'deliveryDate', 'status', 'valueAmount',
     'imageUrl', 'imageDataUrl', 'displayTypeLabel', 'operationalQuantity', 'sourceType',
-    'sourceRentalId', 'sourceId', 'lineKey', 'stockEffect',
+    'sourceRentalId', 'sourceId', 'lineKey', 'stockEffect', 'purchaseDate', 'purchaseCostBs', 'minimumPhysicalStockAfter',
   ];
   return Object.fromEntries(fields
     .filter((field) => movement?.[field] !== undefined && movement?.[field] !== null && movement?.[field] !== '')
