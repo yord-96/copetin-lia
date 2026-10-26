@@ -59,7 +59,7 @@ const getCollectionStatusMeta = (entry = {}) => {
   return COLLECTION_STATUS_META.pendiente;
 };
 
-function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summary: {} }, formatBs }) {
+function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summary: {} }, formatBs, onReinsertRepairedDamage }) {
   const [activeView, setActiveView] = useState('danado');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -72,6 +72,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
   const [repairQuantity, setRepairQuantity] = useState('1');
   const [repairNote, setRepairNote] = useState('');
   const [processingRepair, setProcessingRepair] = useState(false);
+  const repairSaveRef = useRef(false);
   const [discardDialog, setDiscardDialog] = useState(null);
   const [processingDiscard, setProcessingDiscard] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -224,7 +225,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
 
   const handleRepairSubmit = async (event) => {
     event.preventDefault();
-    if (!repairDialog || processingRepair) return;
+    if (!repairDialog || processingRepair || repairSaveRef.current) return;
     const maxQty = Math.max(0, Math.trunc(Number(repairDialog?.repairableQuantity ?? 0)));
     const quantity = Math.trunc(Number(repairQuantity ?? 0));
     if (!Number.isFinite(quantity) || quantity <= 0 || quantity > maxQty) {
@@ -233,10 +234,11 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
       return;
     }
 
+    repairSaveRef.current = true;
     setProcessingRepair(true);
     setFeedback('');
     try {
-      await api.inventory.reinsertRepairedDamage({
+      await onReinsertRepairedDamage({
         rentalId: repairDialog.rentalId,
         itemId: repairDialog.itemId,
         reportIndex: repairDialog.reportIndex,
@@ -254,6 +256,7 @@ function InventoryOpsSection({ damageLossOverview = { rows: [], total: 0, summar
       setFeedback(error?.message || 'No se pudo reinsertar el item reparado.');
       setFeedbackType('error');
     } finally {
+      repairSaveRef.current = false;
       setProcessingRepair(false);
     }
   };

@@ -1553,6 +1553,7 @@ function InventoryDashboardSection({
   cancelledRentals = [],
   deliveries = [],
   damageLossOverview = { rows: [], total: 0, summary: {} },
+  onReinsertRepairedDamage,
   inventoryMovements = [],
   inventoryMovementStats = null,
   moduleLoading = false,
@@ -5505,6 +5506,7 @@ function InventoryDashboardSection({
 
         <InventoryOpsSection
           damageLossOverview={damageLossOverview}
+          onReinsertRepairedDamage={onReinsertRepairedDamage}
           formatBs={formatBs}
         />
       </section>

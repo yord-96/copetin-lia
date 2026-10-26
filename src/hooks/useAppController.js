@@ -1,4 +1,5 @@
 import { createAttendanceRecordLoader } from '../utils/attendanceRecordLoader';
+import { applyDamageRepairToOverview } from '../utils/damageRepairOverview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { canAccessTab, getDefaultTabForUser, getUserCompanyAccess, getUserDisplayRole } from '../utils/permissions';
@@ -880,17 +881,13 @@ export const useAppController = () => {
         window.clearTimeout(refreshTimer);
         refreshTimer = window.setTimeout(async () => {
           try {
-            const [overview, inventoryData] = await Promise.all([
-              api.inventory.getDamageLossOverview(),
-              api.inventory.list(),
-            ]);
+            const overview = await api.inventory.getDamageLossOverview();
             if (!disposed) {
               setDamageLossOverview({
                 rows: Array.isArray(overview?.rows) ? overview.rows : [],
                 total: Number(overview?.total ?? overview?.rows?.length ?? 0),
                 summary: overview?.summary ?? {},
               });
-              setItems(Array.isArray(inventoryData) ? inventoryData : []);
             }
           } catch (refreshError) {
             console.warn('[copetin] No se pudo refrescar Daños y Faltantes.', refreshError);
@@ -1650,6 +1647,18 @@ export const useAppController = () => {
       setError(requestError.message || 'No se pudo eliminar el combo de inventario.');
       throw requestError;
     }
+  };
+
+  const handleReinsertRepairedDamage = async (payload) => {
+    const result = await api.inventory.reinsertRepairedDamage({ ...payload, ...getCurrentUserTrace() });
+    setDamageLossOverview(current => applyDamageRepairToOverview(current, result));
+    if (result.item?.id) {
+      setItems(current => current.map(item => item.id === result.item.id ? { ...item, ...result.item } : item));
+    }
+    if (result.movement?.id) {
+      setInventoryMovements(current => [result.movement, ...current.filter(row => row.id !== result.movement.id)]);
+    }
+    return result;
   };
 
   const handleCreateInventoryMovement = async (payload) => {
@@ -3279,6 +3288,7 @@ export const useAppController = () => {
     handleUpdateInventoryCombo,
     handleRemoveInventoryCombo,
     handleCreateInventoryMovement,
+    handleReinsertRepairedDamage,
     handleProcessStockRecovery,
     handleOpenCashSession,
     handleCloseCashSession,

@@ -9114,7 +9114,8 @@ router.post('/__copetin_db/inventory/damage-loss/reinsert', async (req, res, nex
 
       const damagedQty = Math.max(0, Math.trunc(Number(line?.damagedQty ?? 0)));
       const repairedBefore = Math.min(damagedQty, Math.max(0, Math.trunc(Number(line?.damageRepairedQty ?? 0))));
-      const pendingRepairQty = Math.max(0, damagedQty - repairedBefore);
+      const discardedQty = Math.min(damagedQty, Math.max(0, Math.trunc(Number(line?.damageDiscardedToMissingQty ?? 0))));
+      const pendingRepairQty = Math.max(0, damagedQty - repairedBefore - discardedQty);
       if (damagedQty <= 0 || pendingRepairQty <= 0) {
         const error = new Error('Este daño ya fue reinsertado completamente o no tiene unidades dañadas.');
         error.statusCode = 409;
@@ -9179,6 +9180,14 @@ router.post('/__copetin_db/inventory/damage-loss/reinsert', async (req, res, nex
         reportKind,
         reportIndex,
         remainingRepairQty: pendingRepairQty - quantity,
+        repairUpdate: {
+          rentalId: rental.id, itemId: item.id, reportKind, reportIndex,
+          repairedQty: line.damageRepairedQty,
+          repairableQuantity: pendingRepairQty - quantity,
+          repairedAt: line.damageRepairedAt,
+          repairedByName: line.damageRepairedByName,
+          repairNote: line.damageRepairNote,
+        },
         movement: structuredClone(movement),
       };
       return state;

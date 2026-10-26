@@ -783,6 +783,7 @@ function AdminApp() {
             deliveries={controller.deliveries}
             stockRecoveries={controller.stockRecoveries}
             damageLossOverview={controller.damageLossOverview}
+            onReinsertRepairedDamage={controller.handleReinsertRepairedDamage}
             inventoryMovements={controller.inventoryMovements}
             inventoryMovementStats={controller.inventoryMovementStats}
             moduleLoading={controller.inventoryModuleLoading}
