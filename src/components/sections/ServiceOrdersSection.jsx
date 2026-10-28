@@ -1,4 +1,5 @@
 import ContractCancellationModal from './ContractCancellationModal';
+import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
 import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
 import { getContractWhatsAppContacts, openContractWhatsAppContact } from '../../utils/contractWhatsApp.js';
@@ -563,8 +564,8 @@ const getEconomicMovementKind = (movement) => {
     || type.includes('ingreso')
     || (Boolean(receiptCode) && isBigCash && amount > 0);
   if (isVoidedCashMovement(movement)) return 'voided';
+  if (getCashMovementAmount(movement) < 0 || type.includes('egreso') || tag === 'guarantee_refund' || category.includes('devolucion') || category.includes('garantia_devuelta')) return 'expense';
   if (amount > 0 && isCollection) return 'income';
-  if (type.includes('egreso') || tag === 'guarantee_refund' || category.includes('devolucion')) return 'expense';
   if (type.includes('saldo') || type.includes('liquidacion') || type.includes('pendiente')) return 'pending';
   return 'income';
 };
@@ -3813,7 +3814,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const resetLedgerOverride = resetLedgerKey
       ? economicResetLedgerByContract[resetLedgerKey]
       : undefined;
-    const rawStoredEconomicLedger = (
+    const rawStoredEconomicLedger = reconcileGuaranteeRefundLedger({ ...contract, economicLedger: (
       Array.isArray(activeEconomicResetLedger)
         ? activeEconomicResetLedger
         : Array.isArray(resetLedgerOverride)
@@ -3821,7 +3822,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         : Array.isArray(contract?.economicLedger)
           ? contract.economicLedger
           : []
-    )
+    ) }, postedMovements)
       .map(normalizeEconomicLedgerEntry)
       .filter((entry) => !entry.deletedAt);
 
@@ -9243,6 +9244,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const rememberEconomicCashResult = (result) => {
+    if (Array.isArray(result?.contract?.economicLedger)) {
+      const ledger = result.contract.economicLedger;
+      setContractEconomicsTarget(result.contract);
+      setActiveEconomicResetLedger(ledger);
+      setEconomicResetLedgerByContract(current => ({ ...current, [result.contract.id]: ledger }));
+    }
     const movements = [
       ...(Array.isArray(result?.movements) ? result.movements : []),
       result?.movement,
@@ -10582,7 +10589,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           cashReceiptCode: String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? '').trim(),
           cashRegisteredAt: movement?.createdAt ?? result?.createdAt ?? new Date().toISOString(),
         };
-        const ledgerSyncPromise = saveContractEconomicLedgerRows(
+        const ledgerSyncPromise = result?.contract ? Promise.resolve(result.contract) : saveContractEconomicLedgerRows(
           [...baseLedger, applicationEntry, refundEntry],
           `Garantía liquidada: ${formatBs(plan.rentalAppliedBs)} aplicada y ${formatBs(plan.refundBs)} devuelta con recibo.`,
           { force: true },
@@ -10709,13 +10716,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         cashReceiptCode: String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? result?.receipt ?? '').trim(),
         cashRegisteredAt: movement?.createdAt ?? result?.createdAt ?? new Date().toISOString(),
       };
-      const updated = await saveContractEconomicLedgerRows(
+      const updated = result?.contract ?? await saveContractEconomicLedgerRows(
         [...(contractEconomicsData.economicLedger ?? []), entry],
         `Devolucion de ${refundSource === 'surplus' ? 'excedente' : 'garantia'} registrada en Caja Grande con recibo.`,
         { force: true },
       );
       if (updated) {
         resetContractEconomicLedgerForm();
+        setActionFeedback('Devolucion registrada en Caja Grande y en la hoja flexible con el mismo recibo.');
         setContractEconomicsGuaranteeRefundDraft({
           source: 'guarantee',
           amountBs: '',

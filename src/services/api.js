@@ -2896,14 +2896,21 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
       lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
     }
-    if (path === '/cash/movement') {
-      await applyDirectCashResultLocally(result);
+    if (path === '/cash/movement' || path === '/cash/manual-economic-movement') {
+      try { await applyDirectCashResultLocally(result); }
+      catch (cacheError) {
+        localServerCommitSerial += 1;
+        markServerStateStale('cash-confirmed-cache-refresh');
+        console.warn('[copetin] Operacion de caja confirmada; cache local pendiente.', cacheError);
+      }
     }
     const method = path.includes('update-receipt')
       ? 'updateMovementReceipt'
       : path.includes('collect')
         ? 'collectReceivable'
         : 'createManualMovement';
+    if (result?.contract) notifySubscribers({ source: browserTabId, domain: 'cash', method,
+      contract: result.contract, rental: result.rental, movement: result.movement });
     announceDataChange({ domain: 'cash', method });
     return result;
   } catch (error) {
@@ -2921,14 +2928,21 @@ const applyDirectCashResultLocally = async (result = {}) => {
       : [];
   if (!createdRows.length) return;
 
-  const local = await exportLocalCollections(['cashMovements', 'cashSessions']);
+  const local = await exportLocalCollections(['cashMovements', 'cashSessions', 'contracts', 'rentals']);
   const currentRows = Array.isArray(local?.cashMovements) ? local.cashMovements : [];
   const byId = new Map(currentRows.map((row) => [String(row?.id ?? ''), row]));
   createdRows.forEach((row) => {
     const id = String(row?.id ?? '').trim();
     if (id) byId.set(id, row);
   });
-  await mergeLocalState({ cashMovements: [...byId.values()] });
+  const changes = { cashMovements: [...byId.values()] };
+  for (const [name, row] of [['contracts', result.contract], ['rentals', result.rental]]) {
+    if (!row?.id) continue;
+    const rows = new Map((local?.[name] ?? []).map(value => [String(value.id), value]));
+    rows.set(String(row.id), row);
+    changes[name] = [...rows.values()];
+  }
+  await mergeLocalState(changes);
   loadedServerCollections.add('cashMovements');
   localServerCommitSerial += 1;
 };

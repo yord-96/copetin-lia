@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
+import { reconcileGuaranteeRefundLedger, isConfirmedGuaranteeRefund } from '../../src/utils/guaranteeRefundLedger.js';
+import { createOrdersCashIndex } from '../services/ordersCashIndex.js';
 
 const MIGRATION_ID = 'repair-returned-guarantee-refunds-v2';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -238,7 +240,8 @@ export const runLegacyGuaranteeRefundRepair = async () => {
   const snapshot = await getStateSnapshot();
   if (!snapshot.initialized || !snapshot.state) return { repaired: [], backupPath: null };
   const candidates = findLegacyReturnedGuaranteeRefunds(snapshot.state);
-  if (candidates.length === 0) return { repaired: [], backupPath: null };
+  const ledgerRepairs = findMissingRefundLedgerEntries(snapshot.state);
+  if (candidates.length === 0 && ledgerRepairs.length === 0) return { repaired: [], backupPath: null };
 
   await fs.mkdir(backupDirectory, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -254,12 +257,37 @@ export const runLegacyGuaranteeRefundRepair = async () => {
   await updateStateSnapshot((state) => {
     const result = repairLegacyReturnedGuaranteeRefunds(state);
     repaired = result.repaired;
+    repairMissingRefundLedgerEntries(state);
     return result.state;
   });
   console.info('[migration] Devoluciones historicas de garantia regularizadas.', {
     repairedCount: repaired.length,
+    linkedLedgerContracts: ledgerRepairs.length,
     repairedTotalBs: money(repaired.reduce((sum, row) => sum + row.amountBs, 0)),
     backupPath,
   });
   return { repaired, backupPath };
 };
+
+export function findMissingRefundLedgerEntries(state = {}) {
+  const refunds = (state.cashMovements ?? []).filter(isConfirmedGuaranteeRefund);
+  const cashForContract = createOrdersCashIndex(refunds);
+  return (state.contracts ?? []).filter(row => !row.deletedAt).flatMap(contract => {
+    const economicLedger = reconcileGuaranteeRefundLedger(contract, cashForContract(contract));
+    return JSON.stringify(economicLedger) === JSON.stringify(contract.economicLedger ?? [])
+      ? [] : [{ contract, economicLedger }];
+  });
+}
+
+export function repairMissingRefundLedgerEntries(state) {
+  const repairs = findMissingRefundLedgerEntries(state);
+  for (const { contract, economicLedger } of repairs) contract.economicLedger = economicLedger;
+  if (repairs.length) {
+    state.systemAuditLog ??= [];
+    state.systemAuditLog.unshift({ id: `refund-ledger-repair-${Date.now()}`,
+      type: 'guarantee_refund_ledger_repaired', createdAt: new Date().toISOString(),
+      userName: 'Sistema', detail: `${repairs.length} contrato(s): devoluciones existentes vinculadas a la hoja flexible. Sin nuevos movimientos de caja.`,
+      contractIds: repairs.map(row => row.contract.id) });
+  }
+  return repairs;
+}

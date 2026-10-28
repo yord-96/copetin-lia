@@ -1,4 +1,5 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
+import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundLedger.js';
 import { cancellationRecords, cancellationPreview, applyCancellationSettlement } from '../services/contractCancellation.js';
 import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
@@ -4839,13 +4840,22 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
 
     let movement = null;
     let updatedRental = null;
+    let updatedRefundContract = null;
     let reconciliation = null;
     const result = await updateStateSnapshot((state) => {
       state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
       state.rentals = Array.isArray(state.rentals) ? state.rentals : [];
       state.contracts = Array.isArray(state.contracts) ? state.contracts : [];
       const duplicate = findDirectOperation(state, payload.clientOperationId);
-      if (duplicate) { movement = duplicate; return state; }
+      if (duplicate) {
+        movement = duplicate;
+        if (isGuaranteeRefund) {
+          const contract = state.contracts.find(row => (duplicate.linkedContractId && row.id === duplicate.linkedContractId) || (duplicate.linkedRentalId && row.rentalId === duplicate.linkedRentalId));
+          if (contract) { contract.economicLedger = reconcileGuaranteeRefundLedger(contract, state.cashMovements); updatedRefundContract = structuredClone(contract); }
+          updatedRental = state.rentals.find(row => row.id === duplicate.linkedRentalId) ?? null;
+        }
+        return state;
+      }
 
       let amountBs = requestedAmountBs;
       if (isGuaranteeRefund) {
@@ -4961,9 +4971,9 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
 
       movement = buildDirectMovement(state, {
         ...payload,
-        type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
-        amountBs: payload.type === 'egreso' ? -amountBs : amountBs,
-        receivedAmountBs: payload.type === 'egreso' ? 0 : amountBs,
+        type: isGuaranteeRefund || payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
+        amountBs: isGuaranteeRefund || payload.type === 'egreso' ? -amountBs : amountBs,
+        receivedAmountBs: isGuaranteeRefund || payload.type === 'egreso' ? 0 : amountBs,
       });
       if (isGuaranteeRefund && reconciliation) {
         movement.guaranteePaidBs = reconciliation.guaranteePaidBs;
@@ -4973,9 +4983,17 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           || `Garantia recibida Bs ${reconciliation.guaranteePaidBs.toFixed(2)} | Aplicada Bs ${reconciliation.guaranteeAppliedBs.toFixed(2)} | Devuelta ahora Bs ${reconciliation.refundBs.toFixed(2)} | Saldo garantia Bs ${reconciliation.remainingGuaranteeBs.toFixed(2)}`;
       }
       state.cashMovements.push(movement);
+      if (isGuaranteeRefund) {
+        const contract = state.contracts.find(row => (movement.linkedContractId && row.id === movement.linkedContractId) || (movement.linkedRentalId && row.rentalId === movement.linkedRentalId));
+        if (contract) {
+          contract.economicLedger = reconcileGuaranteeRefundLedger(contract, [movement]);
+          contract.economicLedgerUpdatedAt = movement.createdAt;
+          updatedRefundContract = structuredClone(contract);
+        }
+      }
       return state;
     });
-    res.json({ ok: true, movement, rental: updatedRental, reconciliation, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+    res.json({ ok: true, movement, contract: updatedRefundContract, rental: updatedRental, reconciliation, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
   } catch (error) {
     if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     next(error);

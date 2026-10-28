@@ -426,7 +426,7 @@ export const useAppController = () => {
       accountingOverviewLoadedRef.current = true;
     }).catch((accountingError) => {
       deferredGroupsLoadedRef.current.delete('accounting-operations');
-      setError(accountingError?.message || 'No se pudo cargar Contabilidad.');
+      if (!silent) setError(accountingError?.message || 'No se pudo cargar Contabilidad.');
       throw accountingError;
     }).finally(() => {
       accountingOverviewRequestRef.current = null;
@@ -477,7 +477,7 @@ export const useAppController = () => {
     await request;
   }, []);
 
-  const prepareTabData = useCallback(async (targetTab) => {
+  const prepareTabData = useCallback(async (targetTab, { silent = false } = {}) => {
     const requestedTab = String(targetTab);
     // Otros modulos comparten colecciones parciales. Al volver a Ordenes,
     // confirmar su listado completo (incluidos anulados y ocultos).
@@ -543,7 +543,7 @@ export const useAppController = () => {
       await ordersOverviewRequestRef.current;
       return;
     }
-    setOrdersModuleLoading(true);
+    if (!silent) setOrdersModuleLoading(true);
     const request = api.sync.getMobileOrdersOverview()
       .then((overview) => {
         setContracts(Array.isArray(overview?.contracts) ? overview.contracts : []);
@@ -558,12 +558,12 @@ export const useAppController = () => {
         ordersOverviewLoadedRef.current = true;
       })
       .catch((ordersError) => {
-        setError(ordersError.message || 'No se pudo cargar Ordenes.');
+        if (!silent && document.visibilityState !== 'hidden') setError(ordersError.message || 'No se pudo cargar Ordenes.');
         throw ordersError;
       })
       .finally(() => {
         ordersOverviewRequestRef.current = null;
-        setOrdersModuleLoading(false);
+        if (!silent) setOrdersModuleLoading(false);
       });
 
     ordersOverviewRequestRef.current = request;
@@ -860,18 +860,34 @@ export const useAppController = () => {
       }
     };
 
+    let ordersRefreshPending = false;
     const refreshOrderContractsAndRentals = async () => {
+      if (disposed) return;
+      if (document.visibilityState === 'hidden') { ordersRefreshPending = true; return; }
+      ordersRefreshPending = false;
       try {
         ordersOverviewLoadedRef.current = false;
         ordersEditorDataLoadedRef.current = false;
-        await prepareTabData('alquiler');
+        await prepareTabData('alquiler', { silent: true });
       } catch (refreshError) {
         console.warn('[copetin] No se pudieron sincronizar contratos y alquileres de las ordenes.', refreshError);
+        if (!disposed) refreshTimer = window.setTimeout(refreshOrderContractsAndRentals, 15000);
       }
     };
+    const resumeOrders = () => {
+      if (activeTab !== 'alquiler' || !ordersRefreshPending || document.visibilityState !== 'visible') return;
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(refreshOrderContractsAndRentals, 450);
+    };
+    document.addEventListener('visibilitychange', resumeOrders);
 
     const unsubscribe = api.sync.subscribe((event) => {
       if (disposed) return;
+      if (event?.domain === 'cash' && event?.contract?.id) {
+        setContracts(current => current.map(row => row.id === event.contract.id ? event.contract : row));
+        if (event.rental?.id) setRentals(current => current.map(row => row.id === event.rental.id ? event.rental : row));
+        if (event.movement?.id) setCashMovements(current => [...current.filter(row => row.id !== event.movement.id), event.movement]);
+      }
 
       if (
         String(activeTab) === 'inventario_mantenimiento'
@@ -1036,6 +1052,7 @@ export const useAppController = () => {
 
     return () => {
       disposed = true;
+      document.removeEventListener('visibilitychange', resumeOrders);
       window.clearTimeout(refreshTimer);
       window.clearTimeout(presenceTimer);
       unsubscribe();

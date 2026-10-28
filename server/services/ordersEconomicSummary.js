@@ -1,5 +1,6 @@
 import { resolveGuaranteeReceivedBs } from '../../src/utils/guaranteeSettlement.js';
 import { reconcileContractDocumentPayments } from '../../src/utils/contractDocumentPayments.js';
+import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundLedger.js';
 const toPositiveRoundedNumber = (value) => {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) return 0;
@@ -79,7 +80,7 @@ export const getOrdersGuaranteeEconomicSummary = (contract = {}, cashMovements =
   const declaredBs = toPositiveRoundedNumber(
     contract?.totals?.guaranteeBs ?? contract?.guarantee?.amountBs ?? 0,
   );
-  const rawLedger = Array.isArray(contract?.economicLedger) ? contract.economicLedger : [];
+  const rawLedger = reconcileGuaranteeRefundLedger(contract, cashMovements);
   const ledger = rawLedger.filter((entry) => !entry?.deletedAt);
   const byId = new Map(ledger
     .map((entry) => [String(entry?.id ?? '').trim(), entry])
