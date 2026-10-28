@@ -38,3 +38,48 @@ test('unbacked payments, changed finances, negative allocations and missing refu
     assert.deepEqual(state, before);
   }
 });
+
+test('2489: corrected receipt 1063 supersedes stale paid snapshot 1663 without creating income', () => {
+  const contract = { id: 'c', rentalId: 'r', contractCode: '2489', economicResetAt: '2026-10-28T18:00:00Z', economicResetVersion: 1, payment: { paidAtApprovalBs: 1663 },
+    economicLedger: [{ id: 'initial-payment-c', type: 'deposit', amountBs: 1663, isCashRegistered: false },
+      { id: 'confirmed-deposit', type: 'deposit', amountBs: 1063, cashMovementId: 'receipt', isCashRegistered: true }] };
+  const rental = { id: 'r', payment: { paidAtRentalBs: 1663, cashCollectedBs: 1663 } };
+  const state = { contracts: [contract], rentals: [rental], cashMovements: [
+    { id: 'old', linkedContractId: 'c', cashBoxType: 'BIG_CASH', amountBs: 1663, voidedAt: 'now' },
+    { id: 'receipt', linkedContractId: 'c', cashBoxType: 'BIG_CASH', type: 'ingreso_alquiler', amountBs: 1063, receiptCode: 'RC-14405', paymentMethod: 'qr', paymentAccount: 'MERCANTIL' }] };
+  const preview = cancellationPreview(state, contract, rental);
+  assert.equal(preview.unbackedBs, 0); assert.equal(preview.availableBs, 1063);
+  const result = applyCancellationSettlement(state, contract, rental, { reason: 'Acuerdo con cliente', economicSettlement: {
+    operationId: '2489', version: preview.version, retainedPenaltyBs: 332.60, refundBs: 730.40, paymentMethod: 'qr', paymentAccount: 'MERCANTIL',
+  } }, payload => ({ ...payload, id: 'refund', receiptCode: 'RC-new' }));
+  assert.equal(result.movement.amountBs, -730.4); assert.equal(result.settlement.retainedPenaltyBs, 332.6);
+  assert.equal(state.cashMovements.filter(row => !row.voidedAt).reduce((sum, row) => sum + row.amountBs, 0), 332.6);
+});
+
+test('corrected initial receipt is reconciled by initial identity, but unrelated unbacked deposits still block', () => {
+  const contract = { id: 'c', payment: { paidAtApprovalBs: 1663 }, economicLedger: [
+    { id: 'initial-payment-c', type: 'deposit', amountBs: 1663 },
+  ] };
+  const rental = { id: 'r', payment: { paidAtRentalBs: 1663 } };
+  const state = { cashMovements: [{ id: 'receipt', linkedContractId: 'c', cashBoxType: 'BIG_CASH',
+    type: 'ingreso_alquiler', accountingTag: 'initial_rental_payment', amountBs: 1063 }] };
+  assert.equal(cancellationPreview(state, contract, rental).unbackedBs, 0);
+  contract.economicLedger.push({ id: 'unconfirmed-extra-deposit', type: 'deposit', amountBs: 600 });
+  assert.equal(cancellationPreview(state, contract, rental).unbackedBs, 600);
+});
+
+test('zero receipts after economic reset allows cancellation without fee, refund or new cash', () => {
+  const contract = { id: 'c', economicResetAt: '2026-10-28', economicResetVersion: 1,
+    payment: { paidAtApprovalBs: 0 }, economicLedger: [] };
+  const rental = { id: 'r', payment: { paidAtRentalBs: 1663, cashCollectedBs: 1663 } };
+  const state = { cashMovements: [{ id: 'old', linkedContractId: 'c', amountBs: 1663, voidedAt: 'reset' }] };
+  const preview = cancellationPreview(state, contract, rental);
+  assert.equal(preview.availableBs, 0); assert.equal(preview.unbackedBs, 0);
+  const before = structuredClone(state.cashMovements);
+  applyCancellationSettlement(state, contract, rental, { reason: 'Sin cobros vigentes', economicSettlement: {
+    operationId: 'zero-reset', version: preview.version, retainedPenaltyBs: 0, refundBs: 0,
+  } }, () => { throw new Error('Must not create any cash'); });
+  assert.deepEqual(state.cashMovements, before);
+  contract.economicLedger.push({ id: 'missing', type: 'deposit', amountBs: 50 });
+  assert.equal(cancellationPreview(state, contract, rental).unbackedBs, 50);
+});

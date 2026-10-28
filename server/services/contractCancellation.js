@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { cashMovementMatchesContractReferences } from '../../src/utils/contractCashLinks.js';
+import { reconcileContractDocumentPayments } from '../../src/utils/contractDocumentPayments.js';
 
 const money = value => Math.round(Number(value || 0) * 100) / 100;
 const active = row => row && !row.deletedAt && !row.voidedAt && !row.voidedBy
@@ -30,7 +31,25 @@ export const cancellationPreview = (state, contract, rental) => {
   const guaranteeReceivedBs = money(receipts.reduce((sum, row) => sum + (Number(row.guaranteeAllocationBs) > 0
     ? Number(row.guaranteeAllocationBs) : /garantia|guarantee/i.test([row.type, row.category, row.accountingTag].join(' ')) ? Number(row.amountBs) : 0), 0));
   const recordedBs = Math.max(Number(rental.payment?.paidAtRentalBs || 0), Number(rental.payment?.cashCollectedBs || 0), Number(contract?.payment?.paidAtApprovalBs || 0));
-  const unbackedBs = money(Math.max(0, recordedBs - receivedBs));
+  // Los campos paidAtApproval/paidAtRental son snapshots historicos. Un recibo
+  // corregido o un abono posterior puede haberlos dejado con el total antiguo.
+  // Solo sustituimos ese snapshot si una linea del cuaderno se concilia con un
+  // recibo real. Las otras lineas sin respaldo siguen bloqueando la anulacion.
+  const originalDeposits = (contract?.economicLedger ?? []).filter(row => !row.deletedAt && row.type === 'deposit' && !row.reclassifiedFromPayment);
+  const reconciled = reconcileContractDocumentPayments(contract, rental, state.cashMovements ?? []);
+  const receiptIds = new Set(receipts.map(row => String(row.id)));
+  const backedIds = new Set(reconciled.ledger.filter(row => row.type === 'deposit'
+    && receiptIds.has(String(row.cashMovementId ?? ''))).map(row => row.id));
+  const hasBackedLedgerPayment = originalDeposits.some(row => backedIds.has(row.id));
+  const unbackedLedgerBs = originalDeposits.reduce((sum, row) => {
+    if (backedIds.has(row.id)) return sum;
+    const isSyntheticInitial = row.id === `initial-payment-${contract?.id}` && !row.cashMovementId && !row.cashReceiptCode;
+    if (isSyntheticInitial && hasBackedLedgerPayment) return sum;
+    return sum + Math.max(0, Number(row.amountBs) || 0);
+  }, 0);
+  const economicResetApplied = Boolean(contract?.economicResetAt) || Number(contract?.economicResetVersion ?? 0) >= 1;
+  const unbackedBs = money(hasBackedLedgerPayment || economicResetApplied
+    ? unbackedLedgerBs : Math.max(unbackedLedgerBs, recordedBs - receivedBs, 0));
   const version = crypto.createHash('sha256').update(JSON.stringify({ contract, rental, linked })).digest('hex');
   const last = receipts.at(-1);
   return { version, receivedBs, refundedBs, availableBs, guaranteeReceivedBs,
