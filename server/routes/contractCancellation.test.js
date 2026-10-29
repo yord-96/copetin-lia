@@ -38,7 +38,7 @@ test('cancellation settles historical 2000 into an 1800 refund and 200 retained 
     assert.equal(before.receivedBs, 2000); assert.equal(before.availableBs, 2000); assert.equal(before.guaranteeReceivedBs, 0); assert.equal(before.guaranteeConfiguredBs, 700);
     assert.equal(before.receipts[0].paymentAccount, 'CIDRE');
     const payload = { id: 'r', contractId: 'c', reason: 'Acuerdo de anulacion con multa de 200', userName: 'Operador',
-      economicSettlement: { operationId: 'cancel-1833', version: before.version, retainedPenaltyBs: 200, refundBs: 1800, paymentMethod: 'qr', paymentAccount: 'CIDRE' } };
+      economicSettlement: { operationId: 'cancel-1833', version: before.version, retainedPenaltyBs: 200, refundBs: 1800, paymentMethod: 'qr', paymentAccount: 'CIDRE', effectiveDate: '2026-08-01' } };
     assert.equal((await send({ id: 'r', contractId: 'c', reason: 'Unsafe' })).status, 409, 'money cannot be ignored');
     assert.equal((await send({ ...payload, economicSettlement: { ...payload.economicSettlement, refundBs: 2000 } })).status, 409);
     assert.equal((await send({ ...payload, economicSettlement: { ...payload.economicSettlement, version: 'stale' } })).status, 409);
@@ -63,6 +63,7 @@ test('cancellation settles historical 2000 into an 1800 refund and 200 retained 
     const refund = state.cashMovements.find(row => row.id !== income.id);
     assert.equal(refund.amountBs, -1800); assert.equal(refund.paymentAccount, 'CIDRE');
     assert.ok(refund.receiptCode); assert.ok(new Date(refund.createdAt) > new Date('2026-07-31'));
+    assert.equal(refund.receiptIssuedAt.slice(0, 10), '2026-08-01');
     assert.equal(state.cashMovements.reduce((sum, row) => sum + row.amountBs, 0), 200);
     assert.equal(state.cashMovements.filter(row => row.amountBs > 0).length, 1, 'retained fee creates no new cash income');
     assert.equal(state.contracts[0].status, 'anulado'); assert.equal(state.rentals[0].status, 'cancelled');
@@ -76,17 +77,36 @@ test('cancellation settles historical 2000 into an 1800 refund and 200 retained 
     assert.equal(result.cashMovements[0].id, refund.id);
     const after = await preview(); assert.equal(after.settlement.refundReceiptCode, refund.receiptCode);
     assert.equal((await send({ ...payload, economicSettlement: { ...payload.economicSettlement, retainedPenaltyBs: 300 } })).status, 409);
+    const editDate = value => fetch(`${base}/cancellation/date`, { method: 'POST', headers, body: JSON.stringify(value) });
+    const datePayload = { id: 'r', contractId: 'c', effectiveDate: '2026-09-02', version: after.version, userName: 'Editor' };
+    const editedResponse = await editDate(datePayload); assert.equal(editedResponse.status, 200, await editedResponse.clone().text());
+    const edited = await editedResponse.json();
+    assert.equal(edited.contract.cancellationSettlement.effectiveDate, '2026-09-02');
+    assert.equal(edited.rental.cancellationSettlement.effectiveDate, '2026-09-02');
+    assert.equal(edited.movement.receiptIssuedAt.slice(0,10), '2026-09-02');
+    assert.equal(edited.movement.createdAt, refund.createdAt);
+    assert.equal(edited.movement.cashLedgerSequence, refund.cashLedgerSequence);
+    assert.equal(edited.movement.cashRegisteredAt, refund.cashRegisteredAt);
+    assert.equal(edited.movement.amountBs, -1800); assert.equal(edited.movement.receiptCode, refund.receiptCode);
+    assert.equal((await editDate(datePayload)).status, 200, 'repeated date edit is idempotent');
+    assert.equal((await editDate({ ...datePayload, effectiveDate: '2026-09-03' })).status, 409, 'stale date editor cannot overwrite another edit');
+    assert.equal((await editDate({ ...datePayload, effectiveDate: '2099-12-31', version: edited.preview.version })).status, 409);
+    const final = (await getStateSnapshot()).state;
+    assert.equal(final.cashMovements.length, 2);
+    assert.deepEqual(final.cashMovements.find(row => row.id === income.id), income);
+    assert.equal(final.contracts[0].cancellationSettlement.dateEditHistory.length, 1);
     const july = await (await fetch(`${base.replace('/contracts', '')}/accounting/daily-report?date=2026-07-21`, { headers })).json();
     assert.equal(july.movements.reduce((sum, row) => sum + row.amountBs, 0), 2000);
-    const refundDate = refund.cashEffectiveDate || refund.createdAt.slice(0, 10);
+    const refundDate = edited.movement.cashEffectiveDate;
     const today = await (await fetch(`${base.replace('/contracts', '')}/accounting/daily-report?date=${refundDate}`, { headers })).json();
     assert.equal(today.movements.reduce((sum, row) => sum + row.amountBs, 0), -1800);
     const { getWebBridge } = await import('../../src/services/webBridge.js');
-    await getWebBridge().__storage.applyServerState(state, { replace: true });
+    await getWebBridge().__storage.applyServerState(final, { replace: true });
     const receipt = await getWebBridge().printer.printCashMovementReceipt({ movementId: refund.id });
     assert.match(receipt.html, /1[.,]800[.,]00/);
     assert.match(receipt.html, /Multa retenida/);
     assert.match(receipt.html, /no es un nuevo ingreso/);
+    assert.match(receipt.html, /02\/09\/2026/);
   } finally {
     await new Promise(resolve => server.close(resolve));
     await fs.rm(directory, { recursive: true, force: true });

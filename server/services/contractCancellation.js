@@ -1,11 +1,23 @@
 import crypto from 'node:crypto';
 import { cashMovementMatchesContractReferences } from '../../src/utils/contractCashLinks.js';
 import { reconcileContractDocumentPayments } from '../../src/utils/contractDocumentPayments.js';
+import { getCashBusinessDate } from '../../src/utils/cashLedgerOrder.js';
 
 const money = value => Math.round(Number(value || 0) * 100) / 100;
 const active = row => row && !row.deletedAt && !row.voidedAt && !row.voidedBy
   && !['anulado', 'voided', 'eliminado'].includes(String(row.receiptStatus || row.status || '').toLowerCase());
 const fail = message => { const error = new Error(message); error.statusCode = 409; throw error; };
+
+export const cancellationEffectiveTimestamp = (value, reference = new Date().toISOString()) => {
+  const date = String(value || getCashBusinessDate(reference));
+  const parsed = new Date(`${date}T12:00:00-04:00`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime())
+    || getCashBusinessDate(parsed) !== date || date < '1900-01-01' || date > getCashBusinessDate()) {
+    fail('La fecha de anulacion debe ser valida y no puede ser futura.');
+  }
+  const clock = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/La_Paz', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(reference));
+  return new Date(`${date}T${clock}-04:00`).toISOString();
+};
 
 export const cancellationRecords = (state, identifiers = {}) => {
   const contract = (state.contracts ?? []).find(row => !row.deletedAt && (
@@ -75,11 +87,13 @@ export const applyCancellationSettlement = (state, contract, rental, payload, cr
   if (!['efectivo', 'qr'].includes(method)) fail('Selecciona efectivo o QR para la devolucion.');
   if (refundBs > 0 && method === 'qr' && !String(draft.paymentAccount || '').trim()) fail('Selecciona la cuenta bancaria desde la que devolveras el dinero.');
   const now = new Date().toISOString();
+  const effectiveAt = cancellationEffectiveTimestamp(draft.effectiveDate, now);
   const settlement = {
     operationId: draft.operationId, receivedBs: preview.receivedBs, previouslyRefundedBs: preview.refundedBs,
     availableBeforeBs: preview.availableBs, retainedPenaltyBs: money(penaltyBs), refundBs: money(refundBs),
     guaranteeBeforeBs: preview.guaranteeConfiguredBs, guaranteeAfterBs: 0,
     receivableAfterBs: 0, availableAfterBs: 0, settledAt: now,
+    effectiveAt, effectiveDate: getCashBusinessDate(effectiveAt),
     settledByName: payload.userName || payload.createdByName || 'Sistema', reason: String(payload.reason || '').trim(),
     paymentMethod: method, paymentAccount: method === 'qr' ? String(draft.paymentAccount || '').trim() : '',
     sourceReceipts: preview.receipts, refundMovementId: null, refundReceiptCode: null,
@@ -95,6 +109,7 @@ export const applyCancellationSettlement = (state, contract, rental, payload, cr
       description: `Devolucion por anulacion de contrato ${contract?.contractCode || rental.contractCode || rental.orderCode}`,
       receiptDetail: `Recibido historicamente Bs ${preview.receivedBs.toFixed(2)}. Devuelto anteriormente Bs ${preview.refundedBs.toFixed(2)}. Devuelto ahora Bs ${refundBs.toFixed(2)}. Multa retenida Bs ${penaltyBs.toFixed(2)} (no es un nuevo ingreso). Garantia final Bs 0,00. Motivo: ${settlement.reason}`,
       notes: settlement.reason, clientOperationId: draft.operationId, receivedAmountBs: 0,
+      createdAt: now, receiptIssuedAt: effectiveAt,
     });
     state.cashMovements.push(movement);
     settlement.refundMovementId = movement.id;
@@ -110,7 +125,7 @@ export const applyCancellationSettlement = (state, contract, rental, payload, cr
     contract.totals = { ...contract.totals, guaranteeBs: 0, pendingPaymentBs: 0 };
     contract.guarantee = { ...contract.guarantee, amountBs: 0, status: 'no_aplica' };
     contract.economicLedger = [...(contract.economicLedger ?? []), {
-      id: `cancellation-${draft.operationId}`, type: 'note', amountBs: 0, createdAt: now,
+      id: `cancellation-${draft.operationId}`, type: 'note', amountBs: 0, createdAt: effectiveAt, registeredAt: now,
       note: `Anulacion liquidada. Recibido Bs ${preview.receivedBs.toFixed(2)}; devuelto ahora Bs ${refundBs.toFixed(2)}; multa retenida Bs ${penaltyBs.toFixed(2)} sin nuevo ingreso.`,
       cashMovementId: movement?.id ?? null, createdByName: settlement.settledByName,
     }];
@@ -119,3 +134,41 @@ export const applyCancellationSettlement = (state, contract, rental, payload, cr
   rental.payment = { ...rental.payment, guaranteeStatus: 'no_aplica', pendingPaymentBs: 0 };
   return { settlement, movement, penaltyBs: money(penaltyBs) };
 };
+
+export function editCancellationDate(state, contract, rental, payload) {
+  if (!payload.effectiveDate) fail('Debes indicar la fecha de anulacion.');
+  const saved = contract?.cancellationSettlement ?? rental?.cancellationSettlement;
+  if (!saved || rental.status !== 'cancelled') fail('No hay una anulacion liquidada para editar.');
+  const effectiveAt = cancellationEffectiveTimestamp(payload.effectiveDate, saved.effectiveAt || saved.settledAt);
+  const effectiveDate = getCashBusinessDate(effectiveAt);
+  const previousDate = saved.effectiveDate || getCashBusinessDate(saved.effectiveAt || saved.settledAt);
+  const movement = saved.refundMovementId ? (state.cashMovements ?? []).find(row => row.id === saved.refundMovementId) : null;
+  if (saved.refundBs > 0 && (!active(movement) || movement.accountingTag !== 'contract_cancellation_refund'
+    || !cashMovementMatchesContractReferences(movement, { contractId: contract?.id, rentalId: rental.id }))) {
+    fail('El recibo de devolucion no esta vigente. Revisa Caja Grande antes de cambiar la fecha.');
+  }
+  if (effectiveDate === previousDate) return { contract, rental, movement };
+  if (payload.version !== cancellationPreview(state, contract, rental).version) fail('La anulacion cambio en otra sesion. Vuelve a abrirla antes de editar la fecha.');
+  const now = new Date().toISOString();
+  const userName = String(payload.userName || 'Sistema').trim();
+  const next = { ...saved, effectiveAt, effectiveDate, dateEditedAt: now, dateEditedByName: userName,
+    dateEditHistory: [...(saved.dateEditHistory ?? []), { previousDate, effectiveDate, editedAt: now, editedByName: userName }] };
+  for (const record of [contract, rental].filter(Boolean)) { record.cancellationSettlement = structuredClone(next); record.updatedAt = now; }
+  if (movement) Object.assign(movement, { receiptIssuedAt: effectiveAt, cashEffectiveDate: effectiveDate,
+    receiptEditedAt: now, receiptEditedByName: userName, editedAt: now, editedByName: userName, updatedAt: now });
+  for (const row of contract?.economicLedger ?? []) {
+    if (row.id === `cancellation-${saved.operationId}`) {
+      row.registeredAt ??= saved.settledAt;
+      row.createdAt = effectiveAt; row.editedAt = now; row.editedByName = userName;
+    }
+  }
+  for (const report of state.generatedReports ?? []) {
+    if (movement && (report.cashMovementId === movement.id || report.sourceType === 'cashMovement' && report.sourceId === movement.id)) {
+      report.receiptIssuedAt = effectiveAt; report.updatedAt = now;
+    }
+  }
+  state.systemAuditLog ??= [];
+  state.systemAuditLog.unshift({ id: `cancel-date-${saved.operationId}-${Date.now()}`, type: 'contract_cancellation_date_edited',
+    entityId: contract?.id ?? rental.id, createdAt: now, userName, detail: `Fecha de anulacion: ${previousDate} -> ${effectiveDate}. Sin cambios de importe ni nuevos movimientos.` });
+  return { contract, rental, movement };
+}

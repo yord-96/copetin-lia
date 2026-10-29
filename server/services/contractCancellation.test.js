@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cancellationPreview, applyCancellationSettlement } from './contractCancellation.js';
+import { cancellationPreview, applyCancellationSettlement, editCancellationDate, cancellationEffectiveTimestamp } from './contractCancellation.js';
 
 const fixture = () => ({ contracts: [{ id: 'c', rentalId: 'r', contractCode: '1833', guarantee: { amountBs: 700 } }], rentals: [{ id: 'r', contractId: 'c' }], cashMovements: [
   { id: 'in', linkedContractId: 'c', type: 'ingreso_alquiler', amountBs: 2000, guaranteeAllocationBs: 500, createdAt: '2026-07-21' },
@@ -82,4 +82,17 @@ test('zero receipts after economic reset allows cancellation without fee, refund
   assert.deepEqual(state.cashMovements, before);
   contract.economicLedger.push({ id: 'missing', type: 'deposit', amountBs: 50 });
   assert.equal(cancellationPreview(state, contract, rental).unbackedBs, 50);
+});
+
+test('cancellation dates reject impossible/future days and support editing an old no-refund settlement', () => {
+  for (const date of ['2026-02-30', 'bad', '2099-01-01']) assert.throws(() => cancellationEffectiveTimestamp(date));
+  const contract = { id: 'c', cancellationSettlement: { operationId: 'old', settledAt: '2026-07-21T19:06:00Z', refundBs: 0 } };
+  const rental = { id: 'r', status: 'cancelled' };
+  const state = { cashMovements: [] };
+  const preview = cancellationPreview(state, contract, rental);
+  editCancellationDate(state, contract, rental, { effectiveDate: '2026-07-20', version: preview.version, userName: 'Editor' });
+  assert.equal(contract.cancellationSettlement.effectiveAt, '2026-07-20T19:06:00.000Z');
+  assert.equal(contract.cancellationSettlement.settledAt, '2026-07-21T19:06:00Z');
+  assert.equal(rental.cancellationSettlement.effectiveDate, '2026-07-20');
+  assert.deepEqual(state.cashMovements, []);
 });

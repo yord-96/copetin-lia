@@ -2896,7 +2896,7 @@ const callDirectCashOperation = async (path, payload = {}) => {
     if (Object.prototype.hasOwnProperty.call(result ?? {}, 'revision')) {
       lastSharedRevision = result.revision; setCachedServerRevision(result.revision);
     }
-    if (path === '/cash/movement' || path === '/cash/manual-economic-movement') {
+    if (path === '/cash/movement' || path === '/cash/manual-economic-movement' || path === '/contracts/cancellation/date') {
       try { await applyDirectCashResultLocally(result); }
       catch (cacheError) {
         localServerCommitSerial += 1;
@@ -2926,7 +2926,7 @@ const applyDirectCashResultLocally = async (result = {}) => {
     : result?.movement
       ? [result.movement]
       : [];
-  if (!createdRows.length) return;
+  if (!createdRows.length && !result.contract && !result.rental) return;
 
   const local = await exportLocalCollections(['cashMovements', 'cashSessions', 'contracts', 'rentals']);
   const currentRows = Array.isArray(local?.cashMovements) ? local.cashMovements : [];
@@ -4286,6 +4286,13 @@ export const api = {
       return callBridge('rentals', 'cancel', true, payload);
     },
     getCancellationPreview: fetchCancellationPreview,
+    updateCancellationDate: async payload => {
+      if (!shouldUseServerState()) throw new Error('Se requiere conexion para editar la fecha de anulacion.');
+      const result = await callDirectCashOperation('/contracts/cancellation/date', payload);
+      forgetFullRecordCache(fullContractCache, result.contract);
+      forgetFullRecordCache(fullRentalCache, result.rental);
+      return result;
+    },
     remove: (payload) => callBridge('rentals', 'remove', true, payload),
     registerReturn: async (payload) => {
       if (shouldUseServerState()) return callDirectRentalReturnOperation(payload);

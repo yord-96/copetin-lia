@@ -15224,7 +15224,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       {orderToCancel ? (
         <ContractCancellationModal key={orderToCancel.contractId || orderToCancel.rentalId}
           order={orderToCancel} onClose={closeCancelOrderDialog} onConfirm={confirmCancelOrder}
-          isSubmitting={isSubmitting} formatBs={formatBs} onPrintReceipt={handlePrintEconomicReceipt} />
+          isSubmitting={isSubmitting} formatBs={formatBs} onPrintReceipt={handlePrintEconomicReceipt} currentUser={currentUser} />
       ) : null}
 
       {quoteToDelete ? (

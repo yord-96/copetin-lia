@@ -1,6 +1,6 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
 import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundLedger.js';
-import { cancellationRecords, cancellationPreview, applyCancellationSettlement } from '../services/contractCancellation.js';
+import { cancellationRecords, cancellationPreview, applyCancellationSettlement, editCancellationDate } from '../services/contractCancellation.js';
 import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
@@ -2170,6 +2170,22 @@ const normalizeDirectCashMovementPayload = (payload = {}) => {
 };
 
 
+router.post('/__copetin_db/contracts/cancellation/date', async (req, res, next) => {
+  try {
+    let responseData;
+    const result = await updateStateSnapshot(state => {
+      const { contract, rental } = cancellationRecords(state, req.body);
+      responseData = editCancellationDate(state, contract, rental, req.body);
+      responseData.preview = cancellationPreview(state, contract, rental);
+      return state;
+    });
+    res.json({ ok: true, ...responseData, revision: result.revision });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
+    next(error);
+  }
+});
+
 router.get('/__copetin_db/contracts/cancellation/preview', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
@@ -2238,6 +2254,7 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
         const saved = rental.cancellationSettlement;
         const draft = req.body.economicSettlement;
         if (saved && draft?.operationId === saved.operationId
+          && (!draft.effectiveDate || draft.effectiveDate === saved.effectiveDate)
           && reason === saved.reason
           && Number(draft.retainedPenaltyBs) === saved.retainedPenaltyBs && Number(draft.refundBs) === saved.refundBs
           && String(draft.paymentMethod || 'efectivo') === saved.paymentMethod
