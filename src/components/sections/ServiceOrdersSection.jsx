@@ -1,4 +1,5 @@
 import ContractCancellationModal from './ContractCancellationModal';
+import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
 import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
@@ -1946,6 +1947,7 @@ function ServiceOrdersSection({
   const [isLoadingContractEconomics, setIsLoadingContractEconomics] = useState(false);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
   const [guaranteeRefundWarning, setGuaranteeRefundWarning] = useState('');
+  const closeGuaranteeRefundWarning = useCallback(() => setGuaranteeRefundWarning(''), []);
   const [returnChargeEditIssue, setReturnChargeEditIssue] = useState(null);
   const [returnChargeEditDraft, setReturnChargeEditDraft] = useState({ damagedUnitChargeBs: '', missingUnitChargeBs: '' });
   const [isSavingReturnCharge, setIsSavingReturnCharge] = useState(false);
@@ -13438,7 +13440,6 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           >
                             {isSavingContractEconomicsGuaranteeRefund ? 'Registrando...' : 'Registrar devolucion'}
                           </button>
-                          {guaranteeRefundWarning ? <p className="status error guarantee-refund-warning" role="alert">{guaranteeRefundWarning}</p> : null}
                         </form>
                       </div>
                     </div>
@@ -15229,6 +15230,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           </div>
         </div>
       ) : null}
+
+      {guaranteeRefundWarning ? <GuaranteeRefundWarningModal message={guaranteeRefundWarning} onClose={closeGuaranteeRefundWarning} /> : null}
 
       {orderToCancel ? (
         <ContractCancellationModal key={orderToCancel.contractId || orderToCancel.rentalId}
