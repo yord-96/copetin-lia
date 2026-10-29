@@ -8781,6 +8781,8 @@ export const buildContractDocumentHtml = ({
 
     return Number((baseLineTotalBs * multiplier).toFixed(2));
   };
+  const getDurationDayDocumentTotalBs = (dayInfo) => Number(documentItems
+    .reduce((sum, line) => sum + getDocumentLineTotalBs(line, dayInfo.multiplier), 0).toFixed(2));
   const renderContractItemRow = (line, multiplier = 1) => {
         const item = catalogById.get(String(line.itemId ?? ''));
         const meta = getContractItemMeta(line, item);
@@ -8892,7 +8894,7 @@ export const buildContractDocumentHtml = ({
     : hasDurationPricing
     ? durationDayBreakdown.map((dayInfo) => `
         <tr class="rc-duration-day-row">
-          <td colspan="8">Dia ${dayInfo.day} - ${dayInfo.percent}%</td>
+          <td colspan="8">Dia ${dayInfo.day} - ${dayInfo.percent}% - Subtotal ${formatBs(getDurationDayDocumentTotalBs(dayInfo))}</td>
         </tr>
         ${documentItems.map((line) => renderContractItemRow(line, dayInfo.multiplier)).join('')}`).join('')
     : documentItems.map((line) => renderContractItemRow(line)).join('');
@@ -9048,7 +9050,7 @@ export const buildContractDocumentHtml = ({
   const multipageClass = usesMultipageContract ? 'is-multipage' : '';
   const durationFinancialItemsHtml = hasDurationPricing
     ? durationDayBreakdown.map((dayInfo) => `
-            <div class="rc-financial-item transport"><span>Dia ${dayInfo.day} (${dayInfo.percent}%)</span><strong>${formatBs(dayInfo.totalBs)}</strong></div>`).join('')
+            <div class="rc-financial-item transport"><span>Dia ${dayInfo.day} (${dayInfo.percent}%)</span><strong>${formatBs(getDurationDayDocumentTotalBs(dayInfo))}</strong></div>`).join('')
     : '';
   const dailyScheduleFinancialItemsHtml = hasDailySchedulePricing
     ? dailyScheduleGroupsForPrint.map((group) => {
@@ -9262,6 +9264,8 @@ export const buildContractDocumentHtml = ({
           </div>`
     : `
           <div class="rc-financial-summary rc-financial-summary-coherent">
+            ${durationFinancialItemsHtml}
+            ${dailyScheduleFinancialItemsHtml}
             ${itemFinancialSummaryHtml}
             <div class="rc-financial-item"><span>Servicios extra</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
