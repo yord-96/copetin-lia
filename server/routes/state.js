@@ -1,4 +1,5 @@
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
+import { getGuaranteeRefundCommercialPendingBs, guaranteeRefundDebtMessage } from '../../src/utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundLedger.js';
 import { cancellationRecords, cancellationPreview, applyCancellationSettlement, editCancellationDate } from '../services/contractCancellation.js';
 import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
@@ -4929,6 +4930,12 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
         )) ?? null;
         const linkedKeys = new Set([rental?.id, rental?.orderCode, rental?.contractCode, resolvedContract?.id, resolvedContract?.contractCode, resolvedContract?.orderCode]
           .map((value) => String(value ?? '').trim()).filter(Boolean));
+        const commercialPendingBs = getGuaranteeRefundCommercialPendingBs(resolvedContract ?? {}, rental,
+          state.cashMovements, getRentalChargeTargetBs(resolvedContract, rental));
+        if (commercialPendingBs > 0.009) {
+          const error = new Error(guaranteeRefundDebtMessage(commercialPendingBs));
+          error.statusCode = 409; throw error;
+        }
         const matchesLinked = (row) => [row?.linkedRentalId, row?.sourceId, row?.linkedContractId, row?.linkedOrderCode, row?.contractCode, row?.orderCode]
           .map((value) => String(value ?? '').trim()).some((value) => value && linkedKeys.has(value));
         const previousGuaranteeRefundBs = directMoney(state.cashMovements.reduce((sum, row) => {

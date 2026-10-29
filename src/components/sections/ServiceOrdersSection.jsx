@@ -1,4 +1,5 @@
 import ContractCancellationModal from './ContractCancellationModal';
+import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
 import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
@@ -1944,6 +1945,7 @@ function ServiceOrdersSection({
   const [contractEconomicsContextMovements, setContractEconomicsContextMovements] = useState([]);
   const [isLoadingContractEconomics, setIsLoadingContractEconomics] = useState(false);
   const [contractEconomicsError, setContractEconomicsError] = useState('');
+  const [guaranteeRefundWarning, setGuaranteeRefundWarning] = useState('');
   const [returnChargeEditIssue, setReturnChargeEditIssue] = useState(null);
   const [returnChargeEditDraft, setReturnChargeEditDraft] = useState({ damagedUnitChargeBs: '', missingUnitChargeBs: '' });
   const [isSavingReturnCharge, setIsSavingReturnCharge] = useState(false);
@@ -8959,6 +8961,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const handleOpenContractEconomics = async (contractRow) => {
+    setGuaranteeRefundWarning('');
     setContractEconomicsError('');
     resetContractEconomicsCollectionDraft();
     setMenuState(null);
@@ -10622,6 +10625,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const handleSubmitContractEconomicGuaranteeRefund = async (event) => {
     event.preventDefault();
+    setGuaranteeRefundWarning('');
     if (!canManageContractEconomicLedger || !contractEconomicsData || isSavingContractEconomicsGuaranteeRefund) return;
 
     const requestedSource = contractEconomicsGuaranteeRefundDraft.source === 'surplus' ? 'surplus' : 'guarantee';
@@ -10636,6 +10640,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         ? contractEconomicsData.ledgerRefundSuggestedBs
         : contractEconomicsData.guaranteeRefundableBs),
     );
+    if (refundSource === 'guarantee' && contractEconomicsData.managedDebtBs > 0.009) {
+      setGuaranteeRefundWarning(guaranteeRefundDebtMessage(contractEconomicsData.managedDebtBs, formatBs));
+      return;
+    }
     const amount = Math.max(0, toMoneyNumber(contractEconomicsGuaranteeRefundDraft.amountBs || refundableBs));
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsGuaranteeRefundDraft.paymentMethod);
     const paymentAccount = paymentMethod === 'qr'
@@ -10735,6 +10743,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       }
     } catch (error) {
       setContractEconomicsError(error.message || 'No se pudo registrar la devolucion de garantia.');
+      setGuaranteeRefundWarning(error.message || 'No se pudo registrar la devolución de garantía.');
     } finally {
       setIsSavingContractEconomicsGuaranteeRefund(false);
     }
@@ -13339,12 +13348,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             background: '#f7fff9',
                             padding: '10px',
                             display: 'grid',
-                            gridTemplateColumns: 'minmax(190px, 1.1fr) repeat(6, minmax(110px, 0.5fr))',
                             gap: '8px',
                             alignItems: 'end',
                           }}
                         >
-                          <div style={{ alignSelf: 'center', minWidth: 0 }}>
+                          <div className="guarantee-refund-intro" style={{ alignSelf: 'center', minWidth: 0 }}>
                             <span style={{ color: '#15803d', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase' }}>
                               C. Devolver dinero
                             </span>
@@ -13430,6 +13438,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           >
                             {isSavingContractEconomicsGuaranteeRefund ? 'Registrando...' : 'Registrar devolucion'}
                           </button>
+                          {guaranteeRefundWarning ? <p className="status error guarantee-refund-warning" role="alert">{guaranteeRefundWarning}</p> : null}
                         </form>
                       </div>
                     </div>

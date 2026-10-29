@@ -10,10 +10,10 @@ test('refund commits cash and flexible ledger together; replay cannot duplicate 
   process.env.APP_STATE_FILE = path.join(directory, 'state.json');
   process.env.APP_INTERNAL_KEY = 'refund-test';
   const { default: router } = await import('./state.js');
-  const { replaceStateSnapshot, getStateSnapshot } = await import('../storage/fileStateStore.js');
+  const { replaceStateSnapshot, getStateSnapshot, updateStateSnapshot } = await import('../storage/fileStateStore.js');
   await replaceStateSnapshot({ settings: {}, contracts: [{ id: 'c', rentalId: 'r', contractCode: '2459',
-    totals: { totalBs: 900, guaranteeBs: 200 }, guarantee: { status: 'validado' }, economicLedger: [] }],
-    rentals: [{ id: 'r', contractId: 'c', status: 'returned', depositBs: 200 }],
+    totals: { totalBs: 900, guaranteeBs: 200 }, payment: { paidAtApprovalBs: 900 }, guarantee: { status: 'validado' }, economicLedger: [] }],
+    rentals: [{ id: 'r', contractId: 'c', status: 'returned', depositBs: 200, payment: { paidAtRentalBs: 900 } }],
     cashMovements: [{ id: 'original', linkedContractId: 'c', type: 'ingreso_garantia', amountBs: 200,
       category: 'garantia', cashBoxType: 'BIG_CASH', receiptCode: 'RC-12907', createdAt: '2026-09-11T12:57:00Z' }] }, null);
   const app = express(); app.use(express.json()); app.use(router);
@@ -40,5 +40,18 @@ test('refund commits cash and flexible ledger together; replay cannot duplicate 
     const overview = await (await fetch(`${base}/orders/mobile-overview`, { headers })).json();
     assert.equal(overview.overview.contracts[0].guaranteeEconomicSummary.status, 'returned');
     assert.equal(overview.overview.contracts[0].guaranteeEconomicSummary.pendingRefundBs, 0);
+    await replaceStateSnapshot({ settings: {}, contracts: [{ id: 'c', rentalId: 'r', contractCode: '2967', totals: { totalBs: 200, guaranteeBs: 200 },
+      economicLedger: [{ id: 'deposit', type: 'deposit', amountBs: 340, contractAllocationBs: 140, guaranteeAllocationBs: 200, cashMovementId: 'deposit-cash' },
+        { id: 'reserve', type: 'guarantee', amountBs: 200, sourceDepositId: 'deposit', reclassifiedFromPayment: true }] }],
+      rentals: [{ id: 'r', contractId: 'c', status: 'returned', depositBs: 200, totals: { totalBs: 200 } }],
+      cashMovements: [{ id: 'deposit-cash', type: 'ingreso_alquiler', linkedContractId: 'c', cashBoxType: 'BIG_CASH', amountBs: 340,
+        contractAllocationBs: 140, guaranteeAllocationBs: 200, accountingTag: 'contract_deposit_receipt' }] }, (await getStateSnapshot()).revision);
+    const denied = await send({ ...body, clientOperationId: 'blocked-2967' });
+    assert.equal(denied.status, 409); assert.match((await denied.json()).error, /60[.,]00/);
+    assert.equal((await getStateSnapshot()).state.cashMovements.length, 1, 'blocked refund creates no expense');
+    await updateStateSnapshot(current => { current.contracts[0].economicLedger.push({ id: 'apply', type: 'guarantee_apply', amountBs: 60, contractAllocationBs: 60, applicationTarget: 'rental' }); return current; });
+    const allowed = await send({ ...body, amountBs: 140, clientOperationId: 'settled-2967' });
+    assert.equal(allowed.status, 200, await allowed.clone().text());
+    assert.equal((await allowed.json()).movement.amountBs, -140);
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true }); }
 });
