@@ -19,8 +19,12 @@ test('cancellation settles historical 2000 into an 1800 refund and 200 retained 
     contracts: [{ id: 'c', contractCode: '1833', rentalId: 'r', orderCode: 'OS-00422', status: 'aprobado', customerName: 'ADRIANA GUZMAN',
       deliveryDate: '2099-12-05', totals: { totalBs: 6740, guaranteeBs: 700 }, guarantee: { amountBs: 700, status: 'debe' }, payment: { paidAtApprovalBs: 2000 }, updatedAt: 'original' }],
     rentals: [{ id: 'r', contractId: 'c', contractCode: '1833', orderCode: 'OS-00422', status: 'active', rentalDate: '2099-12-05',
-      items: [{ itemId: 'i', quantity: 10, internalReservedQty: null }], totals: { totalBs: 6740 }, payment: { paidAtRentalBs: 2000 }, operational: { inventoryStatus: 'confirmado' } }],
-    cashMovements: [income], inventoryMovements: [], deliveries: [{ id: 'd', rentalId: 'r', orderCode: 'OS-00422', status: 'programada', progress: 0 }], supplierLoans: [] };
+      items: [{ itemId: 'i', quantity: 10, internalReservedQty: null }], totals: { totalBs: 6740 }, payment: { paidAtRentalBs: 2000 },
+      operational: { inventoryStatus: 'enviado', inventoryConfirmedAt: '2026-07-30T18:06:43.269Z', inventorySentAt: '2026-07-30T18:06:43.269Z', inventoryConfirmedByName: 'LUIS VEGA' } }],
+    cashMovements: [income], inventoryMovements: [], deliveries: [
+      { id: 'd', rentalId: 'r', orderCode: 'OS-00422', status: 'programada', progress: 0 },
+      { id: 'other', rentalId: 'other', orderCode: 'OS-01833', status: 'entregado', progress: 100 },
+    ], supplierLoans: [] };
   await replaceStateSnapshot(seed, null);
   const app = express(); app.use(express.json()); app.use(router);
   app.use((error, req, res, next) => { void next; res.status(error.statusCode || 500).json({ error: error.message }); });
@@ -42,7 +46,14 @@ test('cancellation settles historical 2000 into an 1800 refund and 200 retained 
     assert.deepEqual(state.cashMovements, [income]); assert.equal(state.contracts[0].status, 'aprobado');
     await updateStateSnapshot(current => { current.rentals[0].operational.inventoryStatus = 'salio'; return current; });
     assert.equal((await send(payload)).status, 409, 'cannot cancel away physically dispatched material');
-    await updateStateSnapshot(current => { current.rentals[0].operational.inventoryStatus = 'confirmado'; return current; });
+    await updateStateSnapshot(current => { current.rentals[0].operational.inventoryStatus = 'enviado'; current.rentals[0].operational.inventoryDispatchedAt = '2026-10-01'; return current; });
+    assert.equal((await send(payload)).status, 409, 'explicit dispatch still blocks a legacy enviado status');
+    await updateStateSnapshot(current => { delete current.rentals[0].operational.inventoryDispatchedAt;
+      current.inventoryMovements.push({ id: 'exit', type: 'salida', reference: 'OS-00422', itemId: 'i', quantity: 10 }); return current; });
+    assert.equal((await send(payload)).status, 409, 'physical stock exit still blocks cancellation');
+    await updateStateSnapshot(current => { current.inventoryMovements = []; current.deliveries[0].progress = 100; return current; });
+    assert.equal((await send(payload)).status, 409, 'executed delivery still blocks cancellation');
+    await updateStateSnapshot(current => { current.deliveries[0].progress = 0; return current; });
     const responses = await Promise.all([send(payload), send(payload)]);
     for (const response of responses) assert.equal(response.status, 200, await response.clone().text());
     const result = await responses[0].json();

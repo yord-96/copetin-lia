@@ -2291,6 +2291,17 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
       const transportStatus = normalize(operational.transportStatus);
       const dispatchReview = operational.dispatchReview ?? {};
       const returnReview = operational.returnReview ?? {};
+      // En registros antiguos, confirmar el inventario guardaba "enviado" y
+      // repetia la fecha de confirmacion como inventorySentAt. No era Salio.
+      // Solo reconocemos esa forma legacy cuando las entregas tampoco tienen
+      // ejecucion y no existe un movimiento fisico de salida de esta orden.
+      const hasPhysicalStockExit = (state.inventoryMovements ?? []).some(row => !row.deletedAt
+        && (row.sourceRentalId === rental.id || row.reference === rental.orderCode || row.orderCode === rental.orderCode)
+        && (row.sourceType === 'rental_dispatch' || normalize(row.type) === 'salida'));
+      const legacyInventoryConfirmation = inventoryStatus === 'enviado'
+        && operational.inventoryConfirmedAt
+        && operational.inventorySentAt === operational.inventoryConfirmedAt
+        && deliveriesShowNoExecution && !hasPhysicalStockExit;
       const hasReturnEvidence = Boolean(
         rental.returnedAt
         || operational.inventoryReturnedAt
@@ -2308,7 +2319,9 @@ router.post('/__copetin_db/contracts/cancel', async (req, res, next) => {
         || dispatchReview.reviewedAt
         || dispatchReview.reviewedByName
         || dispatchReview.reviewedByRole
-        || ['salio', 'enviado', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
+        || hasPhysicalStockExit
+        || (inventoryStatus === 'enviado' && !legacyInventoryConfirmation)
+        || ['salio', 'en_ruta', 'entregado', 'devuelto'].includes(inventoryStatus)
       );
       const hasExplicitTransportDispatch = Boolean(
         operational.transportSentAt
