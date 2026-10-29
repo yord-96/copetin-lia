@@ -1,0 +1,13 @@
+.lincoln-contract-services-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px}
+.lincoln-contract-services-actions span{font-size:12px;white-space:nowrap}
+.lincoln-contract-services-editor button{border:1px solid #24504d;border-radius:8px;background:#24504d;color:#fff;padding:8px 12px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;line-height:1.4}
+.lincoln-contract-services-editor button.is-secondary{background:#fff;color:#24504d;border-color:#c7dad6}
+.lincoln-contract-services-editor button:hover{filter:brightness(.96)}
+.lincoln-contract-services-editor button:focus-visible{outline:2px solid #b88664;outline-offset:2px}
+.lincoln-contract-services-editor .lincoln-contract-service-edit{justify-self:start;width:auto;padding:5px 12px;font-size:13px}
+.lincoln-contract-service-form{display:grid;gap:12px;padding:16px;border-bottom:1px solid #eadfd9;background:#faf6f3}
+.lincoln-contract-service-form h5{margin:0;font-size:16px;color:#8c1520}
+.lincoln-contract-service-form label{display:grid;gap:5px;font-size:14px;font-weight:600}
+.lincoln-contract-service-form input,.lincoln-contract-service-form textarea{width:100%;min-width:0;box-sizing:border-box;padding:10px;border:1px solid #ded3ce;border-radius:8px;background:#fff;color:#30272a;font:inherit}
+.lincoln-contract-service-form textarea{min-height:90px;resize:vertical}
+.lincoln-contract-service-form>div{display:flex;flex-wrap:wrap;gap:8px}

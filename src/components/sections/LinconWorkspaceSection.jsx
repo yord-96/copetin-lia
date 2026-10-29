@@ -1,5 +1,7 @@
 import EconomicMovementActions from '../lincoln/EconomicMovementActions';
 import ContractCustomExtras from '../lincoln/ContractCustomExtras';
+import ContractServicesEditor from '../lincoln/ContractServicesEditor';
+import { selectedLincolnContractServices } from '../../../shared/lincolnContractServices.js';
 import OrganizerProposal from '../lincoln/OrganizerProposal';
 import { suggestedOrganizerRate, organizerTotals, organizerClauses } from '../../../shared/lincolnOrganizerContract';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -545,7 +547,8 @@ const contractTotals = (draft) => {
 function ContractDocumentSheet({ document, compact = false }) {
   const totals = document?.totals ?? contractTotals(document ?? {});
   const isOrganizer = document?.contractType === 'organizer';
-  const services = Array.isArray(document?.services) ? document.services.filter((line) => line.selected !== false) : [];
+  const services = selectedLincolnContractServices(Array.isArray(document?.services) ? document.services : [],
+    (document?.pricingGroups ?? []).filter(group => group.selected !== false && Number(group.guestCount || 0) > 0));
   const extras = Array.isArray(document?.extras) ? document.extras.filter((line) => line.selected) : [];
   const grouped = services.reduce((acc, line) => { const key = line.category || 'OTROS'; (acc[key] ||= []).push(line); return acc; }, {});
   const pricingGroups = Array.isArray(document?.pricingGroups) ? document.pricingGroups.filter((group) => group.selected !== false && Number(group.guestCount || 0) > 0) : [];
@@ -693,7 +696,7 @@ function ContractConversionModal({ reservation, packages = [], rooms = [], clien
           <b>{contractMoney(Number(group.guestCount || 0) * Number(group.pricePerPersonBs || 0))}</b>
         </article>)}</div> : null}
         <div className="lincoln-contract-proposal-cols">
-          <article className="lincoln-contract-choice-table"><header><div><h4>Servicios incluidos</h4><p>Marca qué recibe cada nivel del mix.</p></div><span>{draft.services.filter((line) => line.selected !== false).length} activos</span></header>{activePricingGroups.length ? <div className="lincoln-contract-choice-head" style={{ '--choice-groups': activePricingGroups.length }}><strong>Servicio</strong>{activePricingGroups.map((group) => <b key={group.id}>{group.name}</b>)}</div> : null}{draft.services.length ? draft.services.map((line) => <div className="lincoln-contract-choice-row" style={{ '--choice-groups': activePricingGroups.length }} key={line.id}><span><b>{line.category}</b><strong>{line.description}</strong></span>{activePricingGroups.map((group) => <label key={group.id} title={`${line.description} · ${group.name}`}><input type="checkbox" checked={lineAppliesToVariant(line, group.variantId)} onChange={() => toggleLineVariant('services', line.id, group.variantId)} /><i>✓</i></label>)}</div>) : <p className="is-empty">El paquete no tiene servicios configurados.</p>}</article>
+          <ContractServicesEditor services={draft.services} groups={activePricingGroups} onChange={services => setDraft(current => ({ ...current, services }))} onToggle={(id, variantId) => toggleLineVariant('services', id, variantId)} />
           <article className="lincoln-contract-choice-table is-extras"><header><div><h4>Extras disponibles</h4><p>Elige para quién aplica cada adicional.</p></div><span>{draft.extras.filter((line) => line.selected).length} elegidos</span></header>{activePricingGroups.length ? <div className="lincoln-contract-choice-head" style={{ '--choice-groups': activePricingGroups.length }}><strong>Extra y precio</strong>{activePricingGroups.map((group) => <b key={group.id}>{group.name}</b>)}</div> : null}{draft.extras.filter(line=>!line.custom).length ? draft.extras.filter(line=>!line.custom).map((line) => <div className="lincoln-contract-choice-row" style={{ '--choice-groups': activePricingGroups.length }} key={line.id}><span><b>{line.costMode === 'per_person' ? 'POR PERSONA' : 'POR EVENTO'}</b><strong>{line.description}</strong><label className="is-price"><small>Bs</small><input type="number" min="0" step="0.01" value={line.unitCostBs} onChange={(e) => updateExtra(line.id, { unitCostBs: toNumber(e.target.value) })} /></label></span>{activePricingGroups.map((group) => <label key={group.id} title={`${line.description} · ${group.name}`}><input type="checkbox" checked={lineAppliesToVariant(line, group.variantId)} onChange={() => toggleLineVariant('extras', line.id, group.variantId)} /><i>✓</i></label>)}</div>) : <p className="is-empty">Este paquete no tiene extras configurados.</p>}</article>
         </div>
       </section> : null}

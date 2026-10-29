@@ -1,9 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { selectedLincolnContractServices } from '../../../shared/lincolnContractServices.js';
 import {
   buildLincolnContractDocumentHtml,
   normalizeLincolnContractDocument,
 } from './lincolnContractDocumentService.js';
+
+test('document excludes unchecked services and services selected only for inactive groups', () => {
+  const services = [
+    { id: 'a', category: 'BEBIDAS', description: 'Servicio desmarcado', selected: false },
+    { id: 'b', category: 'SONIDO', description: 'Solo nivel inactivo', selected: true, variantIds: ['inactive'] },
+    { id: 'c', category: 'PERSONAL', description: 'Coordinador personalizado', selected: true, variantIds: ['active'] },
+  ];
+  const record = { contractDocumentSnapshot: { pricingGroups: [{ variantId: 'active', selected: true, guestCount: 100, pricePerPersonBs: 180 },
+    { variantId: 'inactive', selected: false, guestCount: 100, pricePerPersonBs: 200 }], services } };
+  const doc = normalizeLincolnContractDocument(record);
+  assert.deepEqual(doc.services.map(row => row.id), ['c']);
+  const html = buildLincolnContractDocumentHtml({ event: record });
+  assert.match(html, /Coordinador personalizado/);
+  assert.doesNotMatch(html, /Servicio desmarcado|Solo nivel inactivo/);
+  assert.equal(doc.totals.totalBs, 18000, 'included-service descriptions do not alter package prices');
+  assert.deepEqual(selectedLincolnContractServices(services, []), []);
+});
 
 const event = {
   id: 'EVE-1',

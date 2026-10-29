@@ -1,4 +1,5 @@
 import { organizerTotals, organizerClauses } from '../../../shared/lincolnOrganizerContract.js';
+import { selectedLincolnContractServices } from '../../../shared/lincolnContractServices.js';
 const text = (value) => String(value ?? '').trim();
 const number = (value) => {
   const parsed = Number(value ?? 0);
@@ -180,7 +181,7 @@ export const normalizeLincolnContractDocument = (event) => {
     packageVariantName: snapshot.packageVariantName || event?.packageVariantName || selectedVariant.name,
     packageVariants: Array.isArray(snapshot.packageVariants) ? snapshot.packageVariants : (Array.isArray(packageSnapshot.variants) ? packageSnapshot.variants : []),
     pricingGroups: isOrganizer ? [] : pricingGroups,
-    services: isOrganizer ? [] : services,
+    services: isOrganizer ? [] : selectedLincolnContractServices(services, pricingGroups),
     extras,
     discountPercent,
     advanceBs,
