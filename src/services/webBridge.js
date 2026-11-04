@@ -9259,8 +9259,10 @@ export const buildContractDocumentHtml = ({
             <div class="rc-financial-item"><span>Servicio</span><strong>${formatBs(servicesSubtotalBs)}</strong></div>
             <div class="rc-financial-item transport"><span>Transporte</span><strong>${formatBs(deliveryFeeBs)}</strong></div>
             ${hasManualDiscount ? `<div class="rc-financial-item"><span>Descuento</span><strong>- ${formatBs(discountBs)}</strong></div>` : ''}
-            ${Number(guaranteeBs ?? 0) > 0 ? `<div class="rc-financial-item guarantee"><span>Garantia prevista</span><strong>${formatBs(guaranteeBs)}</strong></div>` : ''}
-            <div class="rc-financial-item total"><span>Total cotizacion</span><strong>${formatBs(totalBs)}</strong></div>
+            ${Number(guaranteeBs ?? 0) > 0 ? `
+            <div class="rc-financial-item"><span>Total servicio</span><strong>${formatBs(totalBs)}</strong></div>
+            <div class="rc-financial-item guarantee"><span>Garantia prevista</span><strong>${formatBs(guaranteeBs)}</strong></div>` : ''}
+            <div class="rc-financial-item total"><span>${Number(guaranteeBs ?? 0) > 0 ? 'Total con garantia' : 'Total cotizacion'}</span><strong>${formatBs(Number(totalBs) + Math.max(0, Number(guaranteeBs ?? 0)))}</strong></div>
           </div>`
     : `
           <div class="rc-financial-summary rc-financial-summary-coherent">
