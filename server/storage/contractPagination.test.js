@@ -6,13 +6,13 @@ import { buildContractDocumentHtml } from '../../src/services/webBridge.js';
 
 const executablePath = [process.env.CHROMIUM_EXECUTABLE_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(value => value && existsSync(value));
 
-test('eight detailed items and economic closing fit oficio; large contracts still paginate', { skip: !executablePath }, async () => {
+test('contract closing uses available space without forcing an extra page', { skip: !executablePath }, async () => {
   const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox'] });
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: 786, height: 1202 });
     await page.emulateMediaType('print');
-    for (const count of [8, 35]) {
+    for (const count of [8, 24, 35, 60]) {
       const items = Array.from({ length: count }, (_, index) => ({
         itemId: `item-${index}`, itemName: index < 4 ? `MATERIAL DE ALQUILER ${index}` : `MESA RECTANGULAR / DIEZ PERSONAS (1X2 MTS) ${index}`,
         quantity: 2, unitPriceBs: 28, lineTotalBs: 56, category: 'MOBILIARIO',
@@ -34,6 +34,8 @@ test('eight detailed items and economic closing fit oficio; large contracts stil
       const pdf = Buffer.from(await page.pdf({ preferCSSPageSize: true, printBackground: true }));
       const pages = (pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length;
       if (count === 8) assert.equal(pages, 1, 'short contract must include its financial closing and signatures on one page');
+      else if (count === 24) assert.equal(pages, 2, 'table continuation and closing must share the second page when they fit');
+      else if (count === 60) assert.ok(pages > 2, 'very long documents must remain free to use more than two pages');
       else assert.ok(pages > 1, 'long documents must paginate without shrinking to one page');
     }
   } finally { await browser.close(); }

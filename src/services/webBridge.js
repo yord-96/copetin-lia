@@ -8302,10 +8302,10 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
     gap: 6mm;
     align-items: end;
     margin: 0 0 5mm;
-    padding: 8mm 0 2.5mm;
+    padding: 3mm 0 2.5mm;
     border-bottom: .32mm solid #a66a20;
-    break-before: page;
-    page-break-before: always;
+    break-after: avoid;
+    page-break-after: avoid;
   }
   .rc-continuation-head h2 {
     margin: 0;
@@ -9356,6 +9356,9 @@ export const buildContractDocumentHtml = ({
         <h2 class="rc-block-title">${isQuoteDocument ? 'Detalle de items cotizados' : 'Detalle de items contratados'}</h2>
         ${itemTablesHtml}
         ${manualBlockHtml}
+      </section>
+
+      <div class="rc-closing">
         <section class="rc-continuation-head">
           <div>
             <h2>${isQuoteDocument ? 'Resumen de la cotizacion' : 'Resumen y cierre del contrato'}</h2>
@@ -9363,9 +9366,6 @@ export const buildContractDocumentHtml = ({
           </div>
           <strong>N&deg; ${escapeHtml(mainCode)}</strong>
         </section>
-      </section>
-
-      <div class="rc-closing">
       <section class="rc-closeout">
         <div class="rc-closeout-writing">
           <section class="rc-bottom">
