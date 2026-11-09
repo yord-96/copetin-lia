@@ -8,6 +8,7 @@ import { getContractWhatsAppContacts, openContractWhatsAppContact } from '../../
 import { buildContractPayloadFromQuote } from '../../utils/quoteConversion.js';
 import { economicDepositGroup, reviseEconomicDeposit } from '../../utils/economicDepositOperations';
 import { linkEconomicReceiptRows } from '../../utils/economicReceiptLinks';
+import { resolveGuaranteeReceipt } from '../../utils/guaranteeReceipt';
 import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
@@ -10025,12 +10026,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const handleDepositReceipt = async (entry) => {
-    if (!contractEconomicsData || entry?.type !== 'deposit' || generatingDepositReceiptId) return;
+    if (!contractEconomicsData || !['deposit', 'guarantee'].includes(entry?.type) || generatingDepositReceiptId) return;
+    const isGuaranteeReceipt = entry.type === 'guarantee';
 
     const linkedMovementId = String(entry?.cashMovementId ?? '').trim();
-    if (linkedMovementId) {
+    const linkedReceiptCode = String(entry?.cashReceiptCode ?? '').trim();
+    if (linkedMovementId || linkedReceiptCode) {
       const linkedMovement = (contractEconomicsData.movements ?? []).find(
-        (movement) => String(movement?.id ?? '') === linkedMovementId,
+        (movement) => linkedMovementId
+          ? String(movement?.id ?? '') === linkedMovementId
+          : String(movement?.receiptCode ?? '') === linkedReceiptCode,
       );
       if (linkedMovement) {
         await handlePrintEconomicReceipt(linkedMovement);
@@ -10044,7 +10049,28 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       contractEconomicsData.economicLedger,
       contractEconomicsData.ledgerChargeTargetBs,
     );
-    const allocation = allocations.get(entry.id);
+    if (isGuaranteeReceipt) {
+      const plan = resolveGuaranteeReceipt(entry, contractEconomicsData.economicLedger, allocations);
+      if (plan.kind === 'source') {
+        if (!entry.sourceDepositId) {
+          const linked = await saveContractEconomicLedgerRows(
+            contractEconomicsData.economicLedger.map(row => row.id === entry.id ? { ...row, sourceDepositId: plan.entry.id, reclassifiedFromPayment: true } : row),
+            'Garantía vinculada al depósito de origen, sin registrar un segundo ingreso.',
+            { force: true },
+          );
+          if (!linked) return;
+        }
+        await handleDepositReceipt(plan.entry);
+        return;
+      }
+      if (plan.kind !== 'standalone') {
+        setContractEconomicsError('Esta garantía ya está respaldada o repartida entre depósitos. Revisa los recibos de origen antes de registrar otro ingreso.');
+        return;
+      }
+    }
+    const allocation = isGuaranteeReceipt
+      ? { receivedBs: toMoneyNumber(entry.amountBs), contractBs: 0, guaranteeBs: toMoneyNumber(entry.amountBs), surplusBs: 0 }
+      : allocations.get(entry.id);
     if (!allocation || allocation.receivedBs <= 0) {
       setContractEconomicsError('No se pudo calcular el desglose de este deposito.');
       return;
@@ -10060,16 +10086,17 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const contractCode = contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || '';
     const customerName = contractEconomicsData.contract?.customerName || 'Cliente';
     const receiptDetail = [
-      `ABONO RECIBIDO PARA CONTRATO ${contractCode}`,
+      `${isGuaranteeReceipt ? 'GARANTÍA RECIBIDA' : 'ABONO RECIBIDO'} PARA CONTRATO ${contractCode}`,
       `Total recibido: ${formatBs(allocation.receivedBs)}`,
       `Aplicado al contrato: ${formatBs(allocation.contractBs)}`,
       allocation.guaranteeBs > 0 ? `Apartado como garantia: ${formatBs(allocation.guaranteeBs)}` : '',
       allocation.surplusBs > 0 ? `Excedente del cliente: ${formatBs(allocation.surplusBs)}` : '',
+      isGuaranteeReceipt ? 'Garantía separada del alquiler. No reduce el saldo del servicio.' : '',
       entry.note ? `Detalle: ${entry.note}` : '',
     ].filter(Boolean).join('\n');
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
     const commonPayload = {
-      clientOperationId: `contract-deposit:${contractEconomicsData.contract?.id ?? contractCode}:${entry.id}`,
+      clientOperationId: `contract-${isGuaranteeReceipt ? 'guarantee' : 'deposit'}:${contractEconomicsData.contract?.id ?? contractCode}:${entry.id}`,
       receivedAmountBs: allocation.receivedBs,
       guaranteeAllocationBs: allocation.guaranteeBs,
       surplusAllocationBs: allocation.surplusBs,
@@ -10087,8 +10114,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       linkedRentalId: rentalId,
       linkedContractId: contractEconomicsData.contract?.id ?? '',
       linkedOrderCode: contractEconomicsData.contract?.orderCode ?? contractEconomicsData.linkedOrder?.orderCode ?? '',
-      accountingTag: 'contract_deposit_receipt',
-      category: 'abono_contrato',
+      accountingTag: isGuaranteeReceipt ? 'guarantee_collection' : 'contract_deposit_receipt',
+      category: isGuaranteeReceipt ? 'garantia' : 'abono_contrato',
+      ...(isGuaranteeReceipt ? { contractAllocationBs: 0, collectionTarget: 'guarantee', collectionBreakdown: [{ target: 'guarantee', amountBs: allocation.guaranteeBs }] } : {}),
       createdBy,
       responsible: createdBy,
     };
@@ -10117,7 +10145,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             type: 'ingreso',
             cashBoxType: 'BIG_CASH',
             amountBs: allocation.receivedBs,
-            description: `Abono contrato ${contractCode}: ${customerName}`,
+            description: `${isGuaranteeReceipt ? 'Garantía' : 'Abono'} contrato ${contractCode}: ${customerName}`,
           });
       rememberEconomicCashResult(result);
       const movement = result?.movement ?? result ?? {};
@@ -10142,7 +10170,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       ));
       const ledgerSyncPromise = saveContractEconomicLedgerRows(
         nextLedger,
-        `Abono respaldado con recibo ${receiptCode || 'oficial'}.`,
+        `${isGuaranteeReceipt ? 'Garantía respaldada' : 'Abono respaldado'} con recibo ${receiptCode || 'oficial'}.`,
         { force: true },
       );
       await handlePrintEconomicReceipt({ ...movement, id: movementId }, receiptWindow);
@@ -13779,6 +13807,15 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 {generatingDepositReceiptId === entry.id
                                   ? 'Generando...'
                                   : entry.cashReceiptCode || (entry.cashMovementId ? 'Ver recibo' : 'Generar recibo')}
+                              </button>
+                            ) : null}
+                            {isReservedGuarantee ? (
+                              <button type="button" className="contract-economics-row-action"
+                                onClick={() => handleDepositReceipt(entry)}
+                                disabled={Boolean(generatingDepositReceiptId) || (!entry.cashMovementId && !entry.cashReceiptCode && (readOnly || isSavingContractEconomicsLedger))}
+                                title={entry.sourceDepositId ? 'Ver o generar el recibo del depósito de origen, sin duplicar el ingreso.' : 'Generar el recibo de la garantía recibida por separado. La garantía no reduce el alquiler.'}
+                                aria-label={`${entry.cashMovementId || entry.cashReceiptCode ? 'Abrir' : 'Generar'} recibo de garantia`}>
+                                {generatingDepositReceiptId === entry.id ? 'Generando...' : entry.cashReceiptCode || (entry.cashMovementId ? 'Ver recibo' : entry.sourceDepositId ? 'Recibo del depósito' : 'Generar recibo de garantía')}
                               </button>
                             ) : null}
                             {entry.attachment?.url ? (
