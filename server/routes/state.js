@@ -43,6 +43,7 @@ import {
 } from '../../src/utils/inventoryKardex.js';
 import { filterInventoryMovementHistory } from '../../src/utils/inventoryMovementHistory.js';
 import { mutateItemLoan } from '../services/itemLoans.js';
+import { buildInventoryStockCommitments } from '../../src/utils/inventoryStockCommitment.js';
 
 const router = Router();
 const gzipAsync = promisify(gzip);
@@ -8456,25 +8457,8 @@ const buildCurrentInventoryCommitments = (state = {}) => {
   // "Comprometido" representa el máximo de unidades propias ocupadas al mismo
   // tiempo, no la suma de contratos de fechas distintas. Así el mismo stock
   // puede reutilizarse después de una devolución sin aparecer agotado para siempre.
-  detailsByItem.forEach((rows, itemId) => {
-    const dateKeys = new Set([todayKey]);
-    rows.forEach((row) => {
-      if (row.periodStartKey) dateKeys.add(row.periodStartKey);
-      if (row.eventDate) dateKeys.add(row.eventDate);
-    });
-    let peakCommitted = 0;
-    dateKeys.forEach((dateKey) => {
-      const committed = rows.reduce((sum, row) => {
-        const start = row.periodStartKey || todayKey;
-        const end = row.periodEndKey || start;
-        return dateKey >= start && dateKey <= end
-          ? sum + Math.max(0, Math.abs(Number(row.deltaUnits ?? 0)))
-          : sum;
-      }, 0);
-      peakCommitted = Math.max(peakCommitted, committed);
-    });
-    totalsByItem.set(itemId, peakCommitted);
-  });
+  const sharedCommitments = buildInventoryStockCommitments(rentals, { todayKey });
+  detailsByItem.forEach((_rows, itemId) => totalsByItem.set(itemId, sharedCommitments.get(itemId) ?? 0));
 
   const outsideByItem = new Map();
   const outsideDetailsByItem = new Map();

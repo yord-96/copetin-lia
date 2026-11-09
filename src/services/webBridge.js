@@ -1,11 +1,12 @@
 import { manageAttendance } from '../utils/attendanceManagement.js';
 import { normalizeInventoryPurchase } from '../utils/inventoryPurchase.js';
+import { buildInventoryStockCommitments, inventoryCommitmentDate } from '../utils/inventoryStockCommitment.js';
 import { pettyCashChannel, pettyCashBoxLabel, assertPettyCashChannel, pettyCashChannelBalance, assertPettyCashReplacement } from '../utils/pettyCashChannel.js';
 import { attendanceNeedsPhoto } from '../utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../utils/economicLedgerCashDates.js';
 import { createPersonnelOperations } from '../utils/personnelOperations.js';
-import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest, getOutstandingInventoryLineQuantity } from '../utils/availability.js';
+import { buildAvailabilityPeriod, getProjectedInventoryAvailability, validateProjectedInventoryRequest } from '../utils/availability.js';
 import { cashMovementMatchesContractReferences } from '../utils/contractCashLinks.js';
 import { reconcileContractDocumentPayments } from '../utils/contractDocumentPayments.js';
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
@@ -76,33 +77,11 @@ const getInventoryLineKey = (line, index = 0) => String(
   ?? `${line?.comboLineKey || 'item'}-${line?.itemId || 'sin-item'}-${line?.comboRuleIndex ?? index}-${index}`,
 ).trim();
 
-const getOutstandingReservedQtyForRentalLine = (rental, line, index = 0) =>
-  !line || line.controlsStock === false ? 0 : getOutstandingInventoryLineQuantity(rental, line, index);
-
-const rentalAffectsCurrentStock = (rental) => {
-  if (!rental || rental.deletedAt || rental.cancelledAt || rental.returnedAt) return false;
-  const status = normalizeRentalStatus(rental?.status);
-  if (!['active', 'confirmed', 'pending'].includes(status)) return false;
-  const inventoryStatus = normalizeText(rental?.operational?.inventoryStatus ?? '');
-  return inventoryStatus !== 'devuelto' && inventoryStatus !== 'anulado';
-};
-
-const getActiveReservedStockForItem = (state, itemId) => {
-  const requestedItemId = String(itemId ?? '').trim();
-  if (!requestedItemId) return 0;
-
-  return (Array.isArray(state?.rentals) ? state.rentals : [])
-    .filter((rental) => rentalAffectsCurrentStock(rental))
-    .reduce((total, rental) => total + (Array.isArray(rental?.items) ? rental.items : [])
-      .reduce((lineTotal, line, index) => (
-        String(line?.itemId ?? '').trim() === requestedItemId
-          ? lineTotal + getOutstandingReservedQtyForRentalLine(rental, line, index)
-          : lineTotal
-      ), 0), 0);
-};
-
 const getInventoryStockCommitment = (state, itemId) => {
-  const reservedStock = getActiveReservedStockForItem(state, itemId);
+  const reservedStock = buildInventoryStockCommitments(state.rentals, {
+    todayKey: inventoryCommitmentDate(state.settings?.timezone),
+    itemId,
+  }).get(String(itemId)) ?? 0;
   return {
     reservedStock,
     // stockRecoveries se conserva solo como historial legacy. Desde que lavado/
@@ -3503,18 +3482,9 @@ const normalizeState = (state) => {
 
   repairDuplicateActiveRentalOrderCodes(source, now);
 
-  const activeReservedByItem = new Map();
-  source.rentals
-    .filter((rental) => rentalAffectsCurrentStock(rental))
-    .forEach((rental) => {
-      (Array.isArray(rental?.items) ? rental.items : []).forEach((line, index) => {
-        const itemId = String(line?.itemId ?? '').trim();
-        if (!itemId) return;
-        const reservedQty = getOutstandingReservedQtyForRentalLine(rental, line, index);
-        if (reservedQty <= 0) return;
-        activeReservedByItem.set(itemId, Number(activeReservedByItem.get(itemId) ?? 0) + reservedQty);
-      });
-    });
+  const activeReservedByItem = buildInventoryStockCommitments(source.rentals, {
+    todayKey: inventoryCommitmentDate(source.settings?.timezone),
+  });
   source.items.forEach((item) => {
     if (!item || item.controlsStock === false) return;
     const totalStock = Math.max(0, Math.trunc(Number(item.totalStock ?? 0)));

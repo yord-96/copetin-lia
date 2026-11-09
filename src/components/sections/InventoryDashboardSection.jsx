@@ -6,6 +6,7 @@ import { api } from '../../services/api';
 import InventoryOpsSection from './InventoryOpsSection';
 import { inventoryBusinessDate } from '../../utils/inventoryPurchase';
 import { isStockAdjustmentMovement } from '../../utils/inventoryMovementHistory';
+import { buildInventoryStockCommitments } from '../../utils/inventoryStockCommitment';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -2154,23 +2155,7 @@ function InventoryDashboardSection({
     return () => document.removeEventListener('mousedown', closeOnOutside);
   }, [productFilterMenu]);
 
-  const reservedByItem = useMemo(() => {
-    const map = {};
-    const todayKey = getDateKey(new Date());
-    activeRentals.forEach((rental) => {
-      const inventoryStatus = normalizeText(rental?.operational?.inventoryStatus ?? '');
-      const startKey = getDateKey(rental?.rentalDate ?? rental?.deliveryDate);
-      const endKey = getDateKey(rental?.dueDate ?? rental?.pickupDate ?? startKey);
-      const affectsCurrentStock = inventoryStatus === 'salio'
-        || Boolean(startKey && todayKey >= startKey && (!endKey || todayKey <= endKey));
-      if (!affectsCurrentStock || inventoryStatus === 'devuelto' || inventoryStatus === 'anulado') return;
-      (rental.items ?? []).forEach((line) => {
-        if (line?.controlsStock === false || String(line?.verificationStatus ?? '').trim() === 'pending_verification') return;
-        map[line.itemId] = (map[line.itemId] ?? 0) + Number(line.internalReservedQty ?? line.quantity ?? 0);
-      });
-    });
-    return map;
-  }, [activeRentals]);
+  const reservedByItem = useMemo(() => Object.fromEntries(buildInventoryStockCommitments(activeRentals)), [activeRentals]);
 
   const itemUsageById = useMemo(() => {
     const usage = new Map();
@@ -6365,8 +6350,9 @@ function InventoryDashboardSection({
                 </table>
               </div>
             ) : isAdjustModule ? (
-              <div className="inventory-table-wrap-modern">
+              <div className="inventory-table-wrap-modern adjustments-table-wrap">
                 <table className="inventory-table-modern adjustments-table-modern">
+                  <colgroup><col style={{ width: 170 }} /><col style={{ width: 118 }} /><col style={{ width: 240 }} /><col style={{ width: 250 }} /><col style={{ width: 80 }} /><col style={{ width: 100 }} /><col style={{ width: 100 }} /><col style={{ width: 110 }} /><col style={{ width: 120 }} /><col style={{ width: 95 }} /><col style={{ width: 40 }} /></colgroup>
                   <thead>
                     <tr>
                       <th>Ajuste</th>
