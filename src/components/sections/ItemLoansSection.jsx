@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, Eye, HandHelping, Pencil, Plus, Search, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowDownToLine, Eye, FileText, HandHelping, Pencil, Plus, Search, Trash2, Undo2, X } from 'lucide-react';
 import { api } from '../../services/api';
 import { formatDate } from '../../utils/formatters';
 import { searchLoanClients, searchLoanItems } from '../../utils/itemLoanSearch';
@@ -107,6 +107,13 @@ export default function ItemLoansSection({ currentUser, readOnly }) {
   const [detailId, setDetailId] = useState('');
   const [returnDraft, setReturnDraft] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
+  const [documentPreview, setDocumentPreview] = useState(null);
+  const documentRequest = useRef(null);
+  useEffect(() => () => documentRequest.current?.abort(), []);
+  useEffect(() => {
+    const url = documentPreview?.url;
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [documentPreview?.url]);
   const [addedLineId, setAddedLineId] = useState('');
   const newLineRef = useRef(null);
   const errorRef = useRef(null);
@@ -162,6 +169,19 @@ export default function ItemLoansSection({ currentUser, readOnly }) {
     setAddedLineId(line.id);
   };
   const patchLine = (id, patch) => setDraft(current => ({ ...current, lines: current.lines.map(line => line.id === id ? { ...line, ...patch } : line) }));
+  const openDocument = async loan => {
+    documentRequest.current?.abort();
+    const controller = new AbortController();
+    documentRequest.current = controller;
+    setDocumentPreview({ id: loan.id, code: loan.code, loading: true });
+    try {
+      const blob = await api.inventory.getItemLoanDocument(loan.id, { signal: controller.signal });
+      if (!controller.signal.aborted) setDocumentPreview({ id: loan.id, code: loan.code, url: URL.createObjectURL(blob) });
+    } catch (failure) {
+      if (!controller.signal.aborted) setDocumentPreview({ id: loan.id, code: loan.code, error: failure.message });
+    }
+  };
+  const closeDocument = () => { documentRequest.current?.abort(); setDocumentPreview(null); };
   const beginReturn = (loan, line) => { setError(''); setReturnDraft({ requestId: crypto.randomUUID(), id: loan.id, version: loan.version, lineId: line.id, quantity: line.quantity - returned(loan, line), itemId: line.itemId || '', date: today(), note: '', itemName: line.itemName, legacy: loan.kind === 'legacy' }); };
   const modal = draft || detail || returnDraft || confirmation;
   return <section className="item-loans-workspace">
@@ -170,7 +190,7 @@ export default function ItemLoansSection({ currentUser, readOnly }) {
     {!modal && error ? <p ref={errorRef} className="status error" role="alert">{error}</p> : null}
     {feedback ? <p className="status" role="status">{feedback}</p> : null}
     <div className="item-loans-card"><div className="item-loans-filters"><label className="item-loans-search"><Search size={17} /><input placeholder="Buscar persona, préstamo o material…" value={query} onChange={event => setQuery(event.target.value)} /></label><select aria-label="Estado" value={filter} onChange={event => setFilter(event.target.value)}><option value="pending">Pendientes</option><option value="returned">Devueltos</option><option value="overdue">Fuera de plazo</option><option value="all">Todos los estados</option></select><select aria-label="Tipo de préstamo" value={kind} onChange={event => setKind(event.target.value)}><option value="all">Nuevos y antiguos</option><option value="new">Nuevos</option><option value="legacy">Antiguos</option></select><button className="ghost-button" onClick={load} disabled={busy || loading}>Actualizar</button></div>
-      <div className="item-loans-table-wrap"><table><thead><tr><th>Préstamo / fecha</th><th>Persona</th><th>Materiales</th><th>Devolución prevista</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{visible.map(loan => { const sum = totals(loan), pending = sum.quantity - sum.returned; return <tr key={loan.id}><td><strong>{loan.code}</strong><small>{formatDate(loan.date)}</small></td><td><strong>{loan.personName}</strong><small>{loan.phone || 'Sin teléfono'}{loan.document ? ` · CI ${loan.document}` : ''}</small></td><td><strong>{loan.lines.length} ítem(s) · {sum.quantity} unidades</strong><small>{loan.lines.slice(0, 2).map(line => `${line.itemName} (${line.quantity})`).join(' · ')}{loan.lines.length > 2 ? '…' : ''}</small></td><td>{loan.dueDate ? formatDate(loan.dueDate) : 'Por coordinar'}</td><td><span className={`item-loans-badge ${loan.kind}`}>{loan.kind === 'new' ? 'Nuevo' : 'Antiguo'}</span></td><td><strong>{pending ? `${pending} por devolver` : 'Devuelto'}</strong><small>{sum.returned} de {sum.quantity} devueltas</small></td><td><div className="item-loans-actions"><button className="ghost-button" title="Ver detalle y devoluciones" aria-label={`Ver ${loan.code}`} onClick={() => { setError(''); setDetailId(loan.id); }}><Eye size={16} /></button>{!readOnly ? <><button className="ghost-button" title="Editar préstamo" onClick={() => { setError(''); setDraft(structuredClone(loan)); }}><Pencil size={16} /></button><button className="ghost-button item-loans-danger" title="Eliminar préstamo" onClick={() => { setError(''); setConfirmation({ loan, action: 'delete' }); }}><Trash2 size={16} /></button></> : null}</div></td></tr>; })}</tbody></table></div>
+      <div className="item-loans-table-wrap"><table><thead><tr><th>Préstamo / fecha</th><th>Persona</th><th>Materiales</th><th>Devolución prevista</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{visible.map(loan => { const sum = totals(loan), pending = sum.quantity - sum.returned; return <tr key={loan.id}><td><strong>{loan.code}</strong><small>{formatDate(loan.date)}</small></td><td><strong>{loan.personName}</strong><small>{loan.phone || 'Sin teléfono'}{loan.document ? ` · CI ${loan.document}` : ''}</small></td><td><strong>{loan.lines.length} ítem(s) · {sum.quantity} unidades</strong><small>{loan.lines.slice(0, 2).map(line => `${line.itemName} (${line.quantity})`).join(' · ')}{loan.lines.length > 2 ? '…' : ''}</small></td><td>{loan.dueDate ? formatDate(loan.dueDate) : 'Por coordinar'}</td><td><span className={`item-loans-badge ${loan.kind}`}>{loan.kind === 'new' ? 'Nuevo' : 'Antiguo'}</span></td><td><strong>{pending ? `${pending} por devolver` : 'Devuelto'}</strong><small>{sum.returned} de {sum.quantity} devueltas</small></td><td><div className="item-loans-actions"><button className="ghost-button" title="Ver documento del préstamo" aria-label={`Documento ${loan.code}`} disabled={busy} onClick={() => openDocument(loan)}><FileText size={16} /></button><button className="ghost-button" title="Ver detalle y devoluciones" aria-label={`Ver ${loan.code}`} onClick={() => { setError(''); setDetailId(loan.id); }}><Eye size={16} /></button>{!readOnly ? <><button className="ghost-button" title="Editar préstamo" onClick={() => { setError(''); setDraft(structuredClone(loan)); }}><Pencil size={16} /></button><button className="ghost-button item-loans-danger" title="Eliminar préstamo" onClick={() => { setError(''); setConfirmation({ loan, action: 'delete' }); }}><Trash2 size={16} /></button></> : null}</div></td></tr>; })}</tbody></table></div>
       {loading || !visible.length ? <div className="item-loans-empty"><HandHelping size={34} /><strong>{loading ? 'Cargando préstamos…' : 'No hay préstamos que coincidan con los filtros'}</strong><p>Registra material nuevo o antiguo para llevar seguimiento de quién debe devolverlo.</p></div> : <footer className="item-loans-count">{visible.length} préstamo(s)</footer>}
     </div>
     {modal ? <div className="item-loans-backdrop"><section className="item-loans-modal" role="dialog" aria-modal="true" aria-label={confirmation ? 'Confirmar operación' : draft ? 'Registro de préstamo' : returnDraft ? 'Registrar devolución' : 'Detalle del préstamo'}>
@@ -189,6 +209,13 @@ export default function ItemLoansSection({ currentUser, readOnly }) {
           <h4>Historial de devoluciones</h4>{detail.returns?.length ? <div className="item-loans-return-history">{detail.returns.map(row => <article key={row.id} className={row.deletedAt ? 'is-voided' : ''}><div><strong>{row.quantity} unidad(es) · {detail.lines.find(line => line.id === row.lineId)?.itemName}</strong><small>{formatDate(row.date)} · Ingresó a: {data.items.find(item => item.id === row.itemId)?.name || row.itemId} · {row.createdByName || 'Inventario'}</small><small>{row.note}{row.deletedAt ? ' · ANULADA' : ''}</small></div>{!readOnly && !row.deletedAt ? <button className="ghost-button" title="Anular devolución" onClick={() => setConfirmation({ loan: detail, action: 'undo-return', returnId: row.id })}><Undo2 size={15} /> Anular</button> : null}</article>)}</div> : <p className="item-loans-explanation">Todavía no se registraron devoluciones.</p>}
         </> : null}
       </div>
+    </section></div> : null}
+    {documentPreview ? <div className="item-loans-backdrop"><section className="item-loans-modal item-loans-document-modal" role="dialog" aria-modal="true" aria-label={`Documento del préstamo ${documentPreview.code}`}>
+      <header><div><span className="item-loans-eyebrow">DOCUMENTO DE PRÉSTAMO</span><h3>{documentPreview.code}</h3></div><button type="button" className="ghost-button" aria-label="Cerrar documento" onClick={closeDocument}><X size={18} /></button></header>
+      <div className="item-loans-document-body" aria-busy={Boolean(documentPreview.loading)}>
+        {documentPreview.loading ? <p role="status">Generando documento del préstamo…</p> : documentPreview.error ? <div className="item-loans-document-error"><p role="alert">{documentPreview.error}</p><button className="ghost-button" onClick={() => openDocument(documentPreview)}>Reintentar</button></div> : <iframe title={`Documento ${documentPreview.code}`} src={`${documentPreview.url}#toolbar=1&view=FitH`} />}
+      </div>
+      <footer className="item-loans-document-actions"><button type="button" className="ghost-button" onClick={closeDocument}>Cerrar</button>{documentPreview.url ? <><a className="ghost-button" href={documentPreview.url} target="_blank" rel="noopener noreferrer">Abrir / imprimir PDF</a><a className="primary-button" href={documentPreview.url} download={`PRESTAMO-${documentPreview.code}.pdf`}><ArrowDownToLine size={16} /> Descargar PDF</a></> : null}</footer>
     </section></div> : null}
   </section>;
 }

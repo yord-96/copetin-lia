@@ -20,3 +20,11 @@
 .item-loans-suggestions .item-loans-custom-option { background: #fff5e9; border-top: 1px solid #ead4b7; }
 .item-loans-form-fields { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .item-loans-add-bottom { width: 100%; min-height: 44px; border: 1px dashed #cfdbea; background: #f0f5fc; color: #163a6b; border-radius: 9px; font-weight: 700; }
+.item-loans-document-modal { width: min(1180px, 100%); }
+.item-loans-document-body { min-height: 220px; height: 70dvh; display: flex; align-items: stretch; justify-content: center; background: #edf1f7; overflow: auto; }
+.item-loans-document-body > p, .item-loans-document-error { align-self: center; padding: 24px; text-align: center; color: #526a89; }
+.item-loans-document-body iframe { display: block; width: 100%; height: 100%; border: 0; }
+.item-loans-document-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid #dce4ef; }
+.item-loans-document-actions a { text-decoration: none; }
+.item-loans-actions svg { flex-shrink: 0; }
+@media(max-width:650px) { .item-loans-document-actions { padding: 12px; gap: 8px; } .item-loans-document-actions a { flex: 1; font-size: 12px; } }

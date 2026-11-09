@@ -3949,6 +3949,25 @@ export const api = {
     ensureCollectionsLoaded: (names, reason) => ensureServerCollectionsLoaded(names, reason),
   },
   inventory: {
+    getItemLoanDocument: async (id, { signal } = {}) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted) controller.abort();
+      signal?.addEventListener('abort', abort, { once: true });
+      const timer = setTimeout(abort, 30000);
+      try {
+        const response = await fetch(getServerStateUrl(`/inventory/item-loans/${encodeURIComponent(id)}/pdf`), {
+          cache: 'no-store', headers: getInternalHeaders(), signal: controller.signal,
+        });
+        if (!response.ok) throw await createServerStateError(response, 'No se pudo generar el documento del préstamo.');
+        const blob = await response.blob();
+        if (blob.type !== 'application/pdf') throw new Error('El servidor no devolvió un documento PDF válido.');
+        return blob;
+      } catch (error) {
+        if (controller.signal.aborted && !signal?.aborted) throw new Error('El documento tardó demasiado en generarse. Vuelve a intentarlo.');
+        throw error;
+      } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+    },
     itemLoans: async (action = '', payload = {}) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20000);

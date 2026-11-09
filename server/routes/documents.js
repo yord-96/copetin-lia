@@ -10,6 +10,7 @@ import {
   readCachedDocumentPdf,
 } from '../storage/documentPdfRenderer.js';
 import { hasValidPublicQuoteAccess } from '../security/publicQuoteAccess.js';
+import { buildItemLoanDocumentHtml } from '../../src/utils/itemLoanDocument.js';
 import {
   buildContractDocumentHtml,
   buildWeeklyInventoryHtml,
@@ -755,6 +756,21 @@ router.get(
     }
   },
 );
+
+router.get('/__copetin_db/inventory/item-loans/:id/pdf', requireInternalKey, async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const loan = (snapshot.state?.itemLoans ?? []).find(row => row.id === req.params.id && !row.deletedAt);
+    if (!loan) { res.status(404).json({ error: 'Préstamo no encontrado.' }); return; }
+    const html = await embedContractAssets(buildItemLoanDocumentHtml({ loan, settings: snapshot.state?.settings ?? {} }));
+    const result = await renderHtmlDocumentToPdf({ html, fileName: `PRESTAMO-${loan.code}` });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Content-Length', String(result.buffer.length));
+    res.send(result.buffer);
+  } catch (error) { next(error); }
+});
 
 // Compatibility endpoint for other document types that still send HTML.
 router.post('/__copetin_db/documents/render-pdf', requireInternalKey, async (req, res, next) => {
