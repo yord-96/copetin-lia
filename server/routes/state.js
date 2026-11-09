@@ -10896,7 +10896,13 @@ const itemLoanCatalog = state => (state.items ?? []).filter(item => !item.delete
 router.get('/__copetin_db/inventory/item-loans', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
-    res.json({ loans: (snapshot.state?.itemLoans ?? []).filter(loan => !loan.deletedAt), items: itemLoanCatalog(snapshot.state ?? {}) });
+    res.json({
+      loans: (snapshot.state?.itemLoans ?? []).filter(loan => !loan.deletedAt),
+      items: itemLoanCatalog(snapshot.state ?? {}),
+      clients: (snapshot.state?.clients ?? []).filter(client => !client.deletedAt).map(client => ({
+        id: client.id, name: client.name, phone: client.phone || client.whatsapp || '', ci: client.nitCi || client.customerCi || client.ci || '',
+      })),
+    });
   } catch (error) { next(error); }
 });
 
