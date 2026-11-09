@@ -24,10 +24,14 @@ export function mutateItemLoan(state, action, payload, { now = new Date().toISOS
   const findItem = id => items.find(item => String(item.id) === id && !item.deletedAt && item.controlsStock !== false);
   const requestId = clean(payload.requestId);
   if (!requestId) fail('Falta el identificador de la operación.');
+  const confirmedResult = loan => {
+    const touched = new Set([...(loan.lines ?? []), ...(loan.returns ?? [])].map(row => row.itemId).filter(Boolean));
+    return { loan, items: items.filter(item => touched.has(item.id)), duplicate: true };
+  };
   const existing = action === 'create' ? loans.find(loan => loan.requestId === requestId) : loans.find(loan => loan.id === clean(payload.id));
-  if (action === 'create' && existing) return { loan: existing, items: [], duplicate: true };
+  if (action === 'create' && existing) return confirmedResult(existing);
   if (action !== 'create' && (!existing || existing.deletedAt)) fail('Préstamo no encontrado.', 404);
-  if (action === 'return' && existing.returns?.some(row => row.requestId === requestId)) return { loan: existing, items: [], duplicate: true };
+  if (action === 'return' && existing.returns?.some(row => row.requestId === requestId)) return confirmedResult(existing);
   if (existing && Number(payload.version) !== existing.version) fail('El préstamo cambió. Actualiza la vista e inténtalo nuevamente.', 409);
   const before = existing ? structuredClone(existing) : null;
   const loan = before ? structuredClone(before) : { id: makeId(), code: `PR-${String(loans.length + 1).padStart(5, '0')}`, requestId, createdAt: now, createdByName: clean(payload.userName), lines: [], returns: [], version: 0 };

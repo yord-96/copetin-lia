@@ -13,7 +13,9 @@ test('new loans deduct once, explain availability, accept partial returns and re
   assert.equal(db.items[0].totalStock, 80);
   assert.equal(db.items[0].availableStock, 70);
   assert.equal(db.items[0].itemLoanAllocations[0].personName, 'Ana');
-  assert.equal(mutateItemLoan(db, 'create', payload).duplicate, true);
+  const retry = mutateItemLoan(db, 'create', payload);
+  assert.equal(retry.duplicate, true);
+  assert.equal(retry.items.find(item => item.id === 'chair').totalStock, 80);
   assert.equal(db.items[0].totalStock, 80);
   const returnCommand = next(result.loan, { lineId: 'line', quantity: 5, date: '2026-10-17' });
   result = mutateItemLoan(db, 'return', returnCommand);

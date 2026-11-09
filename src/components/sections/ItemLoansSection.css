@@ -18,3 +18,5 @@
 .item-loans-suggestions p { margin: 0; padding: 12px; font-size: 12px; color: #657b96; line-height: 1.5; }
 
 .item-loans-suggestions .item-loans-custom-option { background: #fff5e9; border-top: 1px solid #ead4b7; }
+.item-loans-form-fields { display: grid; gap: 16px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.item-loans-add-bottom { width: 100%; min-height: 44px; border: 1px dashed #cfdbea; background: #f0f5fc; color: #163a6b; border-radius: 9px; font-weight: 700; }

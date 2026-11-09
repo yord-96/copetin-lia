@@ -3950,19 +3950,42 @@ export const api = {
   },
   inventory: {
     itemLoans: async (action = '', payload = {}) => {
-      const response = await fetch(getServerStateUrl(`/inventory/item-loans${action ? `/${action}` : ''}`), {
-        method: action ? 'POST' : 'GET', cache: 'no-store',
-        headers: getInternalHeaders(action ? { 'Content-Type': 'application/json' } : {}),
-        ...(action ? { body: JSON.stringify(payload) } : {}),
-      });
-      if (!response.ok) throw await createServerStateError(response, 'No se pudo procesar el préstamo.');
-      const result = await response.json();
-      if (result.revision) rememberServerRevision(result.revision);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+      let result;
+      try {
+        const response = await fetch(getServerStateUrl(`/inventory/item-loans${action ? `/${action}` : ''}`), {
+          method: action ? 'POST' : 'GET', cache: 'no-store', signal: controller.signal,
+          headers: getInternalHeaders(action ? { 'Content-Type': 'application/json' } : {}),
+          ...(action ? { body: JSON.stringify(payload) } : {}),
+        });
+        if (!response.ok) throw await createServerStateError(response, 'No se pudo procesar el préstamo.');
+        result = await response.json();
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error(action
+          ? 'El servidor no confirmó la operación a tiempo. Tus datos siguen en el formulario. Reintenta desde aquí para comprobar la misma operación sin duplicar el préstamo.'
+          : 'El servidor tardó demasiado en cargar los préstamos. Pulsa Actualizar para reintentar.');
+        if (error instanceof TypeError) throw new Error(action
+          ? 'Se perdió la conexión antes de confirmar el préstamo. Tus datos siguen en el formulario. Reintenta desde aquí para comprobar la misma operación.'
+          : 'No se pudieron cargar los préstamos. Revisa la conexión y pulsa Actualizar.');
+        throw error;
+      } finally { clearTimeout(timer); }
+      if (result.revision) { rememberServerRevision(result.revision); if (action) localServerCommitSerial += 1; }
       if (action) {
-        const snapshot = await exportLocalCollections(['items']);
-        const updated = new Map((result.items ?? []).map(item => [String(item.id), item]));
-        await mergeLocalState({ items: (snapshot.items ?? []).map(item => updated.has(String(item.id)) ? { ...item, ...updated.get(String(item.id)) } : item) });
-        markServerStateStale('inventory.itemLoans');
+        // Los préstamos antiguos sin vinculación no cambian productos. Evita
+        // hidratar o recorrer la base local para una respuesta sin cambios.
+        if (result.items?.length) {
+          try {
+            const snapshot = await exportLocalCollections(['items']);
+            const updated = new Map(result.items.map(item => [String(item.id), item]));
+            await mergeLocalState({ items: (snapshot.items ?? []).map(item => updated.has(String(item.id)) ? { ...item, ...updated.get(String(item.id)) } : item) });
+          } catch {
+            loadedServerCollections.delete('items');
+            markServerStateStale('inventory.itemLoans:cache-refresh');
+          }
+        }
+        loadedServerCollections.delete('itemLoans');
+        loadedServerCollections.delete('inventoryMovements');
         announceDataChange({ domain: 'inventory', method: 'itemLoans', collections: ['items', 'itemLoans', 'inventoryMovements'] });
       }
       return result;
