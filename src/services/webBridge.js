@@ -12160,7 +12160,71 @@ const syncRouteStopsToDeliveries = (state, route) => {
   });
 };
 
+export const applyInventoryMovementEdit = (state, payload = {}) => {
+  if (!String(payload.clientOperationId ?? '').trim()) throw new Error('Falta el identificador de la correccion.');
+  const movement = (state.inventoryMovements ?? []).find(row => row.id === payload.editingMovementId && !row.deletedAt);
+  if (!movement || !['entrada', 'salida', 'ajuste'].includes(movement.type)
+    || (movement.sourceType && movement.sourceType !== 'manual_stock_movement') || movement.reference) {
+    throw new Error('Solo se pueden editar movimientos manuales de stock.');
+  }
+  const fingerprint = JSON.stringify([payload.quantity, payload.targetTotalStock, payload.reason, payload.purchaseDate, payload.purchaseCostBs]);
+  const previousEdit = (movement.editHistory ?? []).find(row => row.clientOperationId === payload.clientOperationId);
+  if (previousEdit) {
+    if (previousEdit.fingerprint !== fingerprint) throw new Error('Esta correccion ya fue confirmada con otros valores. Vuelve a abrir Editar.');
+    return movement;
+  }
+  if (String(payload.expectedMovementVersion ?? '') !== String(movement.updatedAt ?? movement.createdAt ?? '')) {
+    const error = new Error('El movimiento cambio en otra sesion. Vuelve a abrir Editar.');
+    error.statusCode = 409;
+    throw error;
+  }
+  const item = (state.items ?? []).find(row => row.id === movement.itemId && !row.deletedAt);
+  if (!item) throw new Error('El producto ya no existe.');
+  const reason = String(payload.reason ?? '').trim();
+  if (!reason) throw new Error('Debes registrar el motivo del movimiento.');
+  const quantity = Number(movement.type === 'ajuste' ? payload.targetTotalStock : payload.quantity);
+  if (!Number.isSafeInteger(quantity) || quantity < (movement.type === 'ajuste' ? 0 : 1)) throw new Error('Ingresa una cantidad entera valida.');
+  const purchase = movement.type === 'entrada' ? normalizeInventoryPurchase(payload) : null;
+  const delta = movement.type === 'ajuste' ? quantity - Number(movement.beforeTotalStock) : movement.type === 'salida' ? -quantity : quantity;
+  const difference = delta - Number(movement.deltaUnits);
+  const total = Number(item.totalStock) + difference;
+  const { minimumPhysicalStock } = getInventoryStockCommitment(state, item.id);
+  if (!Number.isSafeInteger(total) || total < 0 || (difference < 0 && total < minimumPhysicalStock)) {
+    throw new Error('La correccion dejaria stock insuficiente. Unidades comprometidas: ' + minimumPhysicalStock);
+  }
+  const now = new Date().toISOString();
+  const history = { clientOperationId: payload.clientOperationId, fingerprint, editedAt: now,
+    userName: payload.userName || payload.createdByName || 'Sistema', userRole: payload.userRole || '',
+    previous: { deltaUnits: movement.deltaUnits, reason: movement.reason, purchaseDate: movement.purchaseDate, purchaseCostBs: movement.purchaseCostBs },
+    deltaUnits: delta, stockDifference: difference };
+  const index = state.inventoryMovements.indexOf(movement);
+  state.inventoryMovements.forEach((row, rowIndex) => {
+    if (row.itemId !== item.id || row.deletedAt) return;
+    const later = String(row.createdAt ?? '') > String(movement.createdAt ?? '')
+      || (row.createdAt === movement.createdAt && rowIndex > index);
+    if (later) {
+      for (const key of ['beforeTotalStock', 'afterTotalStock', 'beforeAvailableStock', 'afterAvailableStock']) {
+        if (Number.isFinite(row[key])) row[key] = Math.max(0, row[key] + difference);
+      }
+      if (difference !== 0) row.updatedAt = now;
+    }
+  });
+  movement.deltaUnits = delta;
+  movement.afterTotalStock = Number(movement.beforeTotalStock) + delta;
+  movement.afterAvailableStock = Math.max(0, Number(movement.afterAvailableStock ?? 0) + difference);
+  movement.reason = reason;
+  movement.detail = movement.type === 'ajuste' ? 'Ajuste de stock fisico final a ' + quantity : (movement.type === 'entrada' ? 'Entrada' : 'Salida') + ' de ' + quantity + ' unidades';
+  if (purchase) Object.assign(movement, purchase, { valueAmount: purchase.purchaseCostBs ?? 0, operationDate: purchase.purchaseDate ? purchase.purchaseDate + 'T12:00:00-04:00' : null });
+  movement.editHistory = [...(movement.editHistory ?? []), history];
+  movement.updatedAt = now;
+  item.totalStock = total;
+  item.availableStock = Math.max(0, total - minimumPhysicalStock);
+  item.updatedAt = now;
+  return movement;
+};
+
 export const applyInventoryStockMovement = (state, payload = {}) => {
+  if (payload.editingMovementId) return applyInventoryMovementEdit(state, payload);
   const itemId = payload?.itemId;
   const type = String(payload?.type ?? '').trim();
   const reason = String(payload?.reason ?? '').trim();

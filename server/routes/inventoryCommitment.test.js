@@ -32,5 +32,11 @@ test('stock movement and kardex use the same peak reservation across different e
     assert.equal((await (await send(payload)).json()).item.totalStock, 15);
     assert.equal((await send({ ...payload, quantity: 4, clientOperationId: 'blocked' })).status, 400);
     assert.equal((await getStateSnapshot()).state.items[0].totalStock, 15);
+    const correction = { editingMovementId: saved.movement.id, expectedMovementVersion: saved.movement.createdAt, quantity: 3, reason: 'Correccion de cantidad', clientOperationId: 'edit-loss' };
+    const edited = await send(correction); assert.equal(edited.status, 200, await edited.clone().text());
+    const corrected = await edited.json(); assert.equal(corrected.item.totalStock, 17); assert.equal(corrected.item.availableStock, 5);
+    assert.equal(corrected.movement.editHistory[0].previous.deltaUnits, -5);
+    assert.equal((await (await send(correction)).json()).item.totalStock, 17);
+    const stale = await send({ ...correction, clientOperationId: 'stale-edit' }); assert.equal(stale.status, 409);
   } finally { await new Promise(resolve => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true }); }
 });

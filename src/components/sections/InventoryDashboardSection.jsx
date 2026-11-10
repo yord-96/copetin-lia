@@ -3224,6 +3224,7 @@ function InventoryDashboardSection({
           : linkedRental?.createdByRole ?? movement.userRole ?? 'Operacion';
       return {
         id: movement.id,
+        editableMovement: !movement.reference && (!movement.sourceType || movement.sourceType === 'manual_stock_movement') && ['entrada', 'salida', 'ajuste'].includes(movement.type) ? movement : null,
         isStockAdjustment: isStockAdjustmentMovement(movement),
         createdAt: movement.operationDate
           ?? movement.deliveryDate
@@ -4091,6 +4092,23 @@ function InventoryDashboardSection({
     setMovementModalOpen(true);
   };
 
+  const openEditMovementModal = (row) => {
+    const movement = row.editableMovement;
+    if (!movement) return;
+    openMovementModal(row, movement.type);
+    setMovementForm({
+      editingMovementId: movement.id,
+      editHistory: movement.editHistory ?? [],
+      expectedMovementVersion: movement.updatedAt ?? movement.createdAt ?? '',
+      itemId: movement.itemId, type: movement.type,
+      quantity: String(Math.abs(movement.deltaUnits)),
+      targetTotalStock: String(movement.afterTotalStock ?? ''),
+      reason: movement.reason ?? '',
+      purchaseDate: movement.purchaseDate || String(movement.operationDate ?? movement.createdAt ?? '').slice(0, 10),
+      purchaseCostBs: movement.purchaseCostBs ?? '',
+    });
+  };
+
   const closeMovementModal = () => {
     if (movementSaveRef.current) return;
     setMovementModalOpen(false);
@@ -4681,6 +4699,8 @@ function InventoryDashboardSection({
     if (movementSaveRef.current) return;
     setMovementError('');
     const payload = {
+      editingMovementId: movementForm.editingMovementId,
+      expectedMovementVersion: movementForm.expectedMovementVersion,
       itemId: movementForm.itemId,
       type: movementForm.type,
       reason: String(movementForm.reason ?? '').trim(),
@@ -4695,16 +4715,16 @@ function InventoryDashboardSection({
       return;
     }
     if (payload.type === 'ajuste') {
-      const targetTotalStock = Math.trunc(Number(movementForm.targetTotalStock ?? 0));
-      if (!Number.isFinite(targetTotalStock) || targetTotalStock < 0) {
+      const targetTotalStock = Number(movementForm.targetTotalStock ?? 0);
+      if (!Number.isSafeInteger(targetTotalStock) || targetTotalStock < 0) {
         setMovementError('Ingresa un stock fisico valido.');
         return;
       }
       payload.targetTotalStock = targetTotalStock;
       payload.expectedTotalStock = movementForm.expectedTotalStock;
     } else {
-      const quantity = Math.trunc(Number(movementForm.quantity ?? 0));
-      if (!Number.isFinite(quantity) || quantity <= 0) {
+      const quantity = Number(movementForm.quantity ?? 0);
+      if (!Number.isSafeInteger(quantity) || quantity <= 0) {
         setMovementError('La cantidad debe ser mayor a 0.');
         return;
       }
@@ -4720,7 +4740,7 @@ function InventoryDashboardSection({
     try {
       await onCreateInventoryMovement(payload);
       showMessage(
-        payload.type === 'ajuste'
+        payload.editingMovementId ? 'Movimiento corregido y stock actualizado por la diferencia.' : payload.type === 'ajuste'
           ? `Stock fisico ajustado al valor final ${payload.targetTotalStock}.`
           : 'Movimiento registrado correctamente.',
       );
@@ -5461,6 +5481,7 @@ function InventoryDashboardSection({
       <button type="button" onClick={() => { setDetailRow(row); setRowMenuOpenId(null); }}>
         Ver detalle
       </button>
+      {row.editableMovement ? <button type="button" onClick={() => { openEditMovementModal(row); setRowMenuOpenId(null); }}>Editar movimiento</button> : null}
       <button type="button" onClick={() => { setQuery(row.itemName || row.name || ''); setRowMenuOpenId(null); }}>
         Filtrar por producto
       </button>
@@ -7467,10 +7488,11 @@ function InventoryDashboardSection({
       {movementModalOpen ? (
         <div className="reset-modal-backdrop" onClick={closeMovementModal}>
           <form className="reset-modal inventory-movement-modal" onSubmit={handleSubmitMovement} onClick={(event) => event.stopPropagation()}>
-            <h3>Registrar Movimiento</h3>
-            <p>Registra entradas, salidas o ajustes para mantener trazabilidad del stock.</p>
+            <h3>{movementForm.editingMovementId ? 'Editar movimiento' : 'Registrar Movimiento'}</h3>
+            <p>{movementForm.editingMovementId ? 'Corrige el movimiento original. El stock actual cambiara solo por la diferencia.' : 'Registra entradas, salidas o ajustes para mantener trazabilidad del stock.'}</p>
+            {movementForm.editHistory?.length ? <details><summary>Historial de correcciones ({movementForm.editHistory.length})</summary>{movementForm.editHistory.map((edit, index) => <p key={index}>{formatDateTime(edit.editedAt)} ? {edit.userName} ? Cantidad: {edit.previous.deltaUnits} ? {edit.deltaUnits}</p>)}</details> : null}
             <fieldset className="inventory-modal-grid" disabled={isSavingMovement} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-              <div className="full-width inventory-movement-product-picker">
+              <div className="full-width inventory-movement-product-picker" inert={movementForm.editingMovementId ? true : undefined}>
                 Producto
                 <input
                   type="search"
@@ -7525,7 +7547,7 @@ function InventoryDashboardSection({
               </div>
               <label>
                 Tipo
-                <select value={movementForm.type} onChange={(event) => setMovementForm((current) => ({ ...current, type: event.target.value }))}>
+                <select disabled={Boolean(movementForm.editingMovementId)} value={movementForm.type} onChange={(event) => setMovementForm((current) => ({ ...current, type: event.target.value }))}>
                   <option value="entrada">Entrada</option>
                   <option value="salida">Salida</option>
                   <option value="ajuste">Ajuste</option>
@@ -7566,7 +7588,7 @@ function InventoryDashboardSection({
               <button type="button" className="ghost-button" disabled={isSavingMovement} onClick={closeMovementModal}>
                 Cancelar
               </button>
-              <button type="submit" className="primary-button" disabled={isSavingMovement}>{isSavingMovement ? 'Guardando movimiento...' : 'Guardar movimiento'}</button>
+              <button type="submit" className="primary-button" disabled={isSavingMovement}>{isSavingMovement ? 'Guardando movimiento...' : movementForm.editingMovementId ? 'Guardar correccion' : 'Guardar movimiento'}</button>
             </div>
           </form>
         </div>
