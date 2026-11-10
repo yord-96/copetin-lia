@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import { createRequestLimiters } from './middleware/requestLimits.js';
 import stateRoutes from './routes/state.js';
 import uploadRoutes from './routes/uploads.js';
 import documentRoutes from './routes/documents.js';
@@ -88,29 +88,11 @@ app.use(
     crossOriginEmbedderPolicy: false,
   }),
 );
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: Number(process.env.GENERAL_RATE_LIMIT_MAX ?? (isProduction ? 6000 : 12000)),
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path.startsWith('/__copetin_db'),
-});
-const presenceLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: Number(process.env.PRESENCE_RATE_LIMIT_MAX ?? (isProduction ? 3000 : 6000)),
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiadas actualizaciones de sesiones activas. Intenta nuevamente en un momento.' },
-});
-const stateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: Number(process.env.STATE_RATE_LIMIT_MAX ?? (isProduction ? 6000 : 12000)),
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path.startsWith('/presence'),
-  message: { error: 'Demasiadas solicitudes al estado del sistema. Intenta nuevamente en un momento.' },
-});
+const { general: generalLimiter, presence: presenceLimiter, state: stateLimiter,
+  attendance: attendanceLimiter, access: accessLimiter } = createRequestLimiters({ isProduction });
 app.use(generalLimiter);
+app.use(attendanceLimiter);
+app.use(accessLimiter);
 app.use(
   cors({
     origin(origin, callback) {

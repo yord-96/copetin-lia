@@ -19764,9 +19764,13 @@ const createWebBridge = () => ({
 
       let createdRecord = null;
       transaction((state) => {
+        const operationId = String(payload?.clientOperationId ?? '').trim();
+        const existing = operationId && state.attendanceRecords.find(row => row.clientOperationId === operationId);
+        if (existing) { createdRecord = deepClone(existing); return state; }
         const capturedAt = new Date().toISOString();
         createdRecord = {
           id: makeId('att'),
+          clientOperationId: String(payload?.clientOperationId ?? '').trim() || null,
           code: nextAttendanceCode(state),
           type,
           location,

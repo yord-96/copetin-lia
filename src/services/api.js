@@ -539,13 +539,14 @@ const exportLocalCollections = async (names = []) => {
 };
 
 // El limite incluye la lectura del cuerpo de la respuesta.
-const fetchServerJson = async (url, errorMessage) => {
+const fetchServerJson = async (url, errorMessage, requestOptions = {}) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
     const response = await fetch(url, {
       cache: 'no-store',
       headers: getInternalHeaders(),
+      ...requestOptions,
       signal: controller.signal,
     });
     if (!response.ok) throw await createServerStateError(response, errorMessage);
@@ -1081,14 +1082,7 @@ const fetchAttendanceRecordsDirect = async (filters = {}) => {
   params.set('timezoneOffsetMinutes', '240');
   params.set('limit', String(Math.min(1000, Math.max(20, Number(filters?.limit ?? 300) || 300))));
 
-  const response = await fetch(getServerStateUrl(`/attendance?${params.toString()}`), {
-    cache: 'no-store',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo cargar la asistencia.');
-  }
-  const result = await response.json();
+  const result = await fetchServerJson(getServerStateUrl(`/attendance?${params.toString()}`), 'No se pudo cargar la asistencia.');
   if (result?.revision) {
     lastSharedRevision = result.revision;
     setCachedServerRevision(result.revision);
@@ -1100,14 +1094,7 @@ const fetchAttendanceUsersDirect = async () => {
   if (!shouldUseServerState()) {
     return callBridge('users', 'list', false);
   }
-  const response = await fetch(getServerStateUrl('/attendance/users'), {
-    cache: 'default',
-    headers: getInternalHeaders(),
-  });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudieron cargar los usuarios de asistencia.');
-  }
-  const result = await response.json();
+  const result = await fetchServerJson(getServerStateUrl('/attendance/users'), 'No se pudieron cargar los usuarios de asistencia.');
   if (result?.revision) {
     lastSharedRevision = result.revision;
     setCachedServerRevision(result.revision);
@@ -1410,16 +1397,12 @@ const createAttendanceRecordDirect = async (payload = {}) => {
   if (!shouldUseServerState()) {
     return callBridge('attendance', 'createRecord', true, payload);
   }
-  const response = await fetch(getServerStateUrl('/attendance'), {
+  const result = await fetchServerJson(getServerStateUrl('/attendance'), 'No se pudo registrar la asistencia.', {
     method: 'POST',
-    cache: 'no-store',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo registrar la asistencia.');
-  }
-  const result = await response.json();
+  localServerCommitSerial += 1;
   if (result?.revision) {
     lastSharedRevision = result.revision;
     setCachedServerRevision(result.revision);
@@ -1985,7 +1968,7 @@ const uploadAttendancePhoto = async (file, { recordId } = {}) => {
   if (!(file instanceof Blob)) {
     throw new Error('Selecciona una foto valida para subir.');
   }
-  const response = await fetch(getApiUrl('/api/uploads/attendance'), {
+  return fetchServerJson(getApiUrl('/api/uploads/attendance'), 'No se pudo subir la foto de asistencia.', {
     method: 'POST',
     headers: getInternalHeaders({
       'Content-Type': file.type || 'application/octet-stream',
@@ -1993,10 +1976,6 @@ const uploadAttendancePhoto = async (file, { recordId } = {}) => {
     }),
     body: file,
   });
-  if (!response.ok) {
-    throw await createServerStateError(response, 'No se pudo subir la foto de asistencia.');
-  }
-  return response.json();
 };
 
 const callServerPresence = async (action, payload) => {

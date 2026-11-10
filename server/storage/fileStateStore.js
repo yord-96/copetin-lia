@@ -406,15 +406,66 @@ export const getStateSnapshot = async () => {
   };
 };
 
-export const getStateMeta = async () => {
-  const snapshot = await getStateSnapshot();
-  return {
-    initialized: snapshot.initialized,
-    revision: snapshot.revision,
-    version: snapshot.version,
-    updatedAt: snapshot.updatedAt,
-  };
+// Attendance and login do not need to rebuild the cash ledger on every read.
+export const getAttendanceStateSnapshot = async () => {
+  const payload = await readJsonFile();
+  return { initialized: Boolean(payload?.state),
+    state: payload?.state ? { users: payload.state.users ?? [], attendanceRecords: payload.state.attendanceRecords ?? [] } : null,
+    revision: revisionForPayload(payload), version: Number(payload?.version ?? 0), updatedAt: payload?.updatedAt ?? null };
 };
+
+export const getStateMeta = async () => {
+  const payload = await readJsonFile();
+  return { initialized: Boolean(payload?.state), revision: revisionForPayload(payload),
+    version: Number(payload?.version ?? 0), updatedAt: payload?.updatedAt ?? null };
+};
+
+// Attendance updates share the commercial write lock, but clone only attendance.
+// A short coalescing window persists a burst of people in one durable snapshot.
+let attendanceJobs = [];
+let attendanceTimer = null;
+const flushAttendanceJobs = async () => {
+  attendanceTimer = null;
+  let jobs = [];
+  let accepted = [];
+  try {
+    const result = await withWriteLock(async () => {
+      jobs = attendanceJobs;
+      attendanceJobs = [];
+      const current = await readJsonFile();
+      if (!current?.state) {
+        const error = new Error('La base de datos no esta disponible para registrar asistencia.');
+        error.statusCode = 503;
+        throw error;
+      }
+      let records = current.state.attendanceRecords ?? [];
+      for (const job of jobs) {
+        // A rejected mark must not roll back other people or leak partial changes.
+        const draft = { attendanceRecords: cloneJson(records), users: cloneJson(current.state.users ?? []) };
+        try {
+          await job.updater(draft);
+          if (!Array.isArray(draft.attendanceRecords)) throw new Error('Asistencias invalidas.');
+          records = draft.attendanceRecords;
+          accepted.push(job);
+        } catch (error) { job.reject(error); }
+      }
+      if (!accepted.length || JSON.stringify(records) === JSON.stringify(current.state.attendanceRecords ?? [])) {
+        return { initialized: true, revision: revisionForPayload(current), version: current.version, updatedAt: current.updatedAt };
+      }
+      const state = { ...current.state, attendanceRecords: records };
+      const version = Number(current.version ?? 0) + 1;
+      const checksum = checksumForState(state);
+      const updatedAt = new Date().toISOString();
+      await writeJsonFile({ state, version, checksum, updatedAt });
+      return { initialized: true, revision: version + ':' + checksum, version, updatedAt };
+    });
+    accepted.forEach(job => job.resolve(result));
+  } catch (error) { (accepted.length ? accepted : jobs).forEach(job => job.reject(error)); }
+};
+export const updateAttendanceStateSnapshot = updater => new Promise((resolve, reject) => {
+  attendanceJobs.push({ updater, resolve, reject });
+  if (!attendanceTimer) attendanceTimer = setTimeout(flushAttendanceJobs, 20);
+});
 
 export const replaceStateSnapshot = async (state, expectedRevision) => {
   return withWriteLock(async () => {

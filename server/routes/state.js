@@ -21,7 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
-import { getStateMeta, getStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
+import { getStateMeta, getStateSnapshot, getAttendanceStateSnapshot, updateAttendanceStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
@@ -4289,7 +4289,7 @@ const summarizeAttendanceUser = (user = {}) => ({
 
 router.get('/__copetin_db/attendance/users', async (_req, res, next) => {
   try {
-    const snapshot = await getStateSnapshot();
+    const snapshot = await getAttendanceStateSnapshot();
     const users = (Array.isArray(snapshot?.state?.users) ? snapshot.state.users : [])
       .filter((user) => !user?.deletedAt && String(user?.status ?? 'active').toLowerCase() === 'active')
       .sort((left, right) => String(left?.fullName ?? left?.username ?? '')
@@ -4311,7 +4311,7 @@ router.get('/__copetin_db/attendance/users', async (_req, res, next) => {
 
 router.get('/__copetin_db/attendance', async (req, res, next) => {
   try {
-    const snapshot = await getStateSnapshot();
+    const snapshot = await getAttendanceStateSnapshot();
     const dateFrom = String(req.query?.dateFrom ?? '').trim();
     const dateTo = String(req.query?.dateTo ?? dateFrom).trim();
     const type = String(req.query?.type ?? 'all').trim().toLowerCase();
@@ -4362,7 +4362,7 @@ router.get('/__copetin_db/attendance', async (req, res, next) => {
 router.post('/__copetin_db/attendance/manage', async (req, res, next) => {
   try {
     let record;
-    const result = await updateStateSnapshot(state => { record = structuredClone(manageAttendance(state, req.body ?? {})); return state; });
+    const result = await updateAttendanceStateSnapshot(state => { record = structuredClone(manageAttendance(state, req.body ?? {})); return state; });
     res.json({ ok: true, record: summarizeAttendanceRecord(record), revision: result.revision });
   } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
 });
@@ -4398,7 +4398,7 @@ router.post('/__copetin_db/attendance', async (req, res, next) => {
 
     let responseRecord = null;
     let duplicated = false;
-    const result = await updateStateSnapshot((state) => {
+    const result = await updateAttendanceStateSnapshot((state) => {
       state.attendanceRecords = Array.isArray(state.attendanceRecords) ? state.attendanceRecords : [];
 
       if (clientOperationId) {
@@ -4406,6 +4406,11 @@ router.post('/__copetin_db/attendance', async (req, res, next) => {
           (record) => String(record?.clientOperationId ?? '') === clientOperationId,
         );
         if (duplicate) {
+          if (duplicate.userId !== userId || duplicate.type !== type || duplicate.location !== location || duplicate.reason !== reason) {
+            const error = new Error('Esta operacion corresponde a otra marca. Vuelve a abrir el formulario.');
+            error.statusCode = 409;
+            throw error;
+          }
           responseRecord = structuredClone(duplicate);
           duplicated = true;
           return state;
@@ -4460,6 +4465,7 @@ router.post('/__copetin_db/attendance', async (req, res, next) => {
       updatedAt: result.updatedAt,
     });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
     next(error);
   }
 });
@@ -10772,7 +10778,8 @@ router.get('/__copetin_db/collections', async (req, res, next) => {
       return;
     }
 
-    const snapshot = await getStateSnapshot();
+    const snapshot = requestedNames.every(name => name === 'users')
+      ? await getAttendanceStateSnapshot() : await getStateSnapshot();
     const collections = Object.fromEntries(
       requestedNames.map((name) => {
         const rows = Array.isArray(snapshot?.state?.[name]) ? snapshot.state[name] : [];

@@ -1,6 +1,7 @@
 import { canManageAttendance } from '../../utils/attendanceManagement';
 import { attendanceNeedsPhoto, getAttendanceWorkReason } from '../../utils/attendancePolicy';
-import { useEffect, useMemo, useState } from 'react';
+import { createAttendanceSubmissionTracker } from '../../utils/attendanceSubmission';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
 import { getUserDisplayRole } from '../../utils/permissions';
@@ -126,6 +127,9 @@ function AttendanceSection({
     query: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
+  const submissionTracker = useRef(null);
+  if (!submissionTracker.current) submissionTracker.current = createAttendanceSubmissionTracker();
   const [isLocating, setIsLocating] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -356,6 +360,7 @@ function AttendanceSection({
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submitInFlight.current) return;
     if (!canMark) {
       setError('Tu usuario no tiene habilitada la marcación de asistencia.');
       return;
@@ -378,23 +383,25 @@ function AttendanceSection({
       setError('Selecciona al menos un usuario o escribe el nombre de una persona.');
       return;
     }
+    const submission = submissionTracker.current.get(JSON.stringify([currentUser?.id, form, markingMode, participants, photoDraft?.previewUrl]), participants.length, markingMode === 'responsable');
+    submitInFlight.current = true;
     setIsSubmitting(true);
     try {
-      const attendanceGroupId = markingMode === 'responsable'
-        ? `attendance-group-${Date.now()}-${Math.random().toString(16).slice(2)}`
-        : '';
+      const attendanceGroupId = submission.groupId;
       const uploadStartedAt = performance.now();
-      const uploadedPhoto = photoDraft?.blob ? await api.uploads.attendancePhoto(photoDraft.blob, {
+      const uploadedPhoto = submission.photo ?? (photoDraft?.blob ? await api.uploads.attendancePhoto(photoDraft.blob, {
         recordId: attendanceGroupId || `${currentUser?.id ?? 'attendance'}-${Date.now()}`,
-      }) : {};
+      }) : {});
+      submission.photo = uploadedPhoto;
       if (photoDraft?.blob) console.info('[copetin-attendance] Foto de asistencia subida.', {
         originalBytes: photoDraft?.originalSizeBytes,
         finalBytes: uploadedPhoto.bytes ?? photoDraft?.sizeBytes,
         durationMs: Math.round(performance.now() - uploadStartedAt),
       });
-      for (const participant of participants) {
-        await onCreateRecord?.({
+      const results = await Promise.allSettled(participants.map((participant, participantIndex) =>
+        onCreateRecord?.({
           ...form,
+          clientOperationId: submission.operations[participantIndex],
           reason: getAttendanceWorkReason(form.type),
           markingMode,
           attendanceGroupId,
@@ -413,8 +420,16 @@ function AttendanceSection({
           photoSizeBytes: uploadedPhoto.bytes ?? photoDraft?.sizeBytes ?? 0,
           photoWidth: photoDraft?.width ?? null,
           photoHeight: photoDraft?.height ?? null,
-        });
+        }),
+      ));
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed) {
+        const confirmed = results.filter(result => result.status === 'fulfilled').length;
+        throw new Error((confirmed ? confirmed + ' marca(s) confirmada(s). ' : '')
+          + (failed.reason?.message || 'No se pudo confirmar la asistencia.')
+          + ' Reintenta sin cambiar los datos: las marcas confirmadas no se duplicaran.');
       }
+      submissionTracker.current.clear();
       setForm({
         type: 'entrada',
         location: '',
@@ -436,6 +451,7 @@ function AttendanceSection({
     } catch (submitError) {
       setError(submitError.message || 'No se pudo registrar la asistencia.');
     } finally {
+      submitInFlight.current = false;
       setIsSubmitting(false);
     }
   };
