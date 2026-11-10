@@ -1,9 +1,10 @@
 const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
-export const canManageAttendance = user => Boolean(user?.id && !user.deletedAt && !['inactive', 'inactivo', 'disabled', 'eliminado'].includes(normalize(user.status)) && normalize(user.fullName) === 'yordy copa cerezo');
+const attendanceManagers = new Set(['yordy copa cerezo', 'lisbeth munoz']);
+export const canManageAttendance = user => Boolean(user?.id && !user.deletedAt && !['inactive', 'inactivo', 'disabled', 'eliminado'].includes(normalize(user.status)) && attendanceManagers.has(normalize(user.fullName)));
 
 export function manageAttendance(state, payload) {
   const actor = (state.users ?? []).find(user => String(user.id) === String(payload.actorId));
-  if (!canManageAttendance(actor)) { const error = new Error('Solo Yordy Copa Cerezo puede administrar asistencias.'); error.statusCode = 403; throw error; }
+  if (!canManageAttendance(actor)) { const error = new Error('Solo Yordy Copa Cerezo y Lisbeth Muñoz pueden administrar asistencias.'); error.statusCode = 403; throw error; }
   state.attendanceRecords ??= [];
   const now = new Date().toISOString();
   const record = state.attendanceRecords.find(row => row.id === payload.id && !row.deletedAt);
