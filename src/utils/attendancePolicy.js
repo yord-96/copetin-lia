@@ -1,6 +1,8 @@
 export function isCopetinAttendanceLocation(location) {
-  const normalized = String(location ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  return /\bbatallon\s+colorados\b/.test(normalized);
+  const normalized = String(location ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return /\bbatallon\s+colorados\b/.test(normalized)
+    || /\b(?:jesus|j)\s+aguayo\b/.test(normalized);
 }
 
 export function getAttendanceWorkReason(type) {

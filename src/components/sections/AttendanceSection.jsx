@@ -368,7 +368,7 @@ function AttendanceSection({
     setError('');
     setStatus('');
     if (!photoDraft?.blob && attendanceNeedsPhoto(form.location)) {
-      setError('Debes tomar una foto para registrar asistencia fuera de Batallón Colorados.');
+      setError('Debes tomar una foto para registrar asistencia fuera de la empresa (Batallón Colorados o Jesús Aguayo).');
       return;
     }
     const participants = markingMode === 'responsable'
@@ -462,7 +462,7 @@ function AttendanceSection({
         <div>
           <span>Control remoto</span>
           <h2>Asistencia</h2>
-          <p>Registra ingreso o salida del trabajo con ubicación y hora. En Batallón Colorados la foto es opcional.</p>
+          <p>Registra ingreso o salida del trabajo con ubicación y hora. En la empresa, por Batallón Colorados o Jesús Aguayo, la foto es opcional.</p>
         </div>
         <div className="attendance-user-card">
           <span className="attendance-user-avatar">{(currentUser?.fullName || currentUser?.username || 'U').slice(0, 1).toUpperCase()}</span>
@@ -663,7 +663,7 @@ function AttendanceSection({
 
           <div className="attendance-photo-picker">
             <span className="attendance-photo-title">Evidencia fotográfica</span>
-            <small className="attendance-field-hint" role="status">{attendanceNeedsPhoto(form.location) ? 'Fuera de Batallón Colorados, toma una foto para respaldar la asistencia.' : 'Ubicación: Batallón Colorados · Puedes registrar tu asistencia sin foto.'}</small>
+            <small className="attendance-field-hint" role="status">{attendanceNeedsPhoto(form.location) ? 'Fuera de la empresa, toma una foto para respaldar la asistencia.' : 'Ubicación de la empresa · Puedes registrar tu asistencia sin foto por Batallón Colorados o Jesús Aguayo.'}</small>
 
             {markingMode === 'responsable' && selectedParticipants.length > 1 ? (
               <div className="attendance-group-photo-advice">
