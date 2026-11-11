@@ -2,6 +2,12 @@
 
 import { getCashBusinessDate } from './cashLedgerOrder.js';
 
+// A balance collected after return is still a commercial payment. Damage,
+// guarantee and extra collections must remain separate even on return receipts.
+const isCommercialDepositReceipt = row => ['ingreso_alquiler', 'cobro_saldo_alquiler', 'cobro_saldo_devolucion', 'abono'].includes(row.type)
+  && !['damage', 'guarantee', 'extra'].includes(row.collectionTarget)
+  && !['contract_damage_collection', 'contract_extra_collection', 'guarantee_refund'].includes(row.accountingTag);
+
 // Receipt amounts are authoritative when a ledger line still carries an old edit.
 export function reconcileContractDocumentPayments(contract, rental, movements = []) {
   const ledger = (contract?.economicLedger ?? []).filter(row => !row.deletedAt).map(row => ({...row}));
@@ -15,7 +21,9 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
       || (!receipt && cash.length && (entry.cashMovementId || entry.cashReceiptCode))) voidedLedgerIds.add(entry.id);
   }
   for (const entry of ledger.filter(row => row.type === 'deposit')) {
-    const receipt = cash.find(row => !used.has(row.id) && (row.id === entry.cashMovementId || (entry.cashReceiptCode && row.receiptCode === entry.cashReceiptCode)));
+    const receipt = cash.find(row => !used.has(row.id) && (row.id === entry.cashMovementId
+      || (entry.cashReceiptCode && row.receiptCode === entry.cashReceiptCode)
+      || (isCommercialDepositReceipt(row) && row.clientOperationId === `contract-deposit:${contract?.id}:${entry.id}`)));
     if (receipt) {
       Object.assign(entry, { amountBs: Number(receipt.amountBs), cashMovementId: receipt.id,
         cashReceiptCode: receipt.receiptCode || receipt.receipt || '', isCashRegistered: true });
@@ -46,8 +54,7 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
     && !row.cashMovementId && !row.cashReceiptCode && !row.reclassifiedFromPayment)) {
     const initial = entry.id === `initial-payment-${contract?.id}`;
     const candidates = cash.filter(row => !used.has(row.id)
-      && ['ingreso_alquiler', 'cobro_saldo_alquiler', 'abono'].includes(row.type)
-      && !['damage', 'guarantee', 'extra'].includes(row.collectionTarget)
+      && isCommercialDepositReceipt(row)
       && (initial && row.accountingTag === 'initial_rental_payment'
         || (Math.abs(Number(row.amountBs) - Number(entry.amountBs)) < .01
           && getCashBusinessDate(entry.createdAt)
@@ -63,8 +70,7 @@ export function reconcileContractDocumentPayments(contract, rental, movements = 
     used.add(receipt.id);
   }
   for (const receipt of cash) {
-    if (used.has(receipt.id) || !['ingreso_alquiler','cobro_saldo_alquiler','abono'].includes(receipt.type)
-      || ['damage','guarantee','extra'].includes(receipt.collectionTarget)) continue;
+    if (used.has(receipt.id) || !isCommercialDepositReceipt(receipt)) continue;
     ledger.push({id:`cash-${receipt.id}`,type:'deposit',amountBs:Number(receipt.amountBs),createdAt:receipt.receiptIssuedAt || receipt.createdAt,
       note:receipt.description,createdByName:receipt.createdByName || receipt.createdBy,cashMovementId:receipt.id,cashReceiptCode:receipt.receiptCode,isCashRegistered:true,
       guaranteeAllocationBs:receipt.guaranteeAllocationBs || 0,surplusAllocationBs:receipt.surplusAllocationBs || 0});

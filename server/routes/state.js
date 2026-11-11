@@ -4979,11 +4979,9 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
           throw error;
         }
 
-        const explicitGuaranteeAppliedBs = directMoney((Array.isArray(resolvedContract?.economicLedger) ? resolvedContract.economicLedger : []).reduce((sum, entry) => {
-          const entryType = String(entry?.type ?? '').trim().toLowerCase();
-          if (entry?.deletedAt || !['charge', 'guarantee_apply'].includes(entryType)) return sum;
-          return sum + directMoney(entry?.amountBs);
-        }, 0));
+        // Use the same application evidence as the economic view. A damage
+        // receipt collected separately is not a deduction from the guarantee.
+        const explicitGuaranteeAppliedBs = directMoney(getGuaranteeLedgerEvidence(resolvedContract ?? {}).appliedBs);
         const availableGuaranteeBs = directMoney(Math.max(
           0,
           guaranteePaidBs - explicitGuaranteeAppliedBs - previousGuaranteeRefundBs,
