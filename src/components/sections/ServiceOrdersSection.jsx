@@ -3,7 +3,7 @@ import ContractCancellationModal from './ContractCancellationModal';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
-import { isComboPriceLine, resizeComboPackage } from '../../utils/comboPackageQuantity.js';
+import { isComboPriceLine, resizeComboPackage, reconcileComboPackageQuantities } from '../../utils/comboPackageQuantity.js';
 import { createPdfPreview } from '../../utils/pdfPreview';
 import { getContractWhatsAppContacts, openContractWhatsAppContact } from '../../utils/contractWhatsApp.js';
 import { buildContractPayloadFromQuote } from '../../utils/quoteConversion.js';
@@ -6238,7 +6238,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       : record?.awaitingAssignment || isPublicCatalogQuote(record)
         ? []
         : [String(record?.createdById ?? record?.userId ?? record?.createdByName ?? record?.createdBy ?? '').trim()].filter(Boolean),
-    items: recordItems.map((line, index) => {
+    items: reconcileComboPackageQuantities(recordItems).map((line, index) => {
       const lineDay = resolveScheduleDay(line);
       const quantity = Math.max(1, Math.trunc(Number(line.quantity ?? 1)));
       const lineDiscountPercent = Math.min(100, Math.max(0, Number(line.discountPercent ?? 0)));
@@ -7934,7 +7934,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const supplierFulfillmentPlan = (() => {
       if (isHistoricalReconstruction) return [];
       if (isHistoricalReturnedContractEdit) {
-        return Array.isArray(draft.supplierFulfillmentPlan) ? draft.supplierFulfillmentPlan : [];
+        return (Array.isArray(draft.supplierFulfillmentPlan) ? draft.supplierFulfillmentPlan : [])
+          .filter(line => !removedSupplierCoverageIdsRef.current.has(String(line.id ?? '')));
       }
 
       const removedIds = removedSupplierCoverageIdsRef.current;

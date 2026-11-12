@@ -1,4 +1,5 @@
 import { syncContractCashCollection } from '../utils/contractCashCollection.js';
+import { reconcileComboPackageQuantities } from '../utils/comboPackageQuantity.js';
 import { manageAttendance } from '../utils/attendanceManagement.js';
 import { normalizeInventoryPurchase } from '../utils/inventoryPurchase.js';
 import { buildInventoryStockCommitments, inventoryCommitmentDate } from '../utils/inventoryStockCommitment.js';
@@ -11386,7 +11387,7 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       return Math.max(storedReservedQty, quantity);
     }
     if (storedReservedQty > 0) return storedReservedQty;
-    return Math.max(0, Math.trunc(quantity - Number(line?.supplierBackedQty ?? 0)));
+    return Math.max(0, Math.trunc(quantity - Number(line?.supplierBackedQty ?? previousSupplierStats.subtractiveQty ?? 0)));
   };
   const remainingOldInternalReservedByItem = new Map();
   const remainingOldInternalReservedByName = new Map();
@@ -11396,23 +11397,11 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
   oldLinesByName.forEach((line, itemName) => {
     remainingOldInternalReservedByName.set(itemName, getLineInternalReservedQty(line, { respectControlsStock: false }));
   });
-  (beforeContract?.items ?? []).forEach((line) => {
-    const itemId = String(line?.itemId ?? '').trim();
-    const itemName = normalizeText(line?.itemName ?? line?.name ?? '');
-    const reservedQty = getLineInternalReservedQty(line, { respectControlsStock: false });
-    if (itemId) {
-      remainingOldInternalReservedByItem.set(
-        itemId,
-        Math.max(Number(remainingOldInternalReservedByItem.get(itemId) ?? 0), reservedQty),
-      );
-    }
-    if (itemName) {
-      remainingOldInternalReservedByName.set(
-        itemName,
-        Math.max(Number(remainingOldInternalReservedByName.get(itemName) ?? 0), reservedQty),
-      );
-    }
-  });
+  // The linked order owns the actual internal reservation. Contract quantities
+  // include supplier units; using their maximum here hid the extra internal
+  // demand when a provider was removed, skipping date projection and then
+  // rejecting the save against today's warehouse stock. Missing order lines
+  // were already recovered from beforeContract above.
 
   const legacyAvailabilityPickupCoordinate = contract.pickupDateMode === undefined
     && contract.pickupTimeMode === 'coordinate';
@@ -11480,8 +11469,10 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
       .slice(0, 2)
       .map((record) => `contrato ${record.contractCode || record.code || record.orderCode || 'previo'} hasta ${record.endDate || 'fecha pendiente'}`)
       .join(', ');
-    throw new Error(
+    throw createBusinessConflictError(
       `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Coordina proveedor o cambia fechas.`,
+      'CONTRACT_STOCK_SHORTAGE',
+      { itemId: issue.itemId, shortageQty: issue.shortageQty, projectedAvailable: issue.projectedAvailable },
     );
   }
 
@@ -11537,8 +11528,10 @@ const syncApprovedContractOperation = (state, contract, payload, now, beforeCont
     const canReserveFromCurrentStock = currentAvailableStock >= reservationDelta;
     const canReserveByDateProjection = reservationDelta > 0 && projectedRequestedItems.some((entry) => entry.itemId === item.id);
     if (!isHistoricalReturnedOperation && reservationDelta > 0 && !canReserveFromCurrentStock && !canReserveByDateProjection) {
-      throw new Error(
+      throw createBusinessConflictError(
         `Stock insuficiente para "${item.name}". Disponibles: ${currentAvailableStock}. Faltan: ${reservationDelta - currentAvailableStock}.`,
+        'CONTRACT_STOCK_SHORTAGE',
+        { itemId: item.id, shortageQty: reservationDelta - currentAvailableStock, availableStock: currentAvailableStock },
       );
     }
     if (!isHistoricalReturnedOperation && reservationDelta !== 0) {
@@ -15640,7 +15633,7 @@ const createWebBridge = () => ({
 
         if (payload.items !== undefined) {
           const requestedItems = Array.isArray(payload.items) ? payload.items : [];
-          const normalizedItems = requestedItems.map((line, index) => {
+          const normalizedItems = reconcileComboPackageQuantities(requestedItems).map((line, index) => {
             const lineKey = getInventoryLineKey(line, index);
             const previousLine = (contract.items ?? []).find((existingLine, existingIndex) => (
               getInventoryLineKey(existingLine, existingIndex) === lineKey
@@ -15749,7 +15742,10 @@ const createWebBridge = () => ({
         const nextSupplierPlanRows = normalizeSupplierFulfillmentPlan(contract.supplierFulfillmentPlan).length;
         const removesSupplierCoverage = nextSupplierPlanRows < previousSupplierPlanRows;
         if (removesSupplierCoverage && payload?.confirmSupplierPlanRemoval !== true) {
-          throw new Error('Debes confirmar expresamente que deseas guardar el contrato sin las coberturas de proveedor retiradas.');
+          throw createBusinessConflictError(
+            'Debes confirmar expresamente que deseas guardar el contrato sin las coberturas de proveedor retiradas.',
+            'SUPPLIER_PLAN_REMOVAL_CONFIRMATION_REQUIRED',
+          );
         }
 
         const itemsGrossSubtotalBs = contract.items.reduce((sum, line) => sum + Number(line.grossLineTotalBs ?? line.lineTotalBs ?? 0), 0)
