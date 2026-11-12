@@ -1,3 +1,4 @@
+import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
@@ -5853,8 +5854,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     });
 
     return Array.from(grouped.values())
-      .sort((a, b) => `${a.date || ''} ${a.time || ''}`.localeCompare(`${b.date || ''} ${b.time || ''}`))
-      .slice(0, 3)
+      .sort((a, b) => `${b.date || ''} ${b.time || ''}`.localeCompare(`${a.date || ''} ${a.time || ''}`))
       .map((row) => ({
         ...row,
         itemText: Array.from(row.itemNames).slice(0, 2).join(', '),
@@ -15810,13 +15810,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         const externalUnavailable = Math.max(0, Number(summary.unavailableOutsideRentals ?? 0));
         const hardQty = Math.max(0, Number(summary.hardReservedQty ?? 0));
         const softQty = Math.max(0, Number(summary.softReservedQty ?? 0));
-        const returningQty = Math.max(0, Number(summary.returningBeforeStartQty ?? 0));
         const projectedAvailable = Math.max(0, Number(summary.projectedAvailable ?? currentAvailable));
         const projectedAfterSoft = Math.max(0, Number(summary.projectedAfterSoftAvailable ?? projectedAvailable));
         const activeRecords = Array.isArray(summary.activeRentalQtyRecords) ? summary.activeRentalQtyRecords : [];
         const hardRecords = Array.isArray(summary.hardReservedQtyRecords) ? summary.hardReservedQtyRecords : [];
         const softRecords = Array.isArray(summary.softReservedQtyRecords) ? summary.softReservedQtyRecords : [];
-        const returnRecords = Array.isArray(summary.returningBeforeStartQtyRecords) ? summary.returningBeforeStartQtyRecords : [];
+        const returnRecords = groupPriorAvailabilityRecords(summary.returningBeforeStartQtyRecords ?? []);
 
         const modalMeta = mode === 'now'
           ? {
@@ -15827,10 +15826,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           }
           : mode === 'returns'
             ? {
-              eyebrow: 'DEVOLUCIONES ANTES DEL EVENTO',
-              title: `Por qué vuelven ${returningQty}`,
-              description: 'Estas órdenes deben devolver el producto antes de que empiece el periodo del nuevo contrato.',
-              records: returnRecords.map((record) => ({ ...record, impactLabel: 'Se libera antes', tone: 'positive' })),
+              eyebrow: 'RESERVAS ANTERIORES AL EVENTO',
+              title: `${returnRecords.length} reservas terminan antes de la fecha`,
+              description: 'Son reservas en fechas anteriores. Las mismas piezas pueden usarse en varias reservas; sus cantidades no se suman al stock físico. Consulta la cantidad de cada contrato y su devolución prevista.',
+              records: returnRecords.map((record) => ({ ...record, impactLabel: 'Termina antes', tone: 'positive' })),
             }
             : {
               eyebrow: 'DISPONIBILIDAD PARA LA FECHA',
@@ -15838,7 +15837,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               description: 'Se parte del stock físico y solo se descuentan las ocupaciones que coinciden con el periodo seleccionado.',
               records: [
                 ...hardRecords.map((record) => ({ ...record, impactLabel: 'Resta en la fecha', tone: 'danger' })),
-                ...returnRecords.map((record) => ({ ...record, impactLabel: 'Vuelve antes', tone: 'positive' })),
+                ...returnRecords.map((record) => ({ ...record, impactLabel: 'Termina antes', tone: 'positive' })),
                 ...softRecords.map((record) => ({ ...record, impactLabel: 'Riesgo sin aprobar', tone: 'warning' })),
               ],
             };
@@ -15904,9 +15903,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
                 {mode === 'returns' ? (
                   <div className="orders-availability-formula returns">
-                    <span><small>Órdenes que devuelven antes</small><strong>{returnRecords.length}</strong></span>
+                    <span><small>Stock físico</small><strong>{totalStock}</strong></span>
                     <b>→</b>
-                    <span className="result"><small>Unidades que vuelven</small><strong>{returningQty}</strong></span>
+                    <span className="result"><small>Disponible para la fecha</small><strong>{projectedAvailable}</strong></span>
+                    <span><small>Reservas previas</small><strong>{returnRecords.length}</strong></span>
                   </div>
                 ) : null}
 
@@ -16076,7 +16076,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   {detail.components.flatMap((component) => component.optionDetails.flatMap((option) => {
                     const records = [
                       ...option.hardRecords.map((record) => ({ ...record, impactLabel: 'Resta en la fecha', tone: 'danger' })),
-                      ...option.returnRecords.map((record) => ({ ...record, impactLabel: 'Vuelve antes', tone: 'positive' })),
+                      ...groupPriorAvailabilityRecords(option.returnRecords).map((record) => ({ ...record, impactLabel: 'Termina antes', tone: 'positive' })),
                       ...option.softRecords.map((record) => ({ ...record, impactLabel: 'Riesgo sin aprobar', tone: 'warning' })),
                     ];
                     return records.map((record, index) => {
@@ -16860,10 +16860,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       </article>
                       <article className="returns">
                         <RefreshCw className="orders-availability-icon" aria-hidden="true" />
-                        <span>Devoluciones consideradas</span>
+                        <span>Reservas anteriores</span>
                         {returnSummaryRows.length > 0 ? (
                           <>
-                            <strong>{returnSummaryRows.reduce((sum, row) => sum + row.quantity, 0)} unidades vuelven para la fecha</strong>
+                            <strong>{returnSummaryRows.length} reservas terminan antes de la fecha</strong>
                             <div
                               className="orders-return-mini-list"
                               title={returnSummaryRows
@@ -16881,8 +16881,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           </>
                         ) : (
                           <>
-                            <strong>Sin retornos previos</strong>
-                            <small>La disponibilidad sale del stock libre actual.</small>
+                            <strong>Sin reservas anteriores</strong>
+                            <small>Consulta la disponibilidad para la fecha elegida.</small>
                           </>
                         )}
                       </article>
@@ -17014,10 +17014,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         const availability = availabilityByItemId.get(item.id) ?? null;
                         const isProvisionalCatalogItem = isDetachedFromInventory(item);
                         const projectedAvailable = Math.max(0, Number(availability?.projectedAvailable ?? item.availableStock ?? 0));
-                        const returningQty = Math.max(0, Number(availability?.returningBeforeStartQty ?? 0));
                         const softQty = Math.max(0, Number(availability?.softReservedQty ?? 0));
                         const catalogHardRecords = availability?.hardReservedQtyRecords ?? [];
-                        const catalogReturningRecords = availability?.returningBeforeStartQtyRecords ?? [];
+                        const catalogReturningRecords = groupPriorAvailabilityRecords(availability?.returningBeforeStartQtyRecords ?? []);
                         const detailParts = getOperationalItemDetails({ item });
                         return (
                         <article
@@ -17104,16 +17103,16 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 </button>
                                 <button
                                   type="button"
-                                  className={`orders-availability-metric-button${returningQty > 0 ? ' positive' : ''}`}
+                                  className={`orders-availability-metric-button${catalogReturningRecords.length > 0 ? ' positive' : ''}`}
                                   onClick={() => setAvailabilityDetailModal({
                                     mode: 'returns',
                                     item,
                                     summary: availability,
                                   })}
-                                  title="Ver qué contratos devuelven este producto antes de la fecha"
+                                  title="Ver reservas que terminan antes de la fecha; sus cantidades no se suman al stock"
                                 >
-                                  <small>Vuelven</small>
-                                  <strong>{returningQty}</strong>
+                                  <small>Reservas previas</small>
+                                  <strong>{catalogReturningRecords.length}</strong>
                                   <em>Ver detalle</em>
                                 </button>
                                 {softQty > 0 ? (
@@ -17126,7 +17125,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             )}
                             {!isProvisionalCatalogItem && catalogReturningRecords.length > 0 ? (
                               <small className="orders-available-note is-positive orders-catalog-availability-note">
-                                Vuelve para usar: contrato {catalogReturningRecords[0].contractCode || catalogReturningRecords[0].code || catalogReturningRecords[0].orderCode} el {formatDate(catalogReturningRecords[0].endDate)}
+                                Última devolución prevista: contrato {catalogReturningRecords[0].contractCode || catalogReturningRecords[0].code || catalogReturningRecords[0].orderCode} el {formatDate(catalogReturningRecords[0].endDate)}
                               </small>
                             ) : null}
                             {!isProvisionalCatalogItem && catalogHardRecords.length > 0 && projectedAvailable <= 0 ? (
@@ -17517,7 +17516,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                       type="button"
                                       onClick={() => openAvailabilityContractDetail(record)}
                                     >
-                                      Contrato {record.contractCode || record.code || record.orderCode || 'previo'} · {record.quantity} u. · vuelve {formatDate(record.endDate)}
+                                      Contrato {record.contractCode || record.code || record.orderCode || 'previo'} · {record.quantity} u. · devolución prevista {formatDate(record.endDate)}
                                     </button>
                                   ))}
                                 </small>

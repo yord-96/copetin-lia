@@ -64294,7 +64294,7 @@ body:has(.accounting-bigcash-view) .workspace {
 }
 
 .orders-availability-formula.returns {
-  grid-template-columns: auto auto auto;
+  grid-template-columns: auto auto auto auto;
 }
 
 .orders-availability-formula > span {
