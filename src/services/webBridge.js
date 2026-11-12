@@ -1,3 +1,4 @@
+import { syncContractCashCollection } from '../utils/contractCashCollection.js';
 import { manageAttendance } from '../utils/attendanceManagement.js';
 import { normalizeInventoryPurchase } from '../utils/inventoryPurchase.js';
 import { buildInventoryStockCommitments, inventoryCommitmentDate } from '../utils/inventoryStockCommitment.js';
@@ -2579,6 +2580,7 @@ const normalizeState = (state) => {
             reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
             refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
             sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+            includedServiceId: String(entry?.includedServiceId ?? '').trim() || null,
             contractAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.contractAllocationBs)),
             guaranteeAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.guaranteeAllocationBs)),
             surplusAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.surplusAllocationBs)),
@@ -15922,6 +15924,7 @@ const createWebBridge = () => ({
               reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
               refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
               sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+            includedServiceId: String(entry?.includedServiceId ?? '').trim() || null,
               contractAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.contractAllocationBs)),
               guaranteeAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.guaranteeAllocationBs)),
               surplusAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.surplusAllocationBs)),
@@ -16000,6 +16003,7 @@ const createWebBridge = () => ({
             reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
             refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
             sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+            includedServiceId: String(entry?.includedServiceId ?? '').trim() || null,
             contractAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.contractAllocationBs)),
             guaranteeAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.guaranteeAllocationBs)),
             surplusAllocationBs: Math.max(0, toPositiveRoundedNumber(entry?.surplusAllocationBs)),
@@ -18627,6 +18631,8 @@ const createWebBridge = () => ({
 
       let createdMovement = null;
       transaction((state) => {
+        const existing = payload?.clientOperationId && (state.cashMovements ?? []).find(row => row.clientOperationId === payload.clientOperationId);
+        if (existing) { createdMovement = existing; return state; }
         let activeSession = getActiveSession(state);
         if (!activeSession && movementType === 'ingreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH) {
           activeSession = {
@@ -18767,6 +18773,11 @@ const createWebBridge = () => ({
             createdAt: payload?.createdAt ?? null,
             receiptIssuedAt: payload?.receiptIssuedAt ?? payload?.createdAt ?? null,
           });
+          createdMovement.clientOperationId = payload?.clientOperationId || null;
+          if (accountingTag === 'contract_extra_collection' || payload?.includedServiceId) {
+            if (signedAmount <= 0 || cashBoxType !== CASH_BOX_TYPES.BIG_CASH) throw new Error('Este cobro debe ser un ingreso en Caja Grande.');
+            syncContractCashCollection(state, state.contracts.find(row => row.id === linkedContractId), createdMovement, { includedServiceId: String(payload?.includedServiceId ?? '') });
+          }
           state.cashMovements.push(createdMovement);
         }
         return state;

@@ -686,6 +686,7 @@ const normalizeEconomicLedgerEntry = (entry, index = 0) => {
     reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
     refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
     sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+    includedServiceId: String(entry?.includedServiceId ?? '').trim() || null,
     contractAllocationBs: Math.max(0, toMoneyNumber(entry?.contractAllocationBs)),
     guaranteeAllocationBs: Math.max(0, toMoneyNumber(entry?.guaranteeAllocationBs)),
     surplusAllocationBs: Math.max(0, toMoneyNumber(entry?.surplusAllocationBs)),
@@ -1970,6 +1971,7 @@ function ServiceOrdersSection({
     paymentAccount: '',
   });
   const [isSavingContractEconomicsExtra, setIsSavingContractEconomicsExtra] = useState(false);
+  const contractExtraOperationRef = useRef({ key: '', id: '', inFlight: false });
   const [contractEconomicsGuaranteeRefundDraft, setContractEconomicsGuaranteeRefundDraft] = useState({
     source: 'guarantee',
     amountBs: '',
@@ -8967,6 +8969,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     setGuaranteeRefundWarning('');
     setContractEconomicsError('');
     resetContractEconomicsCollectionDraft();
+    setContractEconomicsExtraDraft({ amountBs: '', concept: '', paymentMethod: 'efectivo', paymentAccount: '', includedServiceId: '' });
     setMenuState(null);
     setActiveEconomicResetLedger(null);
     setContractEconomicsTarget(contractRow);
@@ -9534,7 +9537,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const handleSubmitContractExtraCollection = async (event) => {
     event.preventDefault();
-    if (!contractEconomicsData || isSavingContractEconomicsExtra) return;
+    if (!contractEconomicsData || isSavingContractEconomicsExtra || contractExtraOperationRef.current.inFlight) return;
     const amountBs = Math.max(0, toMoneyNumber(contractEconomicsExtraDraft.amountBs));
     const concept = String(contractEconomicsExtraDraft.concept ?? '').trim();
     const paymentMethod = normalizeLedgerPaymentMethod(contractEconomicsExtraDraft.paymentMethod);
@@ -9558,6 +9561,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const contractCode = contractEconomicsData.contract?.contractCode || contractEconomicsData.contract?.id || '';
     const customerName = contractEconomicsData.contract?.customerName || contractEconomicsData.rental?.customerName || 'Cliente';
     const rentalId = contractEconomicsData.rental?.id ?? contractEconomicsData.contract?.rentalId ?? '';
+    const includedServiceId = String(contractEconomicsExtraDraft.includedServiceId ?? '');
+    const operationKey = JSON.stringify([contractEconomicsData.contract?.id, amountBs, concept, paymentMethod, paymentAccount, includedServiceId]);
+    if (contractExtraOperationRef.current.key !== operationKey) contractExtraOperationRef.current = { key: operationKey, id: crypto.randomUUID(), inFlight: false };
+    contractExtraOperationRef.current.inFlight = true;
     let receiptWindow = null;
     setIsSavingContractEconomicsExtra(true);
     setContractEconomicsError('');
@@ -9565,12 +9572,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       receiptWindow = openCashReceiptWindow();
       const result = await api.cash.createManualMovement({
         type: 'ingreso',
+        clientOperationId: contractExtraOperationRef.current.id,
+        includedServiceId,
         cashBoxType: 'BIG_CASH',
         amountBs,
         paymentMethod,
         paymentAccount,
-        description: `Cobro extra contrato ${contractCode}: ${concept}`,
-        receiptDetail: `COBRO EXTRA\nConcepto: ${concept}\nContrato: ${contractCode}\nCliente: ${customerName}`,
+        description: `${includedServiceId ? 'Pago de servicio incluido' : 'Cobro extra'} contrato ${contractCode}: ${concept}`,
+        receiptDetail: `${includedServiceId ? 'PAGO DE SERVICIO INCLUIDO EN EL CONTRATO' : 'COBRO EXTRA'}\nConcepto: ${concept}\nContrato: ${contractCode}\nCliente: ${customerName}`,
         receiptCustomerName: customerName,
         customerName,
         note: concept,
@@ -9590,7 +9599,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       const receiptCode = String(movement?.receiptCode ?? movement?.receipt ?? result?.receiptCode ?? '').trim();
       const entry = {
         id: `eco-extra-${movementId}`,
-        type: 'extra',
+        type: includedServiceId ? 'deposit' : 'extra',
+        includedServiceId,
         amountBs,
         paymentMethod,
         paymentAccount,
@@ -9601,9 +9611,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         cashReceiptCode: receiptCode,
         isCashRegistered: true,
         cashRegisteredAt: movement?.receiptIssuedAt ?? movement?.createdAt ?? new Date().toISOString(),
-        cashCollectionTarget: 'extra',
+        cashCollectionTarget: includedServiceId ? 'balance' : 'extra',
+        contractAllocationBs: includedServiceId ? amountBs : 0,
       };
-      const ledgerSyncPromise = saveContractEconomicLedgerRows(
+      const ledgerSyncPromise = result?.contract ? Promise.resolve(true) : saveContractEconomicLedgerRows(
         [...(contractEconomicsData.economicLedger ?? []), entry],
         `Cobro extra ${formatBs(amountBs)} registrado${receiptCode ? ` con recibo ${receiptCode}` : ''}.`,
         { force: true },
@@ -9613,11 +9624,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       if (!ledgerSynced) {
         throw new Error('Caja registro el cobro extra y genero el recibo, pero no se pudo enlazar la linea al cuaderno economico.');
       }
-      setContractEconomicsExtraDraft({ amountBs: '', concept: '', paymentMethod: 'efectivo', paymentAccount: '' });
+      setContractEconomicsExtraDraft({ amountBs: '', concept: '', paymentMethod: 'efectivo', paymentAccount: '', includedServiceId: '' });
+      contractExtraOperationRef.current = { key: '', id: '', inFlight: false };
     } catch (error) {
       if (receiptWindow && !receiptWindow.closed) receiptWindow.close();
       setContractEconomicsError(error.message || 'No se pudo registrar el cobro extra.');
     } finally {
+      contractExtraOperationRef.current.inFlight = false;
       setIsSavingContractEconomicsExtra(false);
     }
   };
@@ -13241,8 +13254,31 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           alignItems: 'end',
                         }}
                       >
+                        <label style={{ gridColumn: '1 / -1' }}>
+                          Destino del cobro
+                          <select
+                            value={contractEconomicsExtraDraft.includedServiceId || ''}
+                            onChange={(event) => {
+                              const includedServiceId = event.target.value;
+                              const service = (contractEconomicsData.contract?.services ?? []).find(row => row.id === includedServiceId);
+                              setContractEconomicsExtraDraft(current => ({ ...current, includedServiceId,
+                                concept: service?.name || '',
+                                amountBs: service ? String(Math.min(toMoneyNumber(service.lineTotalBs ?? Number(service.quantity || 1) * Number(service.unitPriceBs || 0)), contractEconomicsData.managedDebtBs)) : '',
+                              }));
+                            }}
+                            disabled={readOnly || isSavingContractEconomicsExtra}
+                          >
+                            <option value="">Extra nuevo, fuera del total del contrato</option>
+                            {(contractEconomicsData.contract?.services ?? []).map(service => (
+                              <option key={service.id} value={service.id} disabled={contractEconomicsData.managedDebtBs <= 0.009}>
+                                Servicio ya incluido: {service.name} · {formatBs(service.lineTotalBs ?? Number(service.quantity || 1) * Number(service.unitPriceBs || 0))}
+                              </option>
+                            ))}
+                          </select>
+                          <small>{contractEconomicsExtraDraft.includedServiceId ? 'Este pago reduce el saldo del contrato. El servicio ya forma parte de su total.' : 'Este cobro queda separado y no paga el saldo de ítems o servicios del contrato.'}</small>
+                        </label>
                         <label style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', color: '#1d4ed8', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', marginBottom: '4px' }}>Cobro extra</span>
+                          <span style={{ display: 'block', color: '#1d4ed8', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', marginBottom: '4px' }}>{contractEconomicsExtraDraft.includedServiceId ? 'Pago de servicio' : 'Cobro extra'}</span>
                           Concepto
                           <input
                             value={contractEconomicsExtraDraft.concept}
@@ -13294,7 +13330,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           disabled={readOnly || isSavingContractEconomicsExtra || !String(contractEconomicsExtraDraft.concept || '').trim() || toMoneyNumber(contractEconomicsExtraDraft.amountBs) <= 0}
                           style={{ whiteSpace: 'nowrap' }}
                         >
-                          {isSavingContractEconomicsExtra ? 'Registrando...' : 'Cobrar extra + recibo'}
+                          {isSavingContractEconomicsExtra ? 'Registrando...' : contractEconomicsExtraDraft.includedServiceId ? 'Cobrar servicio + recibo' : 'Cobrar extra + recibo'}
                         </button>
                       </form>
 
@@ -13723,8 +13759,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                               >
                                 {entry.isCashRegistered
                                   ? `Cobrado en caja${entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}`
-                                  : 'Ingreso anotado'}
+                                  : 'Anotado sin recibo'}
                               </b>
+                            ) : null}
+                            {entry.type === 'extra' && entry.isCashRegistered ? (
+                              <b className="contract-economics-money-flow-pill is-deposit">Cobro extra pagado{entry.cashReceiptCode ? ` - ${entry.cashReceiptCode}` : ''}</b>
                             ) : null}
                             {entry.type === 'guarantee' ? (
                               <b
@@ -13807,6 +13846,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                 {generatingDepositReceiptId === entry.id
                                   ? 'Generando...'
                                   : entry.cashReceiptCode || (entry.cashMovementId ? 'Ver recibo' : 'Generar recibo')}
+                              </button>
+                            ) : null}
+                            {entry.type === 'extra' && entry.cashMovementId ? (
+                              <button type="button" className="contract-economics-row-action" onClick={() => handlePrintEconomicReceipt({ id: entry.cashMovementId })}>
+                                {entry.cashReceiptCode || 'Ver recibo del extra'}
                               </button>
                             ) : null}
                             {isReservedGuarantee ? (

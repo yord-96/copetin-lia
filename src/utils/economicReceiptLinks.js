@@ -7,14 +7,19 @@ export function linkEconomicReceiptRows(entries, { postedMovements, deposits, re
   const owners = new Map();
   const used = new Set();
   const byId = new Map(postedMovements.map(row => [String(row.id), row]));
+  const cashEntryTypes = ['deposit', 'guarantee', 'refund', 'extra', 'charge'];
+  const separateCollection = row => ['extra', 'damage'].includes(row?.collectionTarget)
+    || ['contract_extra_collection', 'contract_damage_collection'].includes(row?.accountingTag)
+    || ['cobro_extra_contrato', 'cobro_danos_faltantes'].includes(row?.category);
   for (const entry of entries) {
-    if (!['deposit', 'guarantee', 'refund'].includes(entry.type) || entry.amountBs <= 0) continue;
+    if (!cashEntryTypes.includes(entry.type) || entry.amountBs <= 0) continue;
     const id = String(entry.cashMovementId ?? '').trim();
-    if (id && byId.has(id) && !owners.has(id) && !isVoided(byId.get(id))) owners.set(id, entry.id);
+    if (id && byId.has(id) && !owners.has(id) && !isVoided(byId.get(id))
+      && !(entry.type === 'deposit' && separateCollection(byId.get(id)))) owners.set(id, entry.id);
   }
   return entries.map(entry => {
     const unlinked = () => ({ ...entry, isCashRegistered: false, cashReceiptCode: '', cashMovementId: null });
-    if (!['deposit', 'guarantee', 'refund'].includes(entry.type) || entry.amountBs <= 0) {
+    if (!cashEntryTypes.includes(entry.type) || entry.amountBs <= 0) {
       return { ...entry, isCashRegistered: false };
     }
     const linkedId = String(entry.cashMovementId ?? '').trim();
@@ -24,6 +29,9 @@ export function linkEconomicReceiptRows(entries, { postedMovements, deposits, re
       return { ...entry, isCashRegistered: true, cashMovementId: linkedId,
         cashReceiptCode: String(entry.cashReceiptCode || row?.receiptCode || row?.receipt || '').trim() };
     }
+    // Extra and damage receipts already own their explicit ledger line. They
+    // cannot also back a deposit inferred only from matching date and amount.
+    if (['extra', 'charge'].includes(entry.type)) return unlinked();
     const date = getCashBusinessDate(entry.createdAt);
     if (!date) return unlinked();
     const method = normalizeMethod(entry.paymentMethod);
@@ -31,6 +39,7 @@ export function linkEconomicReceiptRows(entries, { postedMovements, deposits, re
     const candidates = (entry.type === 'refund' ? refunds : deposits).filter(row => {
       const id = String(row.id ?? '');
       if (!id || used.has(id) || owners.has(id) || isVoided(row)) return false;
+      if (entry.type === 'deposit' && separateCollection(row)) return false;
       if (getCashBusinessDate(row.receiptIssuedAt || row.createdAt) !== date) return false;
       if (Math.abs(Math.abs(getAmount(row)) - entry.amountBs) >= .01) return false;
       if (entry.type === 'refund') return true;

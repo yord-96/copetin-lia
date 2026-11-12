@@ -32,3 +32,22 @@ test('no reasigna un recibo explícito al editar la fecha y compara días de Bol
   const row = { ...receipt('one', '28'), createdAt: '2026-09-28T02:00:00Z' };
   assert.equal(link([entry('first', '27')], [row])[0].cashMovementId, 'one');
 });
+
+test('3027: paid taxi extra keeps its receipt; an unconfirmed deposit cannot borrow it', () => {
+  const taxi = { ...receipt('taxi', '27'), amountBs: 35, accountingTag: 'contract_extra_collection', category: 'cobro_extra_contrato' };
+  const extra = entry('extra-line', '27', { type: 'extra', amountBs: 35, cashMovementId: 'taxi', cashCollectionTarget: 'extra' });
+  const annotation = entry('annotation', '27', { amountBs: 35 });
+  for (const entries of [[annotation, extra], [extra, annotation]]) {
+    const rows = link(entries, [taxi]);
+    assert.equal(rows.find(row => row.id === 'extra-line').cashMovementId, 'taxi');
+    assert.equal(rows.find(row => row.id === 'extra-line').isCashRegistered, true);
+    assert.equal(rows.find(row => row.id === 'annotation').cashMovementId, null);
+    assert.equal(rows.find(row => row.id === 'annotation').isCashRegistered, false);
+  }
+  assert.equal(link([annotation], [taxi])[0].isCashRegistered, false);
+});
+test('a separate damage receipt cannot confirm a deposit or be lost from its own line', () => {
+  const damage = { ...receipt('damage', '27'), accountingTag: 'contract_damage_collection', collectionTarget: 'damage' };
+  const rows = link([entry('deposit', '27'), entry('charge', '27', { type: 'charge', cashMovementId: 'damage', cashCollectionTarget: 'damage' })], [damage]);
+  assert.equal(rows[0].isCashRegistered, false); assert.equal(rows[1].isCashRegistered, true);
+});

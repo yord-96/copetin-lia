@@ -1,3 +1,4 @@
+import { syncContractCashCollection } from '../../src/utils/contractCashCollection.js';
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
 import { getGuaranteeRefundCommercialPendingBs, guaranteeRefundDebtMessage } from '../../src/utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundLedger.js';
@@ -286,6 +287,7 @@ const normalizeEconomicLedgerRows = (rows) => {
       reclassifiedFromPayment: Boolean(entry?.reclassifiedFromPayment),
       refundSource: entry?.refundSource === 'surplus' ? 'surplus' : 'guarantee',
       sourceDepositId: String(entry?.sourceDepositId ?? '').trim() || null,
+      includedServiceId: String(entry?.includedServiceId ?? '').trim() || null,
       contractAllocationBs: toPositiveRoundedNumber(entry?.contractAllocationBs),
       guaranteeAllocationBs: toPositiveRoundedNumber(entry?.guaranteeAllocationBs),
       surplusAllocationBs: toPositiveRoundedNumber(entry?.surplusAllocationBs),
@@ -4879,6 +4881,7 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
     let movement = null;
     let updatedRental = null;
     let updatedRefundContract = null;
+    let updatedCollectionContract = null;
     let reconciliation = null;
     const result = await updateStateSnapshot((state) => {
       state.cashMovements = Array.isArray(state.cashMovements) ? state.cashMovements : [];
@@ -4887,6 +4890,10 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
       const duplicate = findDirectOperation(state, payload.clientOperationId);
       if (duplicate) {
         movement = duplicate;
+        if (payload.accountingTag === 'contract_extra_collection' || payload.includedServiceId) {
+          updatedCollectionContract = structuredClone(state.contracts.find(row => row.id === duplicate.linkedContractId) ?? null);
+          updatedRental = structuredClone(state.rentals.find(row => row.id === duplicate.linkedRentalId) ?? null);
+        }
         if (isGuaranteeRefund) {
           const contract = state.contracts.find(row => (duplicate.linkedContractId && row.id === duplicate.linkedContractId) || (duplicate.linkedRentalId && row.rentalId === duplicate.linkedRentalId));
           if (contract) { contract.economicLedger = reconcileGuaranteeRefundLedger(contract, state.cashMovements); updatedRefundContract = structuredClone(contract); }
@@ -5024,6 +5031,15 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
         movement.receiptDetail = String(payload?.receiptDetail ?? '').trim()
           || `Garantia recibida Bs ${reconciliation.guaranteePaidBs.toFixed(2)} | Aplicada Bs ${reconciliation.guaranteeAppliedBs.toFixed(2)} | Devuelta ahora Bs ${reconciliation.refundBs.toFixed(2)} | Saldo garantia Bs ${reconciliation.remainingGuaranteeBs.toFixed(2)}`;
       }
+      if (payload.accountingTag === 'contract_extra_collection' || payload.includedServiceId) {
+        if (Number(movement.amountBs) <= 0 || movement.cashBoxType !== 'BIG_CASH') {
+          const error = new Error('Este cobro debe ser un ingreso en Caja Grande.'); error.statusCode = 409; throw error;
+        }
+        const contract = state.contracts.find(row => row.id === movement.linkedContractId);
+        const synced = syncContractCashCollection(state, contract, movement, { includedServiceId: String(payload.includedServiceId ?? '') });
+        updatedCollectionContract = structuredClone(synced.contract);
+        updatedRental = structuredClone(synced.rental);
+      }
       state.cashMovements.push(movement);
       if (isGuaranteeRefund) {
         const contract = state.contracts.find(row => (movement.linkedContractId && row.id === movement.linkedContractId) || (movement.linkedRentalId && row.rentalId === movement.linkedRentalId));
@@ -5035,7 +5051,7 @@ router.post('/__copetin_db/cash/manual-economic-movement', async (req, res, next
       }
       return state;
     });
-    res.json({ ok: true, movement, contract: updatedRefundContract, rental: updatedRental, reconciliation, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
+    res.json({ ok: true, movement, contract: updatedCollectionContract ?? updatedRefundContract, rental: updatedRental, reconciliation, revision: result.revision, version: result.version, updatedAt: result.updatedAt });
   } catch (error) {
     if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     next(error);
@@ -7683,6 +7699,7 @@ const summarizeOrdersEconomicLedgerEntry = (entry = {}) => ({
   reclassifiedFromPayment: Boolean(entry.reclassifiedFromPayment),
   refundSource: entry.refundSource ?? '',
   sourceDepositId: entry.sourceDepositId ?? null,
+  includedServiceId: entry.includedServiceId ?? null,
   contractAllocationBs: Number(entry.contractAllocationBs ?? 0),
   guaranteeAllocationBs: Number(entry.guaranteeAllocationBs ?? 0),
   surplusAllocationBs: Number(entry.surplusAllocationBs ?? 0),

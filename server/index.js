@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { runConfirmedTaxi3027Repair } from './migrations/repairConfirmedTaxi3027.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -283,6 +284,7 @@ const start = async () => {
   await ensureStateStore();
   await runLegacyGuaranteeRefundRepair();
   await runPettyCashSeparation();
+  await runConfirmedTaxi3027Repair();
   await ensureLincolnStateStore();
   await ensureProductUploadDirectory();
   await ensureEconomicReceiptUploadDirectory();
