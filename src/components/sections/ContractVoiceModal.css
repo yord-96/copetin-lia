@@ -1,0 +1,10 @@
+.contract-voice-modal { width: min(760px, 95vw); max-height: 90vh; overflow-y: auto; background: #fff; color: #171717; border: 1px solid #526071; border-radius: 18px; padding: 24px; }
+.contract-voice-modal p, .contract-voice-modal label, .contract-voice-modal li { color: inherit; line-height: 1.5; }
+.contract-voice-modal header, .voice-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.contract-voice-modal label { display: block; margin: 14px 0; }
+.contract-voice-modal textarea, .contract-voice-modal select { width: 100%; background: #18212c; color: #e4e9f0; border: 1px solid #607083; border-radius: 9px; padding: 12px; font: inherit; }
+.contract-voice-modal textarea { min-height: 90px; }
+.voice-history { max-height: 26vh; overflow: auto; }
+.voice-history > div { border-left: 3px solid #db6a20; padding: 8px 12px; margin: 10px 0; background: #f1f5f9; }
+.voice-history p { margin: 6px 0; }
+.contract-voice-modal input[type=checkbox] { width: 17px; height: 17px; display: inline-block; margin-right: 8px; accent-color: #db6a20; }

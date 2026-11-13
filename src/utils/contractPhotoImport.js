@@ -65,7 +65,7 @@ export function preparePhotoReview(extraction, { items = [], clients = [], respo
     warnings: [...new Set(warnings)], items: rows };
 }
 
-export function photoReviewToContract(review, { items = [], responsibles = [], canChooseResponsibles = true, today = '' } = {}) {
+export function photoReviewToContract(review, { items = [], responsibles = [], canChooseResponsibles = true, today = '', origin = 'photo' } = {}) {
   for (const key of ['guaranteeBs', 'initialPaymentBs']) {
     if (!Number.isFinite(Number(review[key])) || Number(review[key]) < 0 || Number(review[key]) > 10000000) throw new Error('Revisa los montos de garantía y pago inicial.');
   }
@@ -84,7 +84,7 @@ export function photoReviewToContract(review, { items = [], responsibles = [], c
     return { lineKey: `photo-${index}`, itemId: free ? `quick-photo-${index}` : item.id,
       itemName: free ? clean(row.description) : item.name, quantity, unitPriceBs: price,
       grossLineTotalBs: Math.round(quantity * price * 100) / 100, lineTotalBs: Math.round(quantity * price * 100) / 100,
-      observation: `Leído de foto: ${clean(row.description)}`,
+      observation: `${origin === 'voice' ? 'Asistente de voz' : 'Leído de foto'}: ${clean(row.description)}`,
       ...(free ? { controlsStock: false, verificationStatus: 'pending_verification',
         quickItem: { name: clean(row.description), category: 'Por verificar', rentalPriceBs: price } } : {}),
     };
@@ -94,7 +94,7 @@ export function photoReviewToContract(review, { items = [], responsibles = [], c
   const logisticsMode = review.logisticsMode === 'recojo' ? 'recojo' : 'envio';
   const deliveryStart = photoTime(review.deliveryWindowStart), deliveryEnd = photoTime(review.deliveryWindowEnd);
   const pickupStart = photoTime(review.pickupWindowStart), pickupEnd = photoTime(review.pickupWindowEnd);
-  const notes = [clean(review.notes), 'Origen: foto de contrato. Datos transcritos para revisión.',
+  const notes = [clean(review.notes), origin === 'voice' ? 'Origen: asistente de voz. Datos transcritos para revisión.' : 'Origen: foto de contrato. Datos transcritos para revisión.',
     ...(review.warnings || []).map(warning => `Revisar: ${warning}`),
     ...(review.uncertainFields || []).map(field => `Lectura dudosa: ${field}`),
     !responsible && review.responsibleName ? `Responsable escrito: ${review.responsibleName}` : '',

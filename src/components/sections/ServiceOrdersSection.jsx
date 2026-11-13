@@ -1,6 +1,7 @@
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
 import ContractPhotoImportModal from './ContractPhotoImportModal';
+import ContractVoiceModal from './ContractVoiceModal';
 import { photoReviewToContract } from '../../utils/contractPhotoImport.js';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
@@ -1911,6 +1912,7 @@ function ServiceOrdersSection({
 
   const [modalOpen, setModalOpen] = useState(false);
   const [photoImportOpen, setPhotoImportOpen] = useState(false);
+  const [voiceImportOpen, setVoiceImportOpen] = useState(false);
   const [photoImportOrigin, setPhotoImportOrigin] = useState(null);
   useEffect(() => () => { if (photoImportOrigin?.url) URL.revokeObjectURL(photoImportOrigin.url); }, [photoImportOrigin]);
   const [isPreparingEditor, setIsPreparingEditor] = useState(false);
@@ -6414,6 +6416,20 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       setPhotoImportOrigin({ url: URL.createObjectURL(file), warnings: review.warnings });
       setPhotoImportOpen(false);
     } else throw new Error('No se pudo abrir el wizard. Intenta de nuevo.');
+  };
+
+  const openVoiceImport = async () => {
+    if (readOnly || preparingEditorRef.current) return;
+    preparingEditorRef.current = true; setIsPreparingEditor(true); setFormError('');
+    try { await onPrepareEditorData?.(); setVoiceImportOpen(true); }
+    catch (error) { setFormError(error.message || 'No se pudo cargar el catálogo.'); }
+    finally { preparingEditorRef.current = false; setIsPreparingEditor(false); }
+  };
+  const continueVoiceImport = async review => {
+    const source = photoReviewToContract(review, { items, responsibles: responsibleOptions,
+      canChooseResponsibles, today: getInputDate(new Date()), origin: 'voice' });
+    if (await openCreateModal('order', 'contract', source)) setVoiceImportOpen(false);
+    else throw new Error('No se pudo abrir el editor. Intenta de nuevo.');
   };
 
   const closeModal = () => {
@@ -11444,6 +11460,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={openPhotoImport} title="Crear contrato desde una foto" aria-label="Crear contrato desde una foto">
               <Camera size={19} aria-hidden="true" /> Desde foto
             </button>
+            <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={openVoiceImport}>Contrato por voz</button>
           </div>
         ) : (
           <span className="orders-readonly-badge">Modo consulta</span>
@@ -11452,6 +11469,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
       {photoImportOpen ? <ContractPhotoImportModal items={items} clients={clients} responsibles={responsibleOptions}
         contracts={contracts} rentals={rentals} canChooseResponsibles={canChooseResponsibles} onClose={() => setPhotoImportOpen(false)} onContinue={continuePhotoImport} /> : null}
+      {voiceImportOpen ? <ContractVoiceModal items={items} responsibles={responsibleOptions} canChooseResponsibles={canChooseResponsibles}
+        onClose={() => setVoiceImportOpen(false)} onContinue={continueVoiceImport} /> : null}
 
       <article className="orders-table-card">
         <div className={`orders-view-switch orders-workflow-tabs ${isCommercialCompactView ? 'is-two-up' : ''} ${activeView === 'contracts' ? 'has-numbering' : ''}`}>
