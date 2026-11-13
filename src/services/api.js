@@ -4047,6 +4047,45 @@ export const api = {
     remove: (payload) => mutateQuoteOnServer('remove', payload),
   },
   contracts: {
+    photoReaderStatus: async () => {
+      const response = await fetch(getServerStateUrl('/contract-photo/status'), { headers: getInternalHeaders(), cache: 'no-store' });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo consultar el lector local.');
+      return response.json();
+    },
+    readPhoto: async (file, { signal, onProgress } = {}) => {
+      const combined = AbortSignal.any([AbortSignal.timeout(330000), ...(signal ? [signal] : [])]);
+      let jobId = '';
+      try {
+        const response = await fetch(getServerStateUrl('/contract-photo/jobs'), {
+          method: 'POST', headers: getInternalHeaders({ 'Content-Type': file.type }), body: file, signal: combined,
+        });
+        if (!response.ok) throw await createServerStateError(response, 'No se pudo iniciar la lectura de la foto.');
+        jobId = (await response.json()).id;
+        if (!jobId) throw new Error('El servidor no confirmó la lectura. Intenta nuevamente.');
+        const started = Date.now();
+        while (!combined.aborted) {
+          const poll = await fetch(getServerStateUrl(`/contract-photo/jobs/${encodeURIComponent(jobId)}`), {
+            headers: getInternalHeaders(), cache: 'no-store', signal: combined,
+          });
+          if (!poll.ok) throw await createServerStateError(poll, 'No se pudo consultar el resultado de la foto.');
+          const result = await poll.json();
+          if (result.status === 'ready') return result.extraction;
+          if (result.status === 'error') throw new Error(result.error || 'No se pudo leer la foto.');
+          onProgress?.(Math.floor((Date.now() - started) / 1000));
+          await new Promise((resolve, reject) => {
+            const abort = () => { clearTimeout(timer); reject(new DOMException('Lectura cancelada', 'AbortError')); };
+            const timer = setTimeout(() => { combined.removeEventListener('abort', abort); resolve(); }, 1500);
+            combined.addEventListener('abort', abort, { once: true });
+            if (combined.aborted) abort();
+          });
+        }
+        throw new DOMException('Lectura cancelada', 'AbortError');
+      } finally {
+        if (jobId) fetch(getServerStateUrl(`/contract-photo/jobs/${encodeURIComponent(jobId)}`), {
+          method: 'DELETE', headers: getInternalHeaders(), signal: AbortSignal.timeout(3000),
+        }).catch(() => {});
+      }
+    },
     list: () => callBridge('contracts', 'list', false),
     listHidden: () => callBridge('contracts', 'listHidden', false),
     ensureFull: (identifier, reason) => fetchFullServerContract(identifier, reason),

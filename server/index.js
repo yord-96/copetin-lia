@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import { createRequestLimiters } from './middleware/requestLimits.js';
 import stateRoutes from './routes/state.js';
 import uploadRoutes from './routes/uploads.js';
+import contractPhotoRoutes from './routes/contractPhotos.js';
 import documentRoutes from './routes/documents.js';
 import contractTransactionRoutes from './routes/contractTransactions.js';
 import publicCatalogRoutes from './routes/publicCatalog.js';
@@ -106,6 +107,7 @@ app.use(
   }),
 );
 app.use(uploadRoutes);
+app.use(contractPhotoRoutes);
 
 // Los documentos PDF se renderizan desde el servidor. En desarrollo, Vite sirve
 // /public en el puerto 5173, pero Chromium genera el PDF contra el puerto 4000.

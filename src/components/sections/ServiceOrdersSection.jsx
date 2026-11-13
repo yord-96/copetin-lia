@@ -1,5 +1,7 @@
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
+import ContractPhotoImportModal from './ContractPhotoImportModal';
+import { photoReviewToContract } from '../../utils/contractPhotoImport.js';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
@@ -17,6 +19,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  Camera,
   Check,
   ClipboardCheck,
   ChevronRight,
@@ -1907,6 +1910,9 @@ function ServiceOrdersSection({
   const [seenCounts, setSeenCounts] = useState(readSeenCounts);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [photoImportOpen, setPhotoImportOpen] = useState(false);
+  const [photoImportOrigin, setPhotoImportOrigin] = useState(null);
+  useEffect(() => () => { if (photoImportOrigin?.url) URL.revokeObjectURL(photoImportOrigin.url); }, [photoImportOrigin]);
   const [isPreparingEditor, setIsPreparingEditor] = useState(false);
   const preparingEditorRef = useRef(false);
   const [draft, setDraft] = useState(buildEmptyDraft('quote'));
@@ -6354,6 +6360,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       }
     }
     setActionFeedback('');
+    setPhotoImportOrigin(null);
     setFormError('');
     setSupplierPlanRemovalConfirmation(null);
     setItemSearch('');
@@ -6389,10 +6396,29 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     setIsClientSearchOpen(false);
     setActiveClientResultIndex(0);
     setModalOpen(true);
+    return true;
+  };
+
+  const openPhotoImport = async () => {
+    if (readOnly || preparingEditorRef.current) return;
+    preparingEditorRef.current = true; setIsPreparingEditor(true); setFormError('');
+    try { await onPrepareEditorData?.(); setPhotoImportOpen(true); }
+    catch (error) { setFormError(error.message || 'No se pudo cargar el catálogo para leer la foto.'); }
+    finally { preparingEditorRef.current = false; setIsPreparingEditor(false); }
+  };
+
+  const continuePhotoImport = async (review, file) => {
+    const source = photoReviewToContract(review, { items, responsibles: responsibleOptions,
+      canChooseResponsibles, today: getInputDate(new Date()) });
+    if (await openCreateModal('order', 'contract', source)) {
+      setPhotoImportOrigin({ url: URL.createObjectURL(file), warnings: review.warnings });
+      setPhotoImportOpen(false);
+    } else throw new Error('No se pudo abrir el wizard. Intenta de nuevo.');
   };
 
   const closeModal = () => {
     if (isSubmitting) return;
+    setPhotoImportOrigin(null);
     setModalOpen(false);
     setClientSearchQuery('');
     setIsClientSearchOpen(false);
@@ -11415,11 +11441,17 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={() => openCreateModal('quote')}>
               + Cotizacion
             </button>
+            <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={openPhotoImport} title="Crear contrato desde una foto" aria-label="Crear contrato desde una foto">
+              <Camera size={19} aria-hidden="true" /> Desde foto
+            </button>
           </div>
         ) : (
           <span className="orders-readonly-badge">Modo consulta</span>
         )}
       </header>
+
+      {photoImportOpen ? <ContractPhotoImportModal items={items} clients={clients} responsibles={responsibleOptions}
+        contracts={contracts} rentals={rentals} canChooseResponsibles={canChooseResponsibles} onClose={() => setPhotoImportOpen(false)} onContinue={continuePhotoImport} /> : null}
 
       <article className="orders-table-card">
         <div className={`orders-view-switch orders-workflow-tabs ${isCommercialCompactView ? 'is-two-up' : ''} ${activeView === 'contracts' ? 'has-numbering' : ''}`}>
@@ -16234,6 +16266,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
             <div className={`orders-modal-body orders-wizard-body${isWizardSummaryCollapsed ? ' is-summary-collapsed' : ''}`}>
               <section className={`orders-form-panel orders-wizard-main orders-wizard-panel-step-${currentStep + 1}`}>
+                {photoImportOrigin ? <details className="contract-photo-origin"><summary>Contrato leído de foto: revisa datos, logística, pagos y proveedores antes de crear.</summary>
+                  <img src={photoImportOrigin.url} alt="Foto del contrato original para comprobar el borrador" />
+                  {photoImportOrigin.warnings.length ? <ul>{photoImportOrigin.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul> : null}
+                </details> : null}
                 {currentStep === 0 ? (
                   <>
                     <h4><span className="orders-section-icon"><UserRound aria-hidden="true" /></span>Informacion del cliente</h4>

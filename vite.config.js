@@ -593,10 +593,11 @@ const sharedDemoDbPlugin = (env) => {
       fs.createReadStream(filePath).pipe(res)
     })
 
-    server.middlewares.use('/__copetin_db', async (req, res) => {
+    server.middlewares.use('/__copetin_db', async (req, res, next) => {
       try {
         const url = new URL(req.url || '/', 'http://localhost')
         const normalizedPath = url.pathname.replace(/^\/__copetin_db/, '') || '/'
+        if (normalizedPath === '/contract-photo' || normalizedPath.startsWith('/contract-photo/')) return next()
         if (req.method === 'GET' && normalizedPath === '/personnel/overview') {
           const state = fs.existsSync(sharedDbPath) ? JSON.parse(fs.readFileSync(sharedDbPath, 'utf8')) : {}
           res.setHeader('Cache-Control', 'private, no-store')
@@ -865,6 +866,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        '/__copetin_db/contract-photo': 'http://localhost:4000',
         '/api/lincoln-portal': 'http://localhost:4000',
         '/__lincoln_db': 'http://localhost:4000',
       },
