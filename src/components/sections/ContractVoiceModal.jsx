@@ -3,7 +3,7 @@ import ProductImage from '../common/ProductImage';
 import { api } from '../../services/api';
 import { buildDraftAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability.js';
 import { matchPhotoItems, photoSearchText } from '../../utils/contractPhotoImport.js';
-import { voiceCatalogPrice, voiceCodeExists, voiceContractCode, voiceDate, voiceNumber, voiceProductChoice, voiceTime } from '../../utils/contractVoice.js';
+import { voiceCatalogPrice, voiceCodeExists, voiceContractCode, voiceDate, voiceMoreAnswer, voiceNumber, voiceProductChoice, voiceTime } from '../../utils/contractVoice.js';
 import { createVoiceTurn } from '../../utils/contractVoiceSession.js';
 import './ContractPhotoImportModal.css';
 import './ContractVoiceModal.css';
@@ -57,6 +57,7 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
     questionRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     if (!automatic || busy || step === 'review') return;
     const cancel = createVoiceTurn({ Speech, Utterance: window.SpeechSynthesisUtterance, synthesis: window.speechSynthesis, prompt,
+      acceptInterim: step === 'more' ? text => voiceMoreAnswer(text) !== null : undefined,
       onStatus: (value, text) => { setStatus(value); if (text !== undefined) setAnswer(text); },
       onReply: text => submitRef.current?.(text),
       onError: message => { setAutomatic(false); setError(message); },
@@ -116,9 +117,9 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
         return;
       }
       if (step === 'more') {
-        const text = photoSearchText(value);
-        if (/^(si|agregar|otro)(?:\s|$)/.test(text)) advance('Sí', 'description', draft, emptyLine(), '');
-        else if (/^(no|terminar)(?:\s|$)/.test(text)) advance('No', 'guaranteeBs');
+        const more = voiceMoreAnswer(value);
+        if (more === true) advance('Sí', 'description', draft, emptyLine(), '');
+        else if (more === false) advance('No', 'guaranteeBs');
         else throw new Error('Responde sí o no.');
         return;
       }
@@ -176,11 +177,12 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
     {error && <p role="alert" className="contract-photo-error">{error}</p>}
     {step !== 'review' ? <form onSubmit={event => { event.preventDefault(); submitAnswer(answer); }}>
       <label>Tu respuesta<textarea value={answer} onChange={event => { pause(); setAnswer(event.target.value); }} maxLength={500} disabled={busy} placeholder={step === 'contractCode' ? '3506 o automático' : 'Habla cuando diga «Te escucho» o escribe aquí'} /></label>
+      {step === 'more' && <div className="voice-actions"><button type="button" className="ghost-button" disabled={busy} onClick={() => submitAnswer('sí')}>Sí, agregar otro</button><button type="button" className="ghost-button" disabled={busy} onClick={() => submitAnswer('no')}>No, continuar</button></div>}
       {step === 'responsibleId' && <select aria-label="Responsable" disabled={busy} value={responsibles.some(row => row.id === answer) ? answer : ''} onChange={event => { pause(); setAnswer(event.target.value); }}><option value="">Mi asignación habitual</option>{responsibles.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>}
       {['description', 'productChoice'].includes(step) && <div className="voice-product-options" aria-label="Productos encontrados">{matches.map((match, index) => productCard(items.find(item => item.id === match.id), index, true))}</div>}
       {['quantity', 'unitPriceBs'].includes(step) && selectedItem && productCard(selectedItem, 0, false)}
       {['description', 'productChoice', 'quantity'].includes(step) && <p className="voice-availability-note">{availabilityError || 'Disponibilidad orientativa para el día del evento; descuenta los ítems ya agregados. Se recalcula al ajustar las fechas en el wizard.'} Puedes pedir más unidades y cubrir el faltante con proveedor en el wizard.</p>}
-      <div className="voice-actions"><button type="submit" className="primary-button" disabled={busy || (automatic && status === 'listening')}>Confirmar respuesta escrita</button>{step === 'productChoice' && <button type="button" className="ghost-button" disabled={busy} onClick={() => { cancelTurn.current(); advance('Nueva búsqueda', 'description', draft, emptyLine(), ''); }}>Buscar otro producto</button>}</div>
+      <div className="voice-actions"><button type="submit" className="primary-button" disabled={busy}>Confirmar respuesta escrita</button>{step === 'productChoice' && <button type="button" className="ghost-button" disabled={busy} onClick={() => { cancelTurn.current(); advance('Nueva búsqueda', 'description', draft, emptyLine(), ''); }}>Buscar otro producto</button>}</div>
     </form> : <div className="voice-summary"><p><strong>Contrato {draft.contractCode || 'con número automático'}</strong> · {draft.customerName} · {draft.eventDate} {draft.eventTime} · {draft.address}</p><p>{draft.logisticsMode === 'recojo' ? 'Cliente recoge y devuelve' : 'Envío por el equipo'}</p>
       {draft.items.map((row, index) => <div key={index} className="voice-summary-line"><strong>{row.quantity} × {row.description}</strong><label>Precio unitario Bs<input aria-label={`Precio del ítem ${index + 1}`} type="number" min="0" step="0.01" value={row.unitPriceBs} onChange={event => { setDraft(current => ({ ...current, items: current.items.map((item, i) => i === index ? { ...item, unitPriceBs: event.target.value } : item) })); setConfirmed(false); }} /></label><span>Subtotal: Bs {(row.quantity * row.unitPriceBs).toFixed(2)}</span></div>)}
       <p>Alquiler: Bs {draft.items.reduce((sum, row) => sum + row.quantity * row.unitPriceBs, 0).toFixed(2)} · Garantía: Bs {draft.guaranteeBs}</p><p>Sin pago inicial registrado. Entrega, devolución y proveedores se revisan en el editor.</p><label><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> Revisé número, cliente, productos, cantidades y precios.</label><button type="button" className="primary-button" disabled={!confirmed || busy} onClick={finish}>{busy ? 'Preparando…' : 'Revisar contrato completo'}</button></div>}

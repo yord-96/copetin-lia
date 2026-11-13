@@ -8,6 +8,8 @@ Pulsa **Iniciar conversación** una vez y permite el micrófono. El asistente le
 
 «Pausar conversación», cerrar, corregir una respuesta o escribir detienen la escucha. Puedes reanudar con un botón. El permiso denegado, los errores de reconocimiento y varios silencios consecutivos pausan la conversación sin repetir solicitudes indefinidamente. Los eventos tardíos del micrófono anterior no se aplican a otra pregunta.
 
+Los resultados definitivos se procesan al recibirlos, sin esperar la desconexión del reconocedor. En «¿Agregamos otro producto?» una respuesta provisional inequívoca de sí/no se acepta tras 900 ms sin cambios, incluso si el navegador no envía resultado definitivo ni cierre. Esa excepción no se aplica a nombres, fechas, cantidades ni dinero. Si el reconocedor no termina en 30 segundos, se pausa y conserva la transcripción para confirmarla manualmente. La confirmación escrita permanece disponible durante la escucha y la pregunta de más productos ofrece botones Sí/No.
+
 Preguntas: número de contrato (o automático), cliente, teléfono opcional, fecha y hora del evento, dirección, responsable (según permisos), logística, productos y garantía. No se acredita pago inicial.
 
 - El número se contrasta con contratos y órdenes en la copia de datos y mediante una consulta al servidor completo, incluyendo contratos ocultos o anulados que conservan su número. Se vuelve a consultar antes de abrir el wizard. Esa consulta no reserva un número; la validación de guardado existente sigue siendo necesaria ante creaciones simultáneas.

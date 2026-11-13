@@ -106,3 +106,10 @@ export function voiceProductChoice(value, matches) {
   const variants = words.length ? matches.filter(row => words.every(word => photoSearchText(row.name).split(' ').includes(word))) : [];
   return variants.length === 1 ? variants[0] : null;
 }
+
+export function voiceMoreAnswer(value) {
+  const text = photoSearchText(value);
+  if (/^(si(?: por favor)?|si quiero otro(?: producto)?|agregar(?: otro)?|otro(?: producto)?)$/.test(text)) return true;
+  if (/^(no(?: gracias| mas| por ahora)?|ninguno mas|terminar|eso es todo)$/.test(text)) return false;
+  return null;
+}

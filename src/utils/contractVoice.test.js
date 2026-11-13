@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { voiceNumber, voiceDate, voiceContractCode, voiceCodeExists, voiceCatalogPrice, voiceProductChoice, voiceTime } from './contractVoice.js';
+import { voiceNumber, voiceDate, voiceContractCode, voiceCodeExists, voiceCatalogPrice, voiceProductChoice, voiceTime, voiceMoreAnswer } from './contractVoice.js';
 import { photoReviewToContract } from './contractPhotoImport.js';
 
 test('dictated numbers accept clear amounts and reject ambiguous grouping', () => {
@@ -49,6 +49,11 @@ test('spoken event hours include afternoon and evening', () => {
   assert.equal(voiceTime('ocho y media de la noche'), '20:30');
   assert.equal(voiceTime('20:15'), '20:15');
   assert.equal(voiceTime('25:15'), '');
+});
+test('more-product responses recognize short confirmations without accepting uncertainty', () => {
+  for (const text of ['sí', 'Si.', 'sí por favor']) assert.equal(voiceMoreAnswer(text), true);
+  for (const text of ['no', 'No.', 'no gracias', 'no más']) assert.equal(voiceMoreAnswer(text), false);
+  for (const text of ['no sé', 'sí o no', 'no, sí', '', '200']) assert.equal(voiceMoreAnswer(text), null);
 });
 test('voice draft preserves catalogue IDs, totals, permissions and separate guarantee', () => {
   const items = [{ id: 'chair', name: 'Silla' }, { id: 'med', name: 'Medallón' }];
