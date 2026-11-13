@@ -7,4 +7,17 @@
 .voice-history { max-height: 26vh; overflow: auto; }
 .voice-history > div { border-left: 3px solid #db6a20; padding: 8px 12px; margin: 10px 0; background: #f1f5f9; }
 .voice-history p { margin: 6px 0; }
+.voice-history summary { cursor: pointer; padding: 10px 0; }
+.voice-last-answer { padding: 8px 12px; border-left: 3px solid #db6a20; }
 .contract-voice-modal input[type=checkbox] { width: 17px; height: 17px; display: inline-block; margin-right: 8px; accent-color: #db6a20; }
+.voice-product-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.contract-voice-modal .voice-product-card { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #64748b88; border-radius: 12px; background: #f1f5f9; color: #171717; text-align: left; width: 100%; min-width: 0; font: inherit; }
+button.voice-product-card { cursor: pointer; }
+.voice-product-card img, .voice-no-image { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; flex-shrink: 0; background: #fff; }
+.voice-no-image { display: grid; place-items: center; font-size: 12px; }
+.voice-product-card span { min-width: 0; overflow-wrap: anywhere; }
+.voice-product-card small { display: block; margin-top: 6px; line-height: 1.4; }
+.voice-availability-note { font-size: 12px; }
+.voice-summary-line { padding: 12px; border: 1px solid #64748b88; border-radius: 12px; margin: 10px 0; }
+.voice-summary-line input { max-width: 150px; padding: 8px; border: 1px solid #64748b88; border-radius: 6px; }
+@media (max-width: 640px) { .voice-product-options { grid-template-columns: 1fr; } .contract-voice-modal { padding: 16px; } }

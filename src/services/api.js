@@ -3920,6 +3920,7 @@ export const api = {
     getMobileOrdersOverview: fetchMobileOrdersOverview,
     getAccountingBaseOverview: fetchAccountingBaseOverview,
     getOrdersEditorOverview: fetchOrdersEditorOverview,
+    checkContractCode: (code) => fetchServerJson(getServerStateUrl(`/orders/contract-code?${new URLSearchParams({ code })}`), 'No se pudo comprobar el número de contrato. Intenta otra vez.'),
     getClientsOverview: fetchClientsOverview,
     getAvailabilityOverview: fetchAvailabilityOverview,
     getInventoryMovementsOverview: fetchInventoryMovementsOverview,

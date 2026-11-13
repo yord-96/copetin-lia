@@ -1,4 +1,5 @@
 import { syncContractCashCollection } from '../../src/utils/contractCashCollection.js';
+import { voiceCodeExists, voiceContractCode } from '../../src/utils/contractVoice.js';
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
 import { getGuaranteeRefundCommercialPendingBs, guaranteeRefundDebtMessage } from '../../src/utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundLedger.js';
@@ -10585,6 +10586,17 @@ router.get('/__copetin_db/orders/mobile-overview', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.get('/__copetin_db/orders/contract-code', async (req, res, next) => {
+  try {
+    const code = voiceContractCode(String(req.query.code ?? ''));
+    if (!code) return res.status(400).json({ error: 'Indica un número de contrato válido.' });
+    const snapshot = await getStateSnapshot();
+    const state = snapshot?.state ?? {};
+    res.set('Cache-Control', 'no-store');
+    res.json({ code, exists: voiceCodeExists(code, state.contracts ?? [], state.rentals ?? []) });
+  } catch (error) { next(error); }
 });
 
 router.get('/__copetin_db/orders/editor-overview', async (req, res, next) => {
