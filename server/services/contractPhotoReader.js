@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { runContractPhotoPython, contractPhotoPythonTimeoutMs } from './contractPhotoPython.js';
 
 const text = z.string().max(1000).nullable();
 const money = z.number().min(0).max(10000000).nullable();
@@ -38,6 +39,9 @@ Si no puedes distinguir una letra, producto o cifra, conserva la lectura parcial
 No añadas números de catálogo ni elijas productos de inventario. No calcules ni adivines datos que no están escritos.`;
 
 export function readerConfig(env = process.env) {
+  const engine = env.CONTRACT_PHOTO_ENGINE || 'ollama';
+  if (!['ollama', 'python'].includes(engine)) throw new Error('CONTRACT_PHOTO_ENGINE debe ser python u ollama.');
+  if (engine === 'python') return { engine, enabled: env.CONTRACT_PHOTO_ENABLED !== 'false' };
   const url = new URL(env.CONTRACT_PHOTO_OLLAMA_URL || 'http://127.0.0.1:11434');
   // No cloud fallback: the image stays on a local/private reader selected by the administrator.
   if (!['127.0.0.1', 'localhost', '[::1]', 'ollama'].includes(url.hostname) || url.protocol !== 'http:') {
@@ -45,13 +49,17 @@ export function readerConfig(env = process.env) {
   }
   const model = env.CONTRACT_PHOTO_MODEL || 'qwen3-vl:2b';
   if (/cloud|https?:/i.test(model)) throw Object.assign(new Error('La lectura de contratos solo permite modelos locales gratuitos.'), { statusCode: 503 });
-  return { url: url.origin, model, enabled: env.CONTRACT_PHOTO_ENABLED !== 'false',
+  return { engine, url: url.origin, model, enabled: env.CONTRACT_PHOTO_ENABLED !== 'false',
     timeoutMs: Math.min(300000, Math.max(1000, Number(env.CONTRACT_PHOTO_TIMEOUT_MS) || 180000)) };
 }
 
 export async function contractPhotoReaderStatus({ env = process.env, fetchImpl = fetch } = {}) {
   const config = readerConfig(env);
   if (!config.enabled) return { ready: false, message: 'La lectura de fotos está desactivada.' };
+  if (config.engine === 'python') {
+    try { return { ...await runContractPhotoPython(null, { env, check: true }), engine: 'python', timeoutSeconds: contractPhotoPythonTimeoutMs(env)/1000 }; }
+    catch { return { ready: false, message: 'Falta instalar o configurar el OCR Python. Ejecuta scripts/setup-contract-photo-ocr.sh.' }; }
+  }
   try {
     const response = await fetchImpl(`${config.url}/api/tags`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) throw new Error('offline');
@@ -67,10 +75,22 @@ export async function contractPhotoReaderStatus({ env = process.env, fetchImpl =
 export async function readContractPhoto(buffer, mime, { signal, env = process.env, fetchImpl = fetch } = {}) {
   const config = readerConfig(env);
   if (!config.enabled) throw Object.assign(new Error('La lectura de fotos está desactivada.'), { statusCode: 503 });
+  if (config.engine === 'python') {
+    const result = await runContractPhotoPython(buffer, { env, signal });
+    const parsed = contractPhotoSchema.safeParse(result);
+    if (!parsed.success) throw new Error('El OCR Python devolvió datos incompletos o inválidos. No se creó ningún contrato.');
+    return parsed.data;
+  }
   const combinedSignal = AbortSignal.any([AbortSignal.timeout(config.timeoutMs), ...(signal ? [signal] : [])]);
-  let response;
+  let rejectAbort;
+  const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  const onAbort = () => rejectAbort(combinedSignal.reason);
+  combinedSignal.addEventListener('abort', onAbort, { once: true });
+  if (combinedSignal.aborted) onAbort();
+  let output;
   try {
-    response = await fetchImpl(`${config.url}/api/chat`, {
+    output = await Promise.race([aborted, (async () => {
+    const response = await fetchImpl(`${config.url}/api/chat`, {
       method: 'POST', signal: combinedSignal, headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: config.model, stream: false, keep_alive: 0,
         format: z.toJSONSchema(contractPhotoSchema),
@@ -79,14 +99,19 @@ export async function readContractPhoto(buffer, mime, { signal, env = process.en
           { role: 'user', content: `Lee el contrato de esta imagen (${mime}). Devuelve solo el objeto JSON.`, images: [buffer.toString('base64')] }],
       }),
     });
+    if (!response.ok) throw Object.assign(new Error(response.status === 404
+      ? 'El modelo de lectura no está instalado. Instálalo en Ollama y vuelve a intentar.'
+      : 'El lector local no pudo procesar la imagen. Revisa sus registros y memoria disponible.'), { readerResponse: true });
+    return response.json();
+    })()]);
   } catch (error) {
-    if (combinedSignal.aborted) throw new Error('La lectura se canceló o superó el tiempo disponible. Prueba una foto más clara.');
+    if (combinedSignal.aborted) {
+      if (signal?.aborted) throw new Error('Lectura cancelada. No se creó ningún contrato.');
+      throw new Error(`El lector local no terminó en ${Math.round(config.timeoutMs / 1000)} segundos. No se creó ningún contrato. Revisa el rendimiento del lector en el servidor antes de reintentar.`);
+    }
+    if (error.readerResponse) throw error;
     throw Object.assign(new Error('No se pudo conectar con el lector local. Revisa que Ollama esté iniciado en el servidor.'), { cause: error });
-  }
-  if (!response.ok) throw new Error(response.status === 404
-    ? 'El modelo de lectura no está instalado. Instálalo en Ollama y vuelve a intentar.'
-    : 'El lector local no pudo procesar la imagen. Revisa memoria disponible y configuración.');
-  const output = await response.json();
+  } finally { combinedSignal.removeEventListener('abort', onAbort); }
   if (output.done === false || output.done_reason === 'length') throw new Error('La lectura quedó incompleta. Prueba una foto más clara o con menos contenido.');
   try { return contractPhotoSchema.parse(JSON.parse(output.message?.content || '')); }
   catch { throw new Error('El lector no devolvió una lectura válida. Prueba una foto más nítida; no se creó ningún contrato.'); }

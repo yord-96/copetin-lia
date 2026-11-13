@@ -37,4 +37,6 @@ uploads/products/*
 *.sw?
 
 desktop.ini
+__pycache__/
+*.py[cod]
 uploads/lincoln/

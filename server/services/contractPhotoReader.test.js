@@ -28,3 +28,19 @@ test('schema refuses fabricated strings as quantities and incomplete generation'
   assert.equal(contractPhotoSchema.safeParse({ ...extraction, items: [{ description: 'Mesa', printedLabel: null, quantity: '10', unitPriceBs: 2, writtenTotalBs: 20, uncertain: false }] }).success, false);
   await assert.rejects(readContractPhoto(Buffer.from('photo'), 'image/jpeg', { env: {}, fetchImpl: async () => new Response(JSON.stringify({ done_reason: 'length' })) }), /incompleta/);
 });
+
+test('deadline covers stalled response bodies and cancellation works without cooperative transport', async () => {
+  const keepAlive = setInterval(() => {}, 100);
+  try {
+    await assert.rejects(readContractPhoto(Buffer.from('photo'), 'image/jpeg', {
+      env: { CONTRACT_PHOTO_TIMEOUT_MS: '1000' },
+      fetchImpl: async () => ({ ok: true, json: () => new Promise(() => {}) }),
+    }), /no terminó en 1 segundos/);
+    const controller = new AbortController();
+    const pending = readContractPhoto(Buffer.from('photo'), 'image/jpeg', {
+      signal: controller.signal, env: {}, fetchImpl: () => new Promise(() => {}),
+    });
+    controller.abort();
+    await assert.rejects(pending, /Lectura cancelada/);
+  } finally { clearInterval(keepAlive); }
+});

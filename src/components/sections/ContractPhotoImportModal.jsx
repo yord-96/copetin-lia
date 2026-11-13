@@ -73,7 +73,7 @@ export default function ContractPhotoImportModal({ items, clients, responsibles,
           {preview ? <a href={preview} target="_blank" rel="noreferrer" title="Ampliar foto original"><img src={preview} alt="Foto original del contrato para comparar la transcripción" /></a> : <div className="contract-photo-placeholder"><Camera size={48} /><span>Compara aquí la foto con los datos leídos.</span></div>}
           {!availability ? <p role="status">Consultando lector local…</p> : <p className={availability.ready ? '' : 'contract-photo-warning'}>{availability.message}</p>}
           <button type="button" className="primary-button" disabled={!file || !availability?.ready || reading || opening} onClick={read}>{reading ? <><LoaderCircle size={16} className="contract-photo-spin" /> Leyendo… {elapsed}s</> : 'Interpretar foto'}</button>
-          {reading ? <><p role="status">La lectura local puede tardar unos minutos. Cancelar o cerrar detiene la lectura y no crea registros.</p><button type="button" className="ghost-button" onClick={() => { controller.current?.abort(); setReading(false); }}>Cancelar lectura</button></> : null}
+          {reading ? <><p role="status">{availability?.engine === 'python' ? `El OCR se detiene si supera ${availability.timeoutSeconds || 60} segundos.` : 'La lectura local puede tardar unos minutos.'} Cancelar o cerrar detiene la lectura y no crea registros.</p><button type="button" className="ghost-button" onClick={() => { controller.current?.abort(); setReading(false); }}>Cancelar lectura</button></> : null}
         </aside>
         <div className="contract-photo-review">
           {error ? <p role="alert" className="contract-photo-error">{error}</p> : null}
