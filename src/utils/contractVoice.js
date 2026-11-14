@@ -113,3 +113,18 @@ export function voiceMoreAnswer(value) {
   if (/^(no(?: gracias| mas| por ahora)?|ninguno mas|terminar|eso es todo)$/.test(text)) return false;
   return null;
 }
+
+export function voiceResponsibleMatches(value, responsibles = []) {
+  const available = responsibles.filter(row => row && !row.deletedAt);
+  const nameText = text => String(text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  let query = nameText(value).replace(/ por favor$/, '').replace(/ (?:como|de) responsable(?: del contrato)?$/, '');
+  // Remove conversational framing only at the edges, not words inside a name.
+  const prefix = /^(?:(?:(?:la|el) )?responsable(?: del contrato)?(?: (?:es|sera|seria))?|(?:quiero (?:asignar|elegir)(?: a)?|asigna a|va a ser|seria|sera|es|la senora|el senor)|como responsable(?: (?:quiero|a))?) /;
+  let previous;
+  do { previous = query; query = query.replace(prefix, ''); } while (query !== previous);
+  if (!query) return [];
+  const exact = available.filter(row => nameText(row.name) === query);
+  if (exact.length) return exact;
+  const words = query.split(' ');
+  return available.filter(row => words.every(word => nameText(row.name).split(' ').includes(word)));
+}

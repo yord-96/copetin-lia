@@ -3,7 +3,7 @@ import ProductImage from '../common/ProductImage';
 import { api } from '../../services/api';
 import { buildDraftAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability.js';
 import { matchPhotoItems, photoSearchText } from '../../utils/contractPhotoImport.js';
-import { voiceCatalogPrice, voiceCodeExists, voiceContractCode, voiceDate, voiceMoreAnswer, voiceNumber, voiceProductChoice, voiceTime } from '../../utils/contractVoice.js';
+import { voiceCatalogPrice, voiceCodeExists, voiceContractCode, voiceDate, voiceMoreAnswer, voiceNumber, voiceProductChoice, voiceResponsibleMatches, voiceTime } from '../../utils/contractVoice.js';
 import { createVoiceTurn } from '../../utils/contractVoiceSession.js';
 import './ContractPhotoImportModal.css';
 import './ContractVoiceModal.css';
@@ -22,12 +22,14 @@ const questions = {
 };
 const emptyLine = () => ({ description: '', selectedItemId: '', quantity: '', unitPriceBs: '' });
 const optional = text => /^(omitir|ninguno|ninguna|sin telefono|habitual|mi asignacion habitual|yo)$/.test(photoSearchText(text));
+const responsibleOptionAnswer = text => /^(?:(?:la )?opcion|numero)(?:\s|$)/.test(photoSearchText(text));
 export default function ContractVoiceModal({ items, responsibles, contracts = [], rentals = [], availability = null, availabilityError = '', canChooseResponsibles, onClose, onContinue }) {
   const [step, setStep] = useState('contractCode');
   const [draft, setDraft] = useState({ contractCode: '', customerName: '', customerPhone: '', eventDate: '', eventTime: '', address: '', responsibleId: '', logisticsMode: '', guaranteeBs: 0, items: [] });
   const [line, setLine] = useState(emptyLine);
   const [query, setQuery] = useState('');
   const [answer, setAnswer] = useState('');
+  const [responsibleQuery, setResponsibleQuery] = useState('');
   const [history, setHistory] = useState([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,6 +42,8 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
   const matches = useMemo(() => matchPhotoItems(step === 'description' ? answer : query, items), [step, answer, query, items]);
   const selectedItem = items.find(item => item.id === line.selectedItemId && !item.deletedAt);
+  const relatedResponsibles = useMemo(() => voiceResponsibleMatches(responsibleQuery, responsibles), [responsibleQuery, responsibles]);
+  const shownResponsibles = relatedResponsibles.length ? relatedResponsibles : responsibles;
   const projected = useMemo(() => availability && draft.eventDate ? getProjectedInventoryAvailability({
     items: availability.items || items, contracts: availability.contracts || [], rentals: availability.rentals || [], quotes: availability.quotes || [],
     period: buildDraftAvailabilityPeriod({ eventDate: draft.eventDate, eventTime: draft.eventTime, pickupDateMode: 'coordinate', pickupTimeMode: 'coordinate' }),
@@ -58,13 +62,19 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
     if (!automatic || busy || step === 'review') return;
     const cancel = createVoiceTurn({ Speech, Utterance: window.SpeechSynthesisUtterance, synthesis: window.speechSynthesis, prompt,
       acceptInterim: step === 'more' ? text => voiceMoreAnswer(text) !== null : undefined,
-      onStatus: (value, text) => { setStatus(value); if (text !== undefined) setAnswer(text); },
+      onStatus: (value, text) => {
+        setStatus(value);
+        if (text !== undefined) {
+          setAnswer(text);
+          if (step === 'responsibleId' && !responsibleOptionAnswer(text) && voiceResponsibleMatches(text, responsibles).length) setResponsibleQuery(text);
+        }
+      },
       onReply: text => submitRef.current?.(text),
       onError: message => { setAutomatic(false); setError(message); },
     });
     cancelTurn.current = cancel;
     return cancel;
-  }, [automatic, busy, turn, prompt, Speech, step]);
+  }, [automatic, busy, turn, prompt, Speech, step, responsibles]);
   const pause = () => { cancelTurn.current(); setAutomatic(false); setStatus('paused'); };
   const start = () => { if (!Speech) return; setAnswer(''); setError(''); setAutomatic(true); setTurn(value => value + 1); };
   const advance = (value, next, nextDraft = draft, nextLine = line, nextQuery = query) => {
@@ -74,6 +84,10 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
   const chooseItem = item => {
     cancelTurn.current();
     advance(item.name, 'quantity', draft, { description: item.name, selectedItemId: item.id, quantity: '', unitPriceBs: voiceCatalogPrice(item) ?? '' });
+  };
+  const chooseResponsible = person => {
+    cancelTurn.current();
+    advance(person.name, 'logisticsMode', { ...draft, responsibleId: person.id });
   };
   const checkCode = async code => {
     if (!code) return;
@@ -133,9 +147,14 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
       if (step === 'eventTime') { parsed = voiceTime(value); if (!parsed) throw new Error('Di una hora como ocho de la noche o veinte horas. También puedes escribir 20:00.'); }
       if (step === 'address') parsed = value.toLocaleUpperCase('es');
       if (step === 'responsibleId' && parsed) {
-        const words = photoSearchText(parsed).split(' ');
-        const candidates = responsibles.filter(row => row.id === parsed || words.every(word => photoSearchText(row.name).split(' ').includes(word)));
-        if (candidates.length !== 1) throw new Error('No hay una coincidencia única. Di el nombre completo o elige a la persona en la lista.');
+        const optionNumber = photoSearchText(parsed).match(/^(?:(?:la )?opcion(?: numero)?|numero) (.+)$/);
+        const option = optionNumber ? voiceNumber(optionNumber[1]) : null;
+        if (Number.isInteger(option) && option >= 1 && option <= shownResponsibles.length) { chooseResponsible(shownResponsibles[option - 1]); return; }
+        if (optionNumber) throw new Error(`Elige una opción entre uno y ${shownResponsibles.length}.`);
+        setResponsibleQuery(parsed);
+        const candidates = voiceResponsibleMatches(parsed, responsibles);
+        if (!candidates.length) throw new Error('No encontré a esa persona. Repite su nombre y apellido, por ejemplo Carla Terceros, o elígela de la lista.');
+        if (candidates.length > 1) throw new Error(`Coinciden varias personas: ${candidates.slice(0, 4).map(row => row.name).join(', ')}. Di el nombre completo o selecciona a la persona correcta.`);
         parsed = candidates[0].id;
       }
       if (step === 'logisticsMode') {
@@ -152,6 +171,7 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
   useLayoutEffect(() => { submitRef.current = submitAnswer; });
   const back = index => {
     pause(); const entry = history[index];
+    setResponsibleQuery('');
     setDraft(entry.draft); setLine(entry.line); setQuery(entry.query); setStep(entry.step); setHistory(rows => rows.slice(0, index)); setAnswer(''); setError(''); setConfirmed(false);
   };
   const finish = async () => {
@@ -177,9 +197,9 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
     <h3 ref={questionRef} aria-live="polite">{questions[step]}</h3>
     {error && <p role="alert" className="contract-photo-error">{error}</p>}
     {step !== 'review' ? <form onSubmit={event => { event.preventDefault(); submitAnswer(answer); }}>
-      <label>Tu respuesta<textarea value={answer} onChange={event => { pause(); setAnswer(event.target.value); }} maxLength={500} disabled={busy} placeholder={step === 'contractCode' ? '3506 o automático' : 'Habla cuando diga «Te escucho» o escribe aquí'} /></label>
+      <label>Tu respuesta<textarea value={answer} onChange={event => { pause(); setAnswer(event.target.value); if (step === 'responsibleId' && !responsibleOptionAnswer(event.target.value)) setResponsibleQuery(event.target.value); }} maxLength={500} disabled={busy} placeholder={step === 'contractCode' ? '3506 o automático' : 'Habla cuando diga «Te escucho» o escribe aquí'} /></label>
       {step === 'more' && <div className="voice-actions"><button type="button" className="ghost-button" disabled={busy} onClick={() => submitAnswer('sí')}>Sí, agregar otro</button><button type="button" className="ghost-button" disabled={busy} onClick={() => submitAnswer('no')}>No, continuar</button></div>}
-      {step === 'responsibleId' && <select aria-label="Responsable" disabled={busy} value={responsibles.some(row => row.id === answer) ? answer : ''} onChange={event => { pause(); setAnswer(event.target.value); }}><option value="">Mi asignación habitual</option>{responsibles.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>}
+      {step === 'responsibleId' && <><p>Di el nombre completo o «opción dos», o toca una tarjeta.</p><div className="voice-product-options" aria-label="Responsables encontrados">{shownResponsibles.map((person, index) => <button key={person.id} type="button" className="voice-product-card voice-responsible-card" disabled={busy} onClick={() => chooseResponsible(person)}><span className="voice-person-avatar" aria-hidden="true">{person.name.split(/\s+/).slice(0, 2).map(word => word[0]).join('')}</span><span><strong>{index + 1}. {person.name}</strong><small>{person.role || 'Responsable'}</small></span></button>)}</div><button type="button" className="ghost-button" disabled={busy} onClick={() => { cancelTurn.current(); advance('Mi asignación habitual', 'logisticsMode', { ...draft, responsibleId: '' }); }}>Mi asignación habitual</button></>}
       {['description', 'productChoice'].includes(step) && <div className="voice-product-options" aria-label="Productos encontrados">{matches.map((match, index) => productCard(items.find(item => item.id === match.id), index, true))}</div>}
       {['quantity', 'unitPriceBs'].includes(step) && selectedItem && productCard(selectedItem, 0, false)}
       {['description', 'productChoice', 'quantity'].includes(step) && <p className="voice-availability-note">{availabilityError || 'Disponibilidad orientativa para el día del evento; descuenta los ítems ya agregados. Se recalcula al ajustar las fechas en el wizard.'} Puedes pedir más unidades y cubrir el faltante con proveedor en el wizard.</p>}

@@ -12,6 +12,8 @@ Los resultados definitivos se procesan al recibirlos, sin esperar la desconexió
 
 Preguntas: número de contrato (o automático), cliente, teléfono opcional, fecha y hora del evento, dirección, responsable (según permisos), logística, productos y garantía. No se acredita pago inicial.
 
+Los responsables se muestran en tarjetas numeradas con iniciales, nombre y cargo, como las opciones de productos. Se filtran mientras se dicta el nombre y se pueden elegir por nombre completo, «opción dos» o tocando la tarjeta. La comparación ignora mayúsculas, tildes y frases como «la responsable Carla Terceros». Si coinciden varias personas, pide precisar la selección; el número de opción corresponde a las tarjetas visibles. La persona elegida se conserva al abrir el wizard.
+
 - El número se contrasta con contratos y órdenes en la copia de datos y mediante una consulta al servidor completo, incluyendo contratos ocultos o anulados que conservan su número. Se vuelve a consultar antes de abrir el wizard. Esa consulta no reserva un número; la validación de guardado existente sigue siendo necesaria ante creaciones simultáneas.
 - Acepta fechas como «21 de noviembre del 2026», «veintiuno de noviembre del dos mil veintiséis» y `21/11/2026`. Rechaza fechas imposibles o sin año. Acepta horas como «ocho de la noche» y `20:00`.
 - Al decir el producto se muestran las coincidencias directamente en tarjetas con foto (o «Sin foto»), precio y disponibilidad. Puedes decir «opción dos», el nombre o una variante que identifique una única tarjeta. No elige variantes ambiguas silenciosamente.

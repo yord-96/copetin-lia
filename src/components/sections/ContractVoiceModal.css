@@ -15,6 +15,7 @@
 button.voice-product-card { cursor: pointer; }
 .voice-product-card img, .voice-no-image { width: 80px; height: 80px; object-fit: contain; border-radius: 8px; flex-shrink: 0; background: #fff; }
 .voice-no-image { display: grid; place-items: center; font-size: 12px; }
+.voice-person-avatar { width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: #dbeafe; color: #173a70; font-weight: 800; }
 .voice-product-card span { min-width: 0; overflow-wrap: anywhere; }
 .voice-product-card small { display: block; margin-top: 6px; line-height: 1.4; }
 .voice-availability-note { font-size: 12px; }

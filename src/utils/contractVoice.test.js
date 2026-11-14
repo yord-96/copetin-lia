@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { voiceNumber, voiceDate, voiceContractCode, voiceCodeExists, voiceCatalogPrice, voiceProductChoice, voiceTime, voiceMoreAnswer } from './contractVoice.js';
+import { voiceNumber, voiceDate, voiceContractCode, voiceCodeExists, voiceCatalogPrice, voiceProductChoice, voiceTime, voiceMoreAnswer, voiceResponsibleMatches } from './contractVoice.js';
 import { photoReviewToContract } from './contractPhotoImport.js';
 
 test('dictated numbers accept clear amounts and reject ambiguous grouping', () => {
@@ -54,6 +54,17 @@ test('more-product responses recognize short confirmations without accepting unc
   for (const text of ['sí', 'Si.', 'sí por favor']) assert.equal(voiceMoreAnswer(text), true);
   for (const text of ['no', 'No.', 'no gracias', 'no más']) assert.equal(voiceMoreAnswer(text), false);
   for (const text of ['no sé', 'sí o no', 'no, sí', '', '200']) assert.equal(voiceMoreAnswer(text), null);
+});
+test('responsible names ignore casing, accents and spoken introductions without guessing ambiguous people', () => {
+  const people = [{ id: 'carla', name: 'CARLA TERCEROS' }, { id: 'other', name: 'CARLA PÉREZ' }, { id: 'deleted', name: 'CARLA TERCEROS', deletedAt: '2026-01-01' }];
+  for (const value of ['carla terceros', 'la responsable Carla Terceros', 'La responsable del contrato es Carla Terceros.', 'quiero asignar a Carla Terceros', 'Carla Terceros como responsable', 'la señora Carla Terceros por favor', 'carla']) {
+    if (value === 'carla') assert.equal(voiceResponsibleMatches(value, people).length, 2);
+    else assert.deepEqual(voiceResponsibleMatches(value, people).map(row => row.id), ['carla'], value);
+  }
+  assert.deepEqual(voiceResponsibleMatches('carla pérez', people).map(row => row.id), ['other']);
+  assert.equal(voiceResponsibleMatches('la responsable', people).length, 0);
+  assert.equal(voiceResponsibleMatches('Carla Tercero', people).length, 0);
+  assert.equal(voiceResponsibleMatches('Carla Terceros', [...people, { id: 'duplicate', name: 'Carla Terceros' }]).length, 2);
 });
 test('voice draft preserves catalogue IDs, totals, permissions and separate guarantee', () => {
   const items = [{ id: 'chair', name: 'Silla' }, { id: 'med', name: 'Medallón' }];
