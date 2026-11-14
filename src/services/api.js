@@ -317,7 +317,7 @@ const getSaveErrorMessage = (error, fallback) => {
       : 'No se pudo conectar con el servidor. Verifica la conexion e intenta nuevamente.';
   }
   if (error?.status === 413) {
-    return 'La copia de seguridad supera el tamano permitido por el servidor.';
+    return 'Los datos enviados superan el limite permitido por el servidor. No se pudo completar el guardado.';
   }
   if (error?.status === 429) {
     return 'El servidor esta recibiendo muchas operaciones al mismo tiempo. Espera unos segundos e intenta guardar otra vez.';

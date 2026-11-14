@@ -23,6 +23,12 @@ test('voice contract saves with standard windows and retains origin through summ
   const base = `http://127.0.0.1:${server.address().port}/__copetin_db`;
   const headers = { 'Content-Type': 'application/json', 'X-App-Internal-Key': 'voice-save' };
   try {
+    const blocked = await fetch(`${base}/contracts/create-and-approve`, { method: 'POST', headers, body: JSON.stringify({ contract: { ...source, items: source.items.map(line => ({ ...line, quantity: 30 })), documentCodeMode: 'auto', guaranteeBs: 0, paidAtApprovalBs: 0 } }) });
+    assert.equal(blocked.status, 409);
+    const shortage = await blocked.json();
+    assert.equal(shortage.code, 'CONTRACT_STOCK_SHORTAGE');
+    assert.match(shortage.error, /Stock insuficiente.*SILLA.*Faltan: 10/);
+    assert.equal((await getStateSnapshot()).state.contracts.length, 0, 'rejection must roll back creation');
     const response = await fetch(`${base}/contracts/create-and-approve`, { method: 'POST', headers, body: JSON.stringify({ contract: { ...source, documentCodeMode: 'auto', guaranteeBs: 0, paidAtApprovalBs: 0 }, trace: { userId: 'qa', userName: 'QA' } }) });
     assert.equal(response.status, 200, await response.clone().text());
     const state = (await getStateSnapshot()).state, saved = state.contracts[0];
@@ -35,5 +41,10 @@ test('voice contract saves with standard windows and retains origin through summ
     assert.equal(edited.status, 200, await edited.clone().text());
     const after = (await getStateSnapshot()).state.contracts[0];
     assert.equal(after.entryMethod, 'voice'); assert.equal(after.observations, 'Llamar antes de entregar.');
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const historical = await fetch(`${base}/contracts/create-and-approve`, { method: 'POST', headers, body: JSON.stringify({ contract: { ...source, contractCode: '9000', manualDocumentCode: '9000', documentCodeMode: 'manual', historicalReconstruction: true, eventDate: yesterday, deliveryDate: yesterday, pickupDate: yesterday, pickupDateMode: 'fixed', items: source.items.map(line => ({ ...line, quantity: 30 })), guaranteeBs: 0, paidAtApprovalBs: 0 }, trace: { userId: 'sales', userName: 'VENTAS', userRole: 'ventas' } }) });
+    assert.equal(historical.status, 200, await historical.clone().text());
+    const finalState = (await getStateSnapshot()).state;
+    assert.equal(finalState.items[0].availableStock, state.items[0].availableStock, 'history must not consume current stock');
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true }); }
 });

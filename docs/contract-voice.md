@@ -12,6 +12,8 @@ Los resultados definitivos se procesan al recibirlos, sin esperar la desconexió
 
 Preguntas: número de contrato (o automático), cliente, teléfono opcional, fecha y hora del evento, dirección, responsable (según permisos), logística, productos y garantía. No se acredita pago inicial.
 
+El registro histórico con número manual y fecha pasada está disponible para Ventas, Admin, Super admin y Developer con permiso de escritura de órdenes. El resumen avisa que no reserva stock actual ni registra salidas o devoluciones. Los contratos actuales y futuros conservan la validación de disponibilidad. Al aprobar, un faltante de stock devuelve `409 CONTRACT_STOCK_SHORTAGE` con el producto y las cantidades, en lugar de un error interno genérico.
+
 Los responsables se muestran en tarjetas numeradas con iniciales, nombre y cargo, como las opciones de productos. Se filtran mientras se dicta el nombre y se pueden elegir por nombre completo, «opción dos» o tocando la tarjeta. La comparación ignora mayúsculas, tildes y frases como «la responsable Carla Terceros». Si coinciden varias personas, pide precisar la selección; el número de opción corresponde a las tarjetas visibles. La persona elegida se conserva al abrir el wizard.
 
 - El número se contrasta con contratos y órdenes en la copia de datos y mediante una consulta al servidor completo, incluyendo contratos ocultos o anulados que conservan su número. Se vuelve a consultar antes de abrir el wizard. Esa consulta no reserva un número; la validación de guardado existente sigue siendo necesaria ante creaciones simultáneas.

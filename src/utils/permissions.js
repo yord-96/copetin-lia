@@ -225,3 +225,7 @@ export const canAssignOrderResponsibles = (user) => Boolean(user)
     || isSuperAdmin(user)
     || getUserRoleIds(user).includes('ventas')
   );
+
+export const canReconstructHistoricalContracts = (user) => Boolean(user)
+  && canWriteTab(user, 'alquiler')
+  && getUserRoleIds(user).some(role => ['developer', 'super_admin', 'admin', 'ventas'].includes(role));

@@ -46,7 +46,7 @@ import {
 } from 'lucide-react';
 import { buildAvailabilityPeriod, buildDraftAvailabilityPeriod, getProjectedInventoryAvailability } from '../../utils/availability';
 import { resolveInventoryArea } from '../../utils/inventoryArea';
-import { canAssignOrderResponsibles, getUserDisplayRole, isDeveloper } from '../../utils/permissions';
+import { canAssignOrderResponsibles, canReconstructHistoricalContracts, getUserDisplayRole, isDeveloper } from '../../utils/permissions';
 import { getProductImageSrc } from '../../utils/productImage';
 import { isInventoryCatalogItemActive } from '../../utils/inventoryCatalogVisibility';
 import { calculateReceivableBreakdown, getConfirmedContractLedgerPaidBs } from '../../utils/receivables';
@@ -5461,7 +5461,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   ), []);
 
   const isHistoricalReconstruction = useMemo(() => {
-    if (!isDeveloper(currentUser) || draft.entityType !== 'contract' || draft.recordId) return false;
+    if (!canReconstructHistoricalContracts(currentUser) || draft.entityType !== 'contract' || draft.recordId) return false;
     if (draft.documentCodeMode !== 'manual') return false;
     // En una reconstruccion manual manda la fecha historica del evento.
     // pickupDate y deliveryDate nacen con valores futuros en el borrador nuevo y
@@ -17991,6 +17991,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 {currentStep === 4 ? (
                   <>
                     <h4><span className="orders-section-icon"><ClipboardCheck aria-hidden="true" /></span>Revision economica y cierre</h4>
+                    {isHistoricalReconstruction && <p role="status" className="orders-numbering-help">Registro de contrato pasado: no reserva stock actual ni exige proveedor. La fecha pasada no registra una salida ni una devolución de material.</p>}
                     <p className="orders-step-help">Revisa importes antes de guardar o aprobar la cotizacion.</p>
                     <div className="orders-money-grid">
                       <div className="orders-discount-control">

@@ -16858,8 +16858,10 @@ const createWebBridge = () => ({
             .slice(0, 2)
             .map((record) => `contrato ${record.contractCode || record.code || record.orderCode || 'previo'} hasta ${record.endDate || 'fecha pendiente'}`)
             .join(', ');
-          throw new Error(
+          throw createBusinessConflictError(
             `Stock insuficiente para "${issue.itemName}" en esas fechas. Disponibles: ${issue.projectedAvailable}. Faltan: ${issue.shortageQty}.${conflictText ? ` Esta usado por ${conflictText}.` : ''} Coordina proveedor o cambia fechas.`,
+            'CONTRACT_STOCK_SHORTAGE',
+            { itemId: issue.itemId, shortageQty: issue.shortageQty, projectedAvailable: issue.projectedAvailable },
           );
         }
         const availabilityAtApproval = historicalReconstruction
