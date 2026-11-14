@@ -2,6 +2,8 @@ import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentat
 import ContractCancellationModal from './ContractCancellationModal';
 import ContractVoiceModal from './ContractVoiceModal';
 import { photoReviewToContract } from '../../utils/contractPhotoImport.js';
+import { contractOperationalNotes, getContractEntryMethod } from '../../utils/contractEntryMethod.js';
+import { Mic } from 'lucide-react';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
@@ -1344,6 +1346,7 @@ const buildEmptyDraft = (mode = 'quote') => {
     orderCode: '',
     quoteId: '',
     recordStatus: 'borrador',
+    entryMethod: 'manual',
     documentCodeMode: 'auto',
     manualDocumentCode: '',
     contractDate: deliveryDate,
@@ -6171,6 +6174,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     orderCode: record?.orderCode ?? '',
     quoteId: entityType === 'contract' ? String(record?.quoteId ?? '').trim() : '',
     recordStatus: record?.status ?? (entityType === 'contract' ? 'pendiente' : 'borrador'),
+    entryMethod: getContractEntryMethod(record),
     documentCodeMode: record?.contractCode || record?.quoteCode ? 'manual' : 'auto',
     manualDocumentCode: entityType === 'contract' ? String(record?.contractCode ?? '').trim() : String(record?.quoteCode ?? '').trim(),
     contractDate: (record?.contractDate ?? record?.createdAt ?? '').slice(0, 10) || getInputDate(new Date()),
@@ -6237,7 +6241,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     scheduleDays,
     billingMode: record?.billingMode ?? 'sin_factura',
     validUntil: entityType === 'contract' ? '' : record?.validUntil ?? '',
-    observations: record?.observations ?? '',
+    observations: contractOperationalNotes(record),
     responsibleIds: Array.isArray(record?.responsibles) && record.responsibles.length > 0
       ? record.responsibles.map((entry) => String(entry?.id ?? entry?.name ?? '').trim()).filter(Boolean)
       : record?.awaitingAssignment || isPublicCatalogQuote(record)
@@ -6443,7 +6447,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const setDraftField = (field, value) => {
-    setDraft((current) => ({ ...current, [field]: value }));
+    setDraft((current) => ({ ...current, [field]: field === 'address' && current.entryMethod === 'voice' ? String(value).toLocaleUpperCase('es') : value }));
   };
 
   const setPickupDateCoordinatesPending = (coordinatesPending) => {
@@ -8025,6 +8029,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       manualDocumentCode: draft.manualDocumentCode.trim(),
       contractDate: draft.contractDate || null,
       historicalReconstruction: isHistoricalReconstruction,
+      entryMethod: draft.entryMethod,
       clientId: draft.clientId || null,
       customerName: draft.customerName.trim(),
       customerCi: draft.customerCi.trim(),
@@ -12102,10 +12107,11 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     const showFinalizedStyle = !isCancelledRow && isRowFinalized;
                     return (
                       <tr key={row.id} className={`orders-row contract-${row.status}${showSentStyle ? ' is-sent' : ''}${showReturnedStyle ? ' is-returned' : ''}${showFinalizedStyle ? ' is-finalized' : ''}`}>
-                        <td className={showSentStyle ? 'orders-contract-sent-cell' : ''}>
+                        <td className={`${showSentStyle ? 'orders-contract-sent-cell' : ''}${getContractEntryMethod(row) === 'voice' ? ' orders-contract-voice-cell' : ''}`}>
                           <div className="orders-cell-main">
                             <strong className="orders-contract-code">{row.contractCode}</strong>
                           </div>
+                          {getContractEntryMethod(row) === 'voice' ? <span className="orders-contract-voice-origin" role="img" aria-label="Contrato creado por voz" title="Contrato creado por voz"><Mic size={11} aria-hidden="true" /></span> : null}
                         </td>
                         <td className={showSentStyle ? 'orders-contract-sent-cell' : ''}>
                           <div className="orders-cell-main">

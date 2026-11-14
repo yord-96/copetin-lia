@@ -21,3 +21,5 @@ button.voice-product-card { cursor: pointer; }
 .voice-summary-line { padding: 12px; border: 1px solid #64748b88; border-radius: 12px; margin: 10px 0; }
 .voice-summary-line input { max-width: 150px; padding: 8px; border: 1px solid #64748b88; border-radius: 6px; }
 @media (max-width: 640px) { .voice-product-options { grid-template-columns: 1fr; } .contract-voice-modal { padding: 16px; } }
+.orders-contract-voice-cell { position: relative; }
+.orders-contract-voice-origin { position: absolute; top: 4px; right: 4px; width: 11px; height: 11px; display: inline-flex; color: #0d9488; pointer-events: auto; }

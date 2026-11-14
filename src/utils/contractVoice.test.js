@@ -57,7 +57,7 @@ test('more-product responses recognize short confirmations without accepting unc
 });
 test('voice draft preserves catalogue IDs, totals, permissions and separate guarantee', () => {
   const items = [{ id: 'chair', name: 'Silla' }, { id: 'med', name: 'Medallón' }];
-  const review = { customerName: 'Prueba', eventDate: '2026-11-21', guaranteeBs: 200, initialPaymentBs: 0, responsibleId: 'r',
+  const review = { customerName: 'Prueba', address: 'salón eterna Primavera tiquipaya', eventDate: '2026-11-21', guaranteeBs: 200, initialPaymentBs: 0, responsibleId: 'r',
     items: [{ selectedItemId: 'chair', description: 'Silla', quantity: 260, unitPriceBs: 12 }, { selectedItemId: 'med', description: 'Medallón', quantity: 30, unitPriceBs: 32 }] };
   const draft = photoReviewToContract(review, { items, responsibles: [{ id: 'r', name: 'Responsable' }], canChooseResponsibles: false, origin: 'voice' });
   assert.equal(draft.totals.totalBs, 4080);
@@ -65,7 +65,11 @@ test('voice draft preserves catalogue IDs, totals, permissions and separate guar
   assert.equal(draft.payment.paidAtApprovalBs, 0);
   assert.deepEqual(draft.responsibles, []);
   assert.equal(draft.items[0].itemId, 'chair');
-  assert.match(draft.observations, /asistente de voz/);
-  assert.doesNotMatch(draft.observations, /foto/);
+  assert.equal(draft.observations, '');
+  assert.equal(draft.items[0].observation, '');
+  assert.equal(draft.entryMethod, 'voice');
+  assert.equal(draft.address, 'SALÓN ETERNA PRIMAVERA TIQUIPAYA');
+  assert.deepEqual([draft.deliveryWindowStart, draft.deliveryWindowEnd, draft.deliveryTimeMode], ['08:00', '10:00', 'fixed']);
+  assert.deepEqual([draft.pickupWindowStart, draft.pickupWindowEnd, draft.pickupTimeMode], ['20:00', '22:00', 'fixed']);
   assert.throws(() => photoReviewToContract({ ...review, items: [{ selectedItemId: 'unknown', quantity: 1, unitPriceBs: 12 }] }, { items }), /Selecciona el producto exacto/);
 });

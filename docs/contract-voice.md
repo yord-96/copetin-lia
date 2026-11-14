@@ -18,6 +18,8 @@ Preguntas: número de contrato (o automático), cliente, teléfono opcional, fec
 - Usa el mismo cálculo de disponibilidad que el editor, con el resumen actualizado al abrir la conversación. Se estima para el día del evento, con devolución por coordinar, y descuenta unidades ya agregadas al borrador. Si falla la consulta se muestra «sin confirmar». El wizard recalcula al cambiar fechas y asignar proveedores.
 - La disponibilidad no limita la cantidad solicitada. Se admiten cantidades positivas enteras hasta el límite existente de 100.000 por fila; los faltantes se resuelven en el wizard.
 - Si el catálogo tiene precio válido, incluido cero, no se vuelve a preguntar. Si falta, se pide por voz. El resumen permite editar precios antes de preparar el contrato.
+- La dirección se normaliza a mayúsculas al dictarla y al corregirla en el wizard. La entrega se prepara de 08:00 a 10:00 y el recojo de 20:00 a 22:00, como en el editor habitual; las fechas y horas siguen siendo editables.
+- El origen se conserva en `entryMethod: voice`, no en observaciones ni en las notas de cada producto. El listado muestra un micrófono pequeño junto al número sin agregar columnas ni aumentar el ancho de la celda. Al editar contratos antiguos se reconocen las leyendas automáticas anteriores y se retiran de las observaciones del borrador, conservando las notas operativas reales.
 - «Ver o corregir» permite volver a una respuesta y rehacer las posteriores, restaurando el borrador correspondiente para evitar duplicar o mezclar ítems.
 
 ## Navegador y privacidad
@@ -29,5 +31,7 @@ No necesita instalar modelos adicionales en el VPS. El lector de fotos y sus mot
 ## Verificación
 
 `node --test src/utils/contractVoice.test.js src/utils/contractVoiceSession.test.js src/utils/contractPhotoImport.test.js server/routes/contractCode.test.js`
+
+Guardado real en una base temporal, horarios, origen, resumen del servidor y edición: `node --test server/routes/contractVoiceCreate.test.js src/utils/contractEntryMethod.test.js`.
 
 Pruebas de números y fechas naturales, precios, variantes, duplicados, lectura del servidor sin mutar datos, espera entre voz y micrófono, pausa, eventos tardíos y permisos. Se comprobó también el recorrido en navegador con voz simulada: una sola activación, tarjetas, cantidad superior al stock, precio automático o faltante, comprobación repetida de código y apertura del wizard sin guardar registros. El micrófono y el reconocimiento reales deben validarse en los equipos de los usuarios.

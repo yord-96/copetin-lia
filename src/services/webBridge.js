@@ -1,4 +1,5 @@
 import { syncContractCashCollection } from '../utils/contractCashCollection.js';
+import { getContractEntryMethod } from '../utils/contractEntryMethod.js';
 import { reconcileComboPackageQuantities } from '../utils/comboPackageQuantity.js';
 import { manageAttendance } from '../utils/attendanceManagement.js';
 import { normalizeInventoryPurchase } from '../utils/inventoryPurchase.js';
@@ -15409,6 +15410,7 @@ const createWebBridge = () => ({
         created = {
           id: makeId('con'),
           contractCode: consumeCommercialDocumentCode(state, payload, 'contractPrefix', 'contractNext', 'contracts', 'contractCode', 5),
+          entryMethod: getContractEntryMethod(payload),
           quoteId: String(payload?.quoteId ?? '').trim() || null,
           clientId,
           customerName,
@@ -15608,6 +15610,7 @@ const createWebBridge = () => ({
         if (payload.driverId !== undefined) contract.driverId = String(payload.driverId ?? '').trim() || null;
         if (payload.vehicleId !== undefined) contract.vehicleId = String(payload.vehicleId ?? '').trim() || null;
         contract.validUntil = null;
+        contract.entryMethod = getContractEntryMethod(contract);
         if (payload.observations !== undefined) contract.observations = String(payload.observations ?? '').trim();
         if (payload.billingMode !== undefined) {
           contract.billingMode = ['con_factura', 'sin_factura'].includes(payload.billingMode) ? payload.billingMode : 'sin_factura';

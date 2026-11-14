@@ -131,6 +131,7 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
       }
       if (step === 'eventDate') { parsed = voiceDate(value); if (!parsed) throw new Error('Di una fecha completa, por ejemplo veintiuno de noviembre del dos mil veintiséis.'); }
       if (step === 'eventTime') { parsed = voiceTime(value); if (!parsed) throw new Error('Di una hora como ocho de la noche o veinte horas. También puedes escribir 20:00.'); }
+      if (step === 'address') parsed = value.toLocaleUpperCase('es');
       if (step === 'responsibleId' && parsed) {
         const words = photoSearchText(parsed).split(' ');
         const candidates = responsibles.filter(row => row.id === parsed || words.every(word => photoSearchText(row.name).split(' ').includes(word)));
@@ -158,7 +159,7 @@ export default function ContractVoiceModal({ items, responsibles, contracts = []
     pause(); busyRef.current = true; setBusy(true); setError('');
     try {
       await checkCode(draft.contractCode); if (!mounted.current) return;
-      await onContinue({ ...draft, customerCi: '', initialPaymentBs: 0, warnings: ['Confirmar entrega, devolución, disponibilidad y proveedores antes de crear.'], uncertainFields: [], notes: 'Preparado con asistente de voz; respuestas revisadas. No acredita pagos.', items: draft.items.map((row, index) => ({ ...row, key: `voice-${index}`, excluded: false })) });
+      await onContinue({ ...draft, customerCi: '', initialPaymentBs: 0, warnings: [], uncertainFields: [], items: draft.items.map((row, index) => ({ ...row, key: `voice-${index}`, excluded: false })) });
     } catch (cause) { if (mounted.current) setError(cause.message || 'No se pudo preparar el contrato.'); }
     finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   };

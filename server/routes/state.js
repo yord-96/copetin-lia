@@ -1,4 +1,5 @@
 import { syncContractCashCollection } from '../../src/utils/contractCashCollection.js';
+import { getContractEntryMethod } from '../../src/utils/contractEntryMethod.js';
 import { voiceCodeExists, voiceContractCode } from '../../src/utils/contractVoice.js';
 import { buildSupplierViewContext } from '../services/supplierViewContext.js';
 import { getGuaranteeRefundCommercialPendingBs, guaranteeRefundDebtMessage } from '../../src/utils/guaranteeRefundPolicy.js';
@@ -7717,6 +7718,7 @@ const summarizeOrdersContract = (contract = {}, cashMovements = []) => {
   id: contract.id ?? '',
   rentalId: contract.rentalId ?? '',
   contractCode: contract.contractCode ?? '',
+  entryMethod: getContractEntryMethod(contract),
   orderCode: contract.orderCode ?? '',
   quoteId: contract.quoteId ?? '',
   status: contract.status ?? '',

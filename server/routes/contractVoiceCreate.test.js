@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import express from 'express';
+import { photoReviewToContract } from '../../src/utils/contractPhotoImport.js';
+
+test('voice contract saves with standard windows and retains origin through summary and edit', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'copetin-voice-save-'));
+  process.env.APP_STATE_FILE = path.join(directory, 'state.json'); process.env.APP_INTERNAL_KEY = 'voice-save';
+  const { default: transactions } = await import('./contractTransactions.js');
+  const { default: routes } = await import('./state.js');
+  const { replaceStateSnapshot, getStateSnapshot } = await import('../storage/fileStateStore.js');
+  const { getWebBridge } = await import('../../src/services/webBridge.js');
+  const seed = await getWebBridge().__storage.exportState();
+  const items = [{ id: 'chair', name: 'SILLA', totalStock: 20, availableStock: 20, rentalPriceBs: 12 }];
+  await replaceStateSnapshot({ ...seed, items, contracts: [], rentals: [], clients: [], cashMovements: [], inventoryMovements: [], deliveries: [] }, null);
+  const source = photoReviewToContract({ customerName: 'QA VOZ', customerPhone: '70000000', address: 'salón primavera', eventDate: '2026-11-21', eventTime: '20:00', logisticsMode: 'recojo', guaranteeBs: 0, initialPaymentBs: 0, items: [{ selectedItemId: 'chair', description: 'SILLA', quantity: 2, unitPriceBs: 12 }] }, { items, origin: 'voice' });
+  const app = express(); app.use(express.json()); app.use(transactions); app.use(routes);
+  app.use((error, _req, res, next) => { void next; res.status(400).json({ error: error.message }); });
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/__copetin_db`;
+  const headers = { 'Content-Type': 'application/json', 'X-App-Internal-Key': 'voice-save' };
+  try {
+    const response = await fetch(`${base}/contracts/create-and-approve`, { method: 'POST', headers, body: JSON.stringify({ contract: { ...source, documentCodeMode: 'auto', guaranteeBs: 0, paidAtApprovalBs: 0 }, trace: { userId: 'qa', userName: 'QA' } }) });
+    assert.equal(response.status, 200, await response.clone().text());
+    const state = (await getStateSnapshot()).state, saved = state.contracts[0];
+    assert.equal(saved.entryMethod, 'voice'); assert.equal(saved.observations, ''); assert.equal(saved.address, 'SALÓN PRIMAVERA');
+    assert.deepEqual([saved.deliveryWindowStart, saved.deliveryWindowEnd, saved.pickupWindowStart, saved.pickupWindowEnd], ['08:00', '10:00', '20:00', '22:00']);
+    assert.equal(state.rentals.length, 1); assert.equal(state.cashMovements.length, 0);
+    const overview = await (await fetch(`${base}/orders/mobile-overview`, { headers })).json();
+    assert.equal(overview.overview.contracts.find(row => row.id === saved.id).entryMethod, 'voice');
+    const edited = await fetch(`${base}/contracts/${saved.id}/update`, { method: 'PUT', headers, body: JSON.stringify({ contract: { id: saved.id, observations: 'Llamar antes de entregar.' } }) });
+    assert.equal(edited.status, 200, await edited.clone().text());
+    const after = (await getStateSnapshot()).state.contracts[0];
+    assert.equal(after.entryMethod, 'voice'); assert.equal(after.observations, 'Llamar antes de entregar.');
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fs.rm(directory, { recursive: true, force: true }); }
+});
