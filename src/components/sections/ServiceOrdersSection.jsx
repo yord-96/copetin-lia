@@ -4,7 +4,8 @@ import ContractVoiceModal from './ContractVoiceModal';
 import { photoReviewToContract } from '../../utils/contractPhotoImport.js';
 import { contractOperationalNotes, getContractEntryMethod } from '../../utils/contractEntryMethod.js';
 import { Mic } from 'lucide-react';
-import { contractDraftRecoveryKey, readContractDraft, saveContractDraft } from '../../utils/contractDraftRecovery.js';
+import { contractDraftRecoveryKey, readContractDraft, saveContractDraft, createContractDraftAutosave } from '../../utils/contractDraftRecovery.js';
+import './ContractDraftRecovery.css';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
@@ -1951,17 +1952,26 @@ function ServiceOrdersSection({
   const recoveryKey = contractDraftRecoveryKey(currentUser);
   const [recoverableContract, setRecoverableContract] = useState(null);
   const [recoveryError, setRecoveryError] = useState('');
+  const draftAutosave = useMemo(() => createContractDraftAutosave({
+    write: (nextDraft, step) => saveContractDraft(window.localStorage, recoveryKey, nextDraft, step),
+    onSaved: saved => { setRecoverableContract({ savedAt: saved.savedAt }); setRecoveryError(''); },
+    onError: () => setRecoveryError('El navegador no pudo guardar la copia de recuperación. Tus datos siguen en este formulario; mantén la página abierta.'),
+  }), [recoveryKey]);
   useEffect(() => {
-    try { setRecoverableContract(readContractDraft(window.localStorage, recoveryKey)); }
+    try {
+      const saved = readContractDraft(window.localStorage, recoveryKey);
+      setRecoverableContract(saved ? { savedAt: saved.savedAt } : null);
+    }
     catch { setRecoverableContract(null); }
   }, [recoveryKey]);
   useEffect(() => {
-    if (!modalOpen) return;
-    try {
-      const saved = saveContractDraft(window.localStorage, recoveryKey, draft, currentStep);
-      if (saved) { setRecoverableContract(saved); setRecoveryError(''); }
-    } catch { setRecoveryError('No se pudo guardar una copia del borrador en este navegador. Mantén esta página abierta.'); }
-  }, [modalOpen, recoveryKey, draft, currentStep]);
+    if (modalOpen && draft.entityType === 'contract' && !draft.recordId) draftAutosave.update(draft, currentStep);
+  }, [modalOpen, draft, currentStep, draftAutosave]);
+  useEffect(() => {
+    const flush = () => draftAutosave.flush();
+    window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('pagehide', flush); draftAutosave.flush(); draftAutosave.cancel(); };
+  }, [draftAutosave]);
   const [documentsOrder, setDocumentsOrder] = useState(null);
   const deferredDocumentsOrder = useDeferredValue(documentsOrder);
   const [documentsFullContract, setDocumentsFullContract] = useState(null);
@@ -6438,7 +6448,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const restoreContractDraft = async () => {
     if (!recoverableContract || readOnly) return;
-    const saved = recoverableContract;
+    let saved;
+    try { saved = readContractDraft(window.localStorage, recoveryKey); } catch { /* Storage may be unavailable. */ }
+    if (!saved) { setRecoverableContract(null); setActionFeedback('No hay un borrador recuperable en este navegador para tu usuario.'); return; }
     if (!await openCreateModal('order', 'contract')) return;
     const restored = { ...buildEmptyDraft('order'), ...saved.draft, recordId: '' };
     setDraft(restored);
@@ -6451,6 +6463,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
   const closeModal = () => {
     if (isSubmitting) return;
+    draftAutosave.flush();
     setModalOpen(false);
     setClientSearchQuery('');
     setIsClientSearchOpen(false);
@@ -8365,6 +8378,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         }
       }
       if (draft.entityType === 'contract' && !draft.recordId) {
+        draftAutosave.cancel();
         try { window.localStorage.removeItem(recoveryKey); } catch { /* The saved contract remains authoritative. */ }
         setRecoverableContract(null);
       }
@@ -8374,6 +8388,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       setDraft(buildEmptyDraft('quote'));
       setFormError('');
     } catch (requestError) {
+      draftAutosave.flush();
       setFormError(`${requestError.message || 'No se pudo completar el guardado. Comprueba la conexión y vuelve a intentar.'} Tus datos siguen en este formulario; puedes corregirlos sin empezar de nuevo.`);
     } finally {
       endSubmit();
@@ -11478,13 +11493,15 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={() => openCreateModal('quote')}>
               + Cotizacion
             </button>
-            <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={openVoiceImport}>Contrato por voz</button>
-            {recoverableContract && <button type="button" className="ghost-button orders-new-btn" disabled={isPreparingEditor} onClick={restoreContractDraft}>Recuperar borrador</button>}
+            <button type="button" className="ghost-button orders-new-btn" data-order-action="voice" disabled={isPreparingEditor} onClick={openVoiceImport}>Contrato por voz</button>
+            <button type="button" className="ghost-button orders-new-btn" data-order-action="recover" disabled={isPreparingEditor || !recoverableContract} title={recoverableContract ? 'Recuperar el último borrador de este navegador (24 horas)' : 'Todavía no hay un borrador recuperable para este usuario en este navegador'} onClick={restoreContractDraft}>Recuperar borrador</button>
           </div>
         ) : (
           <span className="orders-readonly-badge">Modo consulta</span>
         )}
       </header>
+
+      {!readOnly && recoverableContract && !modalOpen && <div className="orders-draft-recovery" role="status"><span>Hay un borrador de contrato sin terminar en este navegador.</span><button type="button" className="ghost-button" disabled={isPreparingEditor} onClick={restoreContractDraft}>Continuar borrador</button></div>}
 
       {voiceImportOpen ? <ContractVoiceModal items={items} responsibles={responsibleOptions} contracts={contracts} rentals={rentals}
         availability={voiceAvailability} availabilityError={voiceAvailabilityError} canChooseResponsibles={canChooseResponsibles}
@@ -18025,7 +18042,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                   <>
                     <h4><span className="orders-section-icon"><ClipboardCheck aria-hidden="true" /></span>Revision economica y cierre</h4>
                     {isHistoricalReconstruction && <p role="status" className="orders-numbering-help">Registro de contrato pasado: no reserva stock actual ni exige proveedor. La fecha pasada no registra una salida ni una devolución de material.</p>}
-                    {draft.entityType === 'contract' && !draft.recordId && <p role="status" className="orders-numbering-help">{recoveryError || 'El borrador se conserva en este navegador. Si recargas o cierras el formulario, usa «Recuperar borrador». No crea el contrato hasta que lo guardes.'}</p>}
+                    {draft.entityType === 'contract' && !draft.recordId && <p role="status" className="orders-numbering-help">{recoveryError || 'La copia de recuperación se guarda después de una pausa al escribir y se conserva 24 horas en este navegador. Si cierras o recargas, usa «Recuperar borrador». No crea el contrato hasta que lo guardes.'}</p>}
                     <p className="orders-step-help">Revisa importes antes de guardar o aprobar la cotizacion.</p>
                     <div className="orders-money-grid">
                       <div className="orders-discount-control">

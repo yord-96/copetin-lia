@@ -1,0 +1,5 @@
+.orders-draft-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem; border: 1px solid #94a3b8; border-radius: .75rem; margin-bottom: .75rem; }
+@media (max-width: 768px) {
+  .orders-view .orders-header-actions .orders-new-btn[data-order-action="recover"]::after { content: "Recuperar" !important; }
+  .orders-view .orders-header-actions .orders-new-btn[data-order-action="voice"]::after { content: "Por voz" !important; }
+}
