@@ -1,4 +1,5 @@
 import { syncContractCashCollection } from '../utils/contractCashCollection.js';
+import { contractDocumentMovement } from '../utils/contractDocumentMovement.js';
 import { getContractEntryMethod } from '../utils/contractEntryMethod.js';
 import { reconcileComboPackageQuantities } from '../utils/comboPackageQuantity.js';
 import { manageAttendance } from '../utils/attendanceManagement.js';
@@ -7881,6 +7882,8 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
   }
   .rc-missing-summary.is-settled { color: #16733f; }
   .rc-missing-summary.is-pending { color: #b42318; }
+  .rc-movement-mark { color: #16733f; font-weight: 700; font-size: 9px; }
+  .rc-movement-count { display: block; font-size: 7px; }
   .rc-manual-row td { height: 8mm; }
   .rc-manual-write-line {
     display: block;
@@ -8783,6 +8786,7 @@ export const buildContractDocumentHtml = ({
           ? Number((lineTotalBs / displayQuantity).toFixed(2))
           : Number(baseUnitPriceBs.toFixed(2));
         const returnIssueSummary = getReturnIssueSummaryForLine(line);
+        const movement = isQuoteDocument ? null : contractDocumentMovement(line, rental);
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -8797,8 +8801,8 @@ export const buildContractDocumentHtml = ({
           <td class="num">${displayQuantity}</td>
           <td class="num">${formatBs(unitPriceBs)}</td>
           <td class="num">${formatBs(lineTotalBs)}</td>
-          <td class="check"></td>
-          <td class="check"></td>
+          <td class="check">${movement?.delivered ? '<span class="rc-movement-mark">E</span>' : ''}</td>
+          <td class="check">${movement?.returned ? `<span class="rc-movement-mark">DV${movement.returnedQty < movement.quantity ? `<small class="rc-movement-count">${movement.returnedQty}/${movement.quantity}</small>` : ''}</span>` : ''}</td>
           <td>${returnIssueSummary
             ? `<span class="rc-missing-summary ${returnIssueSummary.settled ? 'is-settled' : 'is-pending'}">${escapeHtml(returnIssueSummary.text)}</span>`
             : '<span class="rc-observation-line"></span>'}</td>
