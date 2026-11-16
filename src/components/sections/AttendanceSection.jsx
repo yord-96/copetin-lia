@@ -5,7 +5,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
 import { getUserDisplayRole } from '../../utils/permissions';
-import { DEFAULT_MAX_INTERVAL_HOURS, getAttendanceDateKey, shiftAttendanceDateKey, loadAttendanceReportRecords, filterAttendanceReportRecords } from '../../utils/attendanceAnalysis';
+import { DEFAULT_MAX_INTERVAL_HOURS, getAttendanceDateKey, shiftAttendanceDateKey, loadAttendanceReportRecords, filterAttendanceReportRecords, attendanceRecordMatchesQuery } from '../../utils/attendanceAnalysis';
 import { createAttendanceWorkbook } from '../../utils/attendanceWorkbook';
 const AttendanceHoursModal = lazy(() => import('./AttendanceHoursModal'));
 
@@ -185,17 +185,12 @@ function AttendanceSection({
   );
 
   const filteredRecords = useMemo(() => {
-    const query = normalizeText(filters.query);
     return records.filter((record) => {
       const dateKey = getInputDate(new Date(record.capturedAt ?? record.createdAt));
       if (filters.dateFrom && dateKey < filters.dateFrom) return false;
       if (filters.dateTo && dateKey > filters.dateTo) return false;
       if (filters.type !== 'all' && record.type !== filters.type) return false;
-      if (query) {
-        const haystack = normalizeText(`${record.code} ${record.userName} ${record.location} ${record.reason} ${record.type} ${record.responsibleName}`);
-        if (!haystack.includes(query)) return false;
-      }
-      return true;
+      return attendanceRecordMatchesQuery(record, filters.query);
     });
   }, [filters, records]);
 

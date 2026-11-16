@@ -46,6 +46,7 @@ import {
 } from '../../src/utils/inventoryKardex.js';
 import { filterInventoryMovementHistory } from '../../src/utils/inventoryMovementHistory.js';
 import { mutateItemLoan } from '../services/itemLoans.js';
+import { attendanceRecordMatchesQuery } from '../../src/utils/attendanceAnalysis.js';
 import { buildInventoryStockCommitments } from '../../src/utils/inventoryStockCommitment.js';
 
 const router = Router();
@@ -4331,18 +4332,7 @@ router.get('/__copetin_db/attendance', async (req, res, next) => {
         if (dateFrom && dateKey < dateFrom) return false;
         if (dateTo && dateKey > dateTo) return false;
         if (type !== 'all' && String(record?.type ?? '').toLowerCase() !== type) return false;
-        if (query) {
-          const haystack = [
-            record?.code,
-            record?.userName,
-            record?.location,
-            record?.reason,
-            record?.type,
-            record?.responsibleName,
-            ...(Array.isArray(record?.groupMemberNames) ? record.groupMemberNames : []),
-          ].map((value) => String(value ?? '').toLowerCase()).join(' ');
-          if (!haystack.includes(query)) return false;
-        }
+        if (!attendanceRecordMatchesQuery(record, query)) return false;
         return true;
       })
       .sort((a, b) => new Date(b?.capturedAt ?? b?.createdAt ?? 0) - new Date(a?.capturedAt ?? a?.createdAt ?? 0))

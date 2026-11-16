@@ -183,15 +183,21 @@ export function buildAttendanceReportAnalysis({ records, calculationRecords = re
   return { journeys, anomalies, pending, intervals, visiblePeople, workedMinutes: intervals.reduce((sum, interval) => sum + interval.minutes, 0) };
 }
 
-export function filterAttendanceReportRecords(records, filters) {
+export function attendanceRecordMatchesQuery(record, value) {
   const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const query = normalize(filters.query).trim();
+  const query = normalize(value).trim();
+  // The responsible person / group members are provenance, not the person
+  // whose attendance this row represents.
+  return !query || normalize([record.code, record.userName, record.location, record.reason, record.type].filter(Boolean).join(' ')).includes(query);
+}
+
+export function filterAttendanceReportRecords(records, filters) {
   return records.filter(record => {
     const date = getAttendanceDateKey(record.capturedAt ?? record.createdAt);
     if (date && filters.dateFrom && date < filters.dateFrom) return false;
     if (date && filters.dateTo && date > filters.dateTo) return false;
     if (filters.type && filters.type !== 'all' && record.type !== filters.type) return false;
-    return !query || normalize([record.code, record.userName, record.location, record.reason, record.type, record.responsibleName].filter(Boolean).join(' ')).includes(query);
+    return attendanceRecordMatchesQuery(record, filters.query);
   }).sort((a, b) => getAttendanceRecordMs(a) - getAttendanceRecordMs(b));
 }
 
