@@ -8544,13 +8544,21 @@ export const buildContractDocumentHtml = ({
         useGrouping: false,
       });
   };
+  const displayedReturnIssues = new Set();
   const getReturnIssueSummaryForLine = (line) => {
     const lineKey = String(line?.lineKey ?? '').trim();
     const itemId = String(line?.itemId ?? '').trim();
     const issue = (lineKey ? returnIssueByLineKey.get(lineKey) : null)
-      ?? (returnIssuesByItemId.get(itemId) ?? [])[0]
+      ?? (returnIssuesByItemId.get(itemId) ?? []).find(candidate => {
+        if (displayedReturnIssues.has(candidate)) return false;
+        const issueKey = String(candidate?.lineKey ?? '').trim();
+        // A keyed issue belongs to its own row, even when another row has the
+        // same product (courtesy, combo or a different service day).
+        return !issueKey || !rawDocumentItems.some(row => String(row?.lineKey ?? '').trim() === issueKey);
+      })
       ?? null;
-    if (!issue) return null;
+    if (!issue || displayedReturnIssues.has(issue)) return null;
+    displayedReturnIssues.add(issue);
 
     const damagedQty = Math.max(0, Math.trunc(Number(issue?.damagedQty ?? 0)));
     const missingQty = Math.max(0, Math.trunc(Number(issue?.missingQty ?? 0)));
