@@ -1,12 +1,13 @@
 import { canManageAttendance } from '../../utils/attendanceManagement';
 import { attendanceNeedsPhoto, getAttendanceWorkReason } from '../../utils/attendancePolicy';
 import { createAttendanceSubmissionTracker } from '../../utils/attendanceSubmission';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
 import { compressAttendanceImage } from '../../utils/attendancePhotos';
 import { getUserDisplayRole } from '../../utils/permissions';
-import { DEFAULT_MAX_INTERVAL_HOURS, getAttendanceDateKey, shiftAttendanceDateKey, getAttendanceRecordMs, loadAttendanceReportRecords } from '../../utils/attendanceAnalysis';
+import { DEFAULT_MAX_INTERVAL_HOURS, getAttendanceDateKey, shiftAttendanceDateKey, loadAttendanceReportRecords, filterAttendanceReportRecords } from '../../utils/attendanceAnalysis';
 import { createAttendanceWorkbook } from '../../utils/attendanceWorkbook';
+const AttendanceHoursModal = lazy(() => import('./AttendanceHoursModal'));
 
 const getInputDate = (date = new Date()) => getAttendanceDateKey(date);
 
@@ -75,6 +76,7 @@ function AttendanceSection({
 }) {
   const canManage = canManageAttendance(currentUser);
   const [managementDraft, setManagementDraft] = useState(null);
+  const [hoursOpen, setHoursOpen] = useState(false);
   const [managementBusy, setManagementBusy] = useState(false);
   const [managementError, setManagementError] = useState('');
   const [managedRecords, setManagedRecords] = useState({});
@@ -82,6 +84,7 @@ function AttendanceSection({
   records = [...Object.values(managedRecords).filter(record => !record.deletedAt && !records.some(row => row.id === record.id)), ...records];
   const openManager = record => {
     if (!canManage) return;
+    setHoursOpen(false);
     const date = new Date(record?.capturedAt ?? Date.now());
     const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     setManagementError('');
@@ -212,14 +215,7 @@ function AttendanceSection({
           type: 'all', query: '',
         }),
       ]);
-      const query = normalizeText(filters.query).trim();
-      const sortedRecords = exportSource.filter((record) => {
-        const dateKey = getAttendanceDateKey(record.capturedAt ?? record.createdAt);
-        if (dateKey && filters.dateFrom && dateKey < filters.dateFrom) return false;
-        if (dateKey && filters.dateTo && dateKey > filters.dateTo) return false;
-        if (filters.type !== 'all' && record.type !== filters.type) return false;
-        return !query || normalizeText([record.code, record.userName, record.location, record.reason, record.type, record.responsibleName].filter(Boolean).join(' ')).includes(query);
-      }).sort((a, b) => getAttendanceRecordMs(a) - getAttendanceRecordMs(b));
+      const sortedRecords = filterAttendanceReportRecords(exportSource, filters);
       const workbook = await createAttendanceWorkbook({ records: sortedRecords, calculationRecords: calculationSource, filters, maxIntervalHours });
       const buffer = await workbook.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
@@ -728,6 +724,7 @@ function AttendanceSection({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <strong>{isReportLoading ? '…' : filteredRecords.length}</strong>
               {canManage ? <details className="attendance-actions"><summary aria-label="Opciones de asistencias">⋮</summary><div><button type="button" onClick={() => openManager()}>Crear asistencia</button></div></details> : null}
+              <button type="button" className="ghost-button" onClick={() => setHoursOpen(true)} disabled={isReportLoading}>Ver horas</button>
               <button
                 type="button"
                 className="ghost-button"
@@ -860,7 +857,8 @@ function AttendanceSection({
           </div>
         </article>
       </section>
-      {canManage && managementDraft ? <div className="orders-modal-backdrop" onClick={() => { if (!managementBusy) setManagementDraft(null); }}>
+      {hoursOpen && <Suspense fallback={<p role="status">Abriendo horas de asistencia…</p>}><AttendanceHoursModal filters={filters} maxIntervalHours={maxIntervalHours} onClose={() => setHoursOpen(false)} onCreate={canManage ? () => { setHoursOpen(false); openManager(); } : undefined} /></Suspense>}
+      {canManage && managementDraft ? <div className="orders-modal-backdrop">
         <form className="orders-modal receipt-editor-modal" onSubmit={saveManagedAttendance} onClick={event => event.stopPropagation()}>
           <header className="orders-modal-head"><div><h3>{managementDraft.id ? 'Editar asistencia' : 'Crear asistencia'}</h3><p>Usuario, fecha, hora y datos de la marca.</p></div><button type="button" className="orders-modal-close" disabled={managementBusy} onClick={() => setManagementDraft(null)}>×</button></header>
           <div className="receipt-editor-body">

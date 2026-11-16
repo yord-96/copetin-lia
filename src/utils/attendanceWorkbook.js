@@ -1,4 +1,4 @@
-import { ATTENDANCE_TIME_ZONE, buildAttendanceWorkAnalysis, attendanceDurationValue, getAttendanceDateKey, getAttendancePersonKey, getAttendanceRecordMs, formatAttendanceDate, formatAttendanceTime } from './attendanceAnalysis.js';
+import { ATTENDANCE_TIME_ZONE, buildAttendanceReportAnalysis, attendanceDurationValue, getAttendanceDateKey, getAttendanceRecordMs, formatAttendanceDate, formatAttendanceTime } from './attendanceAnalysis.js';
 
 const stamp = (record) => record?.capturedAt ?? record?.createdAt;
 const excelDate = (record) => {
@@ -20,14 +20,7 @@ export async function createAttendanceWorkbook({ records, calculationRecords = r
   workbook.creator = 'El Copetín';
   workbook.title = 'Control de asistencia y revisión de jornadas';
   workbook.created = new Date(now);
-  const analysis = buildAttendanceWorkAnalysis(calculationRecords, { maxIntervalHours, now });
-  const visiblePeople = new Set(records.map(getAttendancePersonKey));
-  const inRange = (item) => (!item.dateKey || ((!filters.dateFrom || item.dateKey >= filters.dateFrom) && (!filters.dateTo || item.dateKey <= filters.dateTo))) && (!filters.query?.trim() || visiblePeople.has(item.personKey));
-  const journeys = analysis.journeys.filter(inRange).sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.userName.localeCompare(b.userName, 'es'));
-  const anomalies = analysis.anomalies.filter(inRange).sort((a, b) => a.timestampMs - b.timestampMs);
-  const pending = analysis.openEntries.filter(inRange);
-  const intervals = journeys.flatMap((journey) => journey.intervals);
-  const workedMinutes = intervals.reduce((sum, interval) => sum + interval.minutes, 0);
+  const { journeys, anomalies, pending, intervals, workedMinutes, visiblePeople } = buildAttendanceReportAnalysis({ records, calculationRecords, filters, maxIntervalHours, now });
 
   const table = (name, columns, entries) => {
     const sheet = workbook.addWorksheet(name, {

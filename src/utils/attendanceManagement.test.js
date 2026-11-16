@@ -4,6 +4,18 @@ import { manageAttendance, canManageAttendance } from './attendanceManagement.js
 const fixture = () => ({ users: [{ id: 'owner', fullName: 'YORDY COPA CEREZO', status: 'active' }, { id: 'admin', fullName: 'Otra persona', role: 'super_admin' }, { id: 'worker', fullName: 'Trabajador' }, { id: '3331b08b-370c-4d6d-9577-b7f451d8be1d', fullName: 'LISBETH MUÑOZ', username: 'lisbeth', status: 'active' }], attendanceRecords: [] });
 const draft = { userId: 'worker', type: 'entrada', capturedAt: '2026-10-01T12:00:00Z', location: 'Oficina', reason: 'Registro corregido' };
 
+test('Aracely Sierra has the same management privileges and audit trail', () => {
+  const state = fixture();
+  state.users.push({ id: 'aracely', fullName: 'ARACELY SIERRA', status: 'active' });
+  const record = manageAttendance(state, { actorId: 'aracely', action: 'create', record: draft });
+  manageAttendance(state, { actorId: 'aracely', action: 'edit', id: record.id, record: { ...draft, type: 'salida' } });
+  assert.equal(record.editedByName, 'ARACELY SIERRA');
+  assert.equal(record.editHistory.length, 1);
+  manageAttendance(state, { actorId: 'aracely', action: 'delete', id: record.id });
+  assert.equal(record.deletedById, 'aracely');
+  assert.equal(canManageAttendance({ id: 'aracely', fullName: 'ARACELY SIERRA', status: 'inactive' }), false);
+});
+
 for (const actorId of ['owner', '3331b08b-370c-4d6d-9577-b7f451d8be1d']) {
   test(actorId + ' can create, edit and delete attendance while preserving evidence and audit history', () => {
     const state = fixture();

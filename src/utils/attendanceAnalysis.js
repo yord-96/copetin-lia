@@ -171,6 +171,30 @@ export function buildAttendanceWorkAnalysis(records, { now = new Date(), maxInte
   return { journeys, anomalies, openEntries, maxIntervalHours, analyzedAt: new Date(nowMs) };
 }
 
+// Shared by the on-screen report and Excel so their scope and totals agree.
+export function buildAttendanceReportAnalysis({ records, calculationRecords = records, filters = {}, maxIntervalHours = 18, now = new Date() }) {
+  const analysis = buildAttendanceWorkAnalysis(calculationRecords, { maxIntervalHours, now });
+  const visiblePeople = new Set(records.map(getAttendancePersonKey));
+  const inRange = item => (!item.dateKey || ((!filters.dateFrom || item.dateKey >= filters.dateFrom) && (!filters.dateTo || item.dateKey <= filters.dateTo))) && (!filters.query?.trim() || visiblePeople.has(item.personKey));
+  const journeys = analysis.journeys.filter(inRange).sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.userName.localeCompare(b.userName, 'es'));
+  const anomalies = analysis.anomalies.filter(inRange).sort((a, b) => a.timestampMs - b.timestampMs);
+  const pending = analysis.openEntries.filter(inRange);
+  const intervals = journeys.flatMap(journey => journey.intervals);
+  return { journeys, anomalies, pending, intervals, visiblePeople, workedMinutes: intervals.reduce((sum, interval) => sum + interval.minutes, 0) };
+}
+
+export function filterAttendanceReportRecords(records, filters) {
+  const normalize = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const query = normalize(filters.query).trim();
+  return records.filter(record => {
+    const date = getAttendanceDateKey(record.capturedAt ?? record.createdAt);
+    if (date && filters.dateFrom && date < filters.dateFrom) return false;
+    if (date && filters.dateTo && date > filters.dateTo) return false;
+    if (filters.type && filters.type !== 'all' && record.type !== filters.type) return false;
+    return !query || normalize([record.code, record.userName, record.location, record.reason, record.type, record.responsibleName].filter(Boolean).join(' ')).includes(query);
+  }).sort((a, b) => getAttendanceRecordMs(a) - getAttendanceRecordMs(b));
+}
+
 // The API caps responses at 1,000. Split saturated date ranges instead of silently truncating.
 export async function loadAttendanceReportRecords(listRecords, filters) {
   const rows = await listRecords({ ...filters, limit: 1000 });

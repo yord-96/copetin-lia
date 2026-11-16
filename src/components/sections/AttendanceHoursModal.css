@@ -1,0 +1,16 @@
+.attendance-hours-backdrop { position: fixed; inset: 0; z-index: 1500; background: #0008; display: grid; place-items: center; padding: 1rem; }
+.attendance-hours-modal { width: min(1100px, 100%); max-height: 92dvh; overflow: auto; background: var(--surface, #fff); color: var(--text, #172033); border-radius: 1rem; padding: 1.25rem; box-shadow: 0 20px 70px #0005; }
+.attendance-hours-modal header, .attendance-hours-actions, .attendance-hours-totals, .attendance-hours-modal nav { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+.attendance-hours-modal header { justify-content: space-between; }
+.attendance-hours-modal h3, .attendance-hours-modal p { margin: 0 0 .75rem; }
+.attendance-hours-modal button { padding: .55rem .8rem; border: 1px solid #94a3b8; border-radius: .5rem; cursor: pointer; }
+.attendance-hours-modal button[aria-pressed="true"] { background: #173a70; color: white; }
+.attendance-hours-modal header button, .attendance-hours-actions button, .attendance-hours-modal nav button { width: auto !important; flex: 0 0 auto; }
+.attendance-hours-modal nav { flex-wrap: nowrap; overflow-x: auto; }
+.attendance-hours-table { overflow: auto; }
+.attendance-hours-table table { width: 100%; border-collapse: collapse; min-width: 600px; }
+.attendance-hours-table th, .attendance-hours-table td { padding: .65rem; border-bottom: 1px solid #94a3b8; text-align: left; }
+.attendance-hours-table th { background: #173a70; color: white; }
+html[data-theme="dark"] .attendance-hours-modal { background: #1b2533; color: #e3ebf5; }
+html[data-theme="dark"] .attendance-hours-modal button { background: #263346; color: #e3ebf5; }
+html[data-theme="dark"] .attendance-hours-modal button[aria-pressed="true"] { background: #173a70; }
