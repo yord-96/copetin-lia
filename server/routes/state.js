@@ -10908,10 +10908,17 @@ router.put('/__copetin_db', async (req, res, next) => {
   }
 });
 
-const itemLoanCatalog = state => (state.items ?? []).filter(item => !item.deletedAt && item.controlsStock !== false).map(item => ({
-  id: item.id, name: item.name, sku: item.sku, category: item.category,
-  totalStock: item.totalStock, availableStock: item.availableStock,
-}));
+const itemLoanCatalog = state => {
+  const commitments = buildCurrentInventoryCommitments(state);
+  const activeItems = (state.items ?? []).filter(item => !item.deletedAt && item.controlsStock !== false);
+  const stocks = new Map(buildInventoryKardexRows(activeItems, state.inventoryMovements).map(row => [String(row.itemId), row.currentStock]));
+  return activeItems.map(item => {
+    const id = String(item.id);
+    const totalStock = Math.max(0, Number(stocks.get(id) ?? item.totalStock ?? 0));
+    return { id: item.id, name: item.name, sku: item.sku, category: item.category, totalStock,
+      availableStock: Math.max(0, totalStock - Number(commitments.totalsByItem.get(id) ?? 0)) };
+  });
+};
 
 router.get('/__copetin_db/inventory/item-loans', async (req, res, next) => {
   try {
@@ -10930,7 +10937,10 @@ router.post('/__copetin_db/inventory/item-loans/:action', async (req, res, next)
   try {
     let changed;
     const result = await updateStateSnapshot(state => {
-      changed = mutateItemLoan(state, req.params.action, req.body ?? {});
+      const availableStockByItem = new Map(itemLoanCatalog(state).map(item => [String(item.id), item.availableStock]));
+      changed = mutateItemLoan(state, req.params.action, req.body ?? {}, { availableStockByItem });
+      const catalog = new Map(itemLoanCatalog(state).map(item => [String(item.id), item]));
+      changed.items = changed.items.map(item => ({ ...item, availableStock: catalog.get(String(item.id))?.availableStock ?? item.availableStock }));
       return state;
     });
     res.json({ ...changed, revision: result.revision });

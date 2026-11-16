@@ -18,7 +18,7 @@ const stockEffects = loan => {
   return map;
 };
 
-export function mutateItemLoan(state, action, payload, { now = new Date().toISOString(), makeId = randomUUID } = {}) {
+export function mutateItemLoan(state, action, payload, { now = new Date().toISOString(), makeId = randomUUID, availableStockByItem } = {}) {
   const loans = state.itemLoans ?? [];
   const items = state.items ?? [];
   const findItem = id => items.find(item => String(item.id) === id && !item.deletedAt && item.controlsStock !== false);
@@ -90,7 +90,7 @@ export function mutateItemLoan(state, action, payload, { now = new Date().toISOS
     if (!delta) continue;
     const item = findItem(id);
     if (!item) fail('Uno de los productos vinculados ya no está disponible.');
-    const total = Number(item.totalStock ?? 0), available = Number(item.availableStock ?? 0);
+    const total = Number(item.totalStock ?? 0), available = Number(availableStockByItem?.get(String(item.id)) ?? item.availableStock ?? 0);
     if (![total, available, total + delta, available + delta].every(Number.isSafeInteger)) fail(`Revisa el stock registrado de ${item.name}.`, 409);
     if (delta < 0 && (available + delta < 0 || total + delta < 0)) fail(`Stock insuficiente de ${item.name}. Disponible: ${available}. No se puede retirar ${-delta}.`, 409);
     changes.push({ item, delta, beforeTotal: total, beforeAvailable: available });
