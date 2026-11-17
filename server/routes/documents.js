@@ -456,7 +456,8 @@ router.get(
     const startedAt = Date.now();
     try {
       const requestedId = String(req.params.id ?? '').trim();
-      const paperSize = normalizeContractPaperSize(req.query?.paper);
+      const isBookReport = req.query?.layout === 'book';
+      const paperSize = isBookReport ? 'carta' : normalizeContractPaperSize(req.query?.paper);
       if (!requestedId) {
         res.status(400).json({ error: 'Debes indicar el contrato.' });
         return;
@@ -484,13 +485,14 @@ router.get(
         settings: snapshot?.state?.settings ?? {},
         items: Array.isArray(snapshot?.state?.items) ? snapshot.state.items : [],
         paperSize,
+        documentKind: isBookReport ? 'book' : 'contract',
       });
       const html = await embedContractAssets(rawHtml);
 
       const result = await renderHtmlDocumentToPdf({
         html,
         baseUrl: `${req.protocol}://${req.get('host')}`,
-        fileName: buildContractPdfFileName(context.contract, context.rental),
+        fileName: `${isBookReport ? 'LIBRO-' : ''}${buildContractPdfFileName(context.contract, context.rental)}`,
       });
 
       res.setHeader('Content-Type', 'application/pdf');

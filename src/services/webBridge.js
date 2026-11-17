@@ -1,4 +1,5 @@
 import { syncContractCashCollection } from '../utils/contractCashCollection.js';
+import { buildContractBookReport } from '../utils/contractBookReport.js';
 import { contractDocumentMovement } from '../utils/contractDocumentMovement.js';
 import { getContractEntryMethod } from '../utils/contractEntryMethod.js';
 import { reconcileComboPackageQuantities } from '../utils/comboPackageQuantity.js';
@@ -8602,6 +8603,7 @@ export const buildContractDocumentHtml = ({
     return {
       text: `${parts.join(' / ')} · ${settled ? 'CANCELADO' : 'PENDIENTE'}`,
       settled,
+      chargeBs: getReturnIssueChargeBs(issue),
     };
   };
   const mainCode = isQuoteDocument
@@ -8713,6 +8715,7 @@ export const buildContractDocumentHtml = ({
       || left._originalIndex - right._originalIndex
     );
   let contractRowNumber = 0;
+  const bookReportRows = [];
   const durationBaseBs = Number(pricingPlan?.baseSubtotalBs ?? contract?.totals?.baseSubtotalBs ?? 0);
   const pricingDays = Math.max(1, Math.trunc(Number(pricingPlan?.days ?? 1)));
   const getDurationPercentForDay = (day) => {
@@ -8787,6 +8790,13 @@ export const buildContractDocumentHtml = ({
           : Number(baseUnitPriceBs.toFixed(2));
         const returnIssueSummary = getReturnIssueSummaryForLine(line);
         const movement = isQuoteDocument ? null : contractDocumentMovement(line, rental);
+        bookReportRows.push({
+          name: `${hasDurationPricing ? `DIA ${Math.floor(bookReportRows.length / Math.max(1, documentItems.length)) + 1}: ` : hasDailySchedulePricing ? `${line.serviceDayLabel || line.serviceDate || `DIA ${Math.max(0, resolveScheduleDayIndexForDocumentLine(line)) + 1}`}: ` : ''}${line.itemName}`,
+          quantity: displayQuantity, unitPriceBs, totalBs: lineTotalBs,
+          comboKey: !hasDailySchedulePricing && !hasDurationPricing ? line.comboLineKey : '',
+          returned: Boolean(movement?.returned && movement.returnedQty >= movement.quantity),
+          issues: returnIssueSummary ? [{ text: returnIssueSummary.text.split(' · ')[0], chargeBs: returnIssueSummary.chargeBs }] : [],
+        });
         contractRowNumber += 1;
         return `
         <tr class="rc-cat-${escapeHtml(area.className)}">
@@ -8941,6 +8951,7 @@ export const buildContractDocumentHtml = ({
   const serviceRows = contractServices
     .map((service) => {
       contractRowNumber += 1;
+      bookReportRows.push({ name: `SERVICIO: ${service.name}`, quantity: service.quantity, unitPriceBs: service.unitPriceBs, totalBs: service.lineTotalBs, issues: [], returned: false });
       return `
         <tr>
           <td class="rc-row-index">${contractRowNumber}</td>
@@ -8962,6 +8973,15 @@ export const buildContractDocumentHtml = ({
   const usesMultipageContract = usesDailySchedulePages || realItemCount >= 15;
   const manualRowCount = realItemCount <= 8 ? 0 : realItemCount <= 13 ? 1 : 2;
   const rows = `${itemRows}${serviceRows}`;
+  if (documentKind === 'book') {
+    return buildContractBookReport({
+      code: mainCode, customer: documentCustomerName,
+      eventDate: formatDocumentDate(contract?.eventDate ?? rental?.eventDate),
+      rows: bookReportRows, subtotalBs: documentItemsSubtotalBs + servicesSubtotalBs,
+      discountBs, discountPercent: contract?.totals?.discountPercent ?? rental?.totals?.discountPercent,
+      deliveryFeeBs, totalBs: printedTotalBs,
+    });
+  }
   const contractTableCols = `
           <colgroup>
             <col style="width: 4.5%;" />

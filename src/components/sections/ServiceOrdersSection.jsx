@@ -4835,6 +4835,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         latestReportId: contractReport?.id ?? null,
       },
       {
+        id: 'book', kind: 'book', title: 'Reporte para libro',
+        description: 'Resumen compacto de productos, importes y faltantes en tamaño carta.',
+        status: activeDocumentsOrder.contractId ? 'Disponible' : 'Pendiente',
+        statusClass: activeDocumentsOrder.contractId ? 'contract-approved' : 'contract-pending',
+        format: 'PDF', generatedAt: null, latestReportId: null,
+      },
+      {
         id: 'inventory',
         kind: 'inventory',
         title: `Orden inventario ${activeDocumentsOrder.orderCode}`,
@@ -8895,14 +8902,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     };
   };
 
-  const fetchContractPdf = async ({ identifier, paperSize = 'oficio' }) => {
+  const fetchContractPdf = async ({ identifier, paperSize = 'oficio', layout = 'contract' }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
       throw new Error('No se pudo identificar el contrato.');
     }
 
     const response = await fetch(
-      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf?paper=${encodeURIComponent(paperSize)}`),
+      getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(requestedId)}/pdf?paper=${encodeURIComponent(paperSize)}${layout === 'book' ? '&layout=book' : ''}`),
       {
         method: 'GET',
         cache: 'no-store',
@@ -10873,18 +10880,19 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const handlePrintOrderDocument = async (kind, orderRow, requestedPaperSize = 'oficio') => {
-    const paperSize = requestedPaperSize === 'carta' ? 'carta' : 'oficio';
-    const documentLabel = kind === 'contract'
+    const isContractPdf = kind === 'contract' || kind === 'book';
+    const paperSize = kind === 'book' || requestedPaperSize === 'carta' ? 'carta' : 'oficio';
+    const documentLabel = kind === 'book' ? 'reporte para libro' : kind === 'contract'
       ? 'contrato'
       : kind === 'inventory'
         ? 'orden de inventario'
         : kind === 'route'
           ? 'hoja de ruta'
           : 'documento';
-    const baseDocumentCode = kind === 'contract'
+    const baseDocumentCode = isContractPdf
       ? orderRow.contractCode ?? orderRow.orderCode ?? orderRow.id
       : orderRow.orderCode ?? orderRow.id;
-    const loadingTitle = `${kind === 'contract'
+    const loadingTitle = `${kind === 'book' ? 'Reporte para libro' : kind === 'contract'
       ? 'Contrato'
       : kind === 'inventory'
         ? 'Orden de inventario'
@@ -10915,7 +10923,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       let preview = null;
       let cacheKey = `${kind}:${String(baseDocumentCode ?? '').trim()}`;
 
-      if (kind === 'contract') {
+      if (isContractPdf) {
         const contractIdentifier = orderRow.contractId
           ?? orderRow.contractCode
           ?? orderRow.orderCode
@@ -10933,6 +10941,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
           const renderedPdf = await fetchContractPdf({
             identifier: contractIdentifier,
             paperSize,
+            layout: kind,
           });
 
           preview = {
@@ -11034,7 +11043,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
         cacheKey,
       });
 
-      setActionFeedback(`Documento ${kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : kind === 'route' ? 'de ruta' : 'interno de proveedor'} cargado para contrato ${getOrderContractLabel(orderRow)}.`);
+      setActionFeedback(`Documento ${kind === 'book' ? 'para libro' : kind === 'contract' ? 'de contrato' : kind === 'inventory' ? 'de inventario' : kind === 'route' ? 'de ruta' : 'interno de proveedor'} cargado para contrato ${getOrderContractLabel(orderRow)}.`);
     } catch (requestError) {
       setDocumentPreview(null);
       setFormError(requestError.message || 'No se pudo abrir el documento seleccionado.');
@@ -14949,7 +14958,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                 <div className="orders-documents-section-head">
                   <div>
                     <h4>Documentos actuales</h4>
-                    <p>Contrato e inventario disponibles para consultar o imprimir.</p>
+                    <p>Contrato, reporte para libro e inventario disponibles para consultar o imprimir.</p>
                   </div>
                   <button type="button" className="primary-button" onClick={() => handleGenerateDocuments(documentsOrder)}>
                     Generar / actualizar
@@ -14968,7 +14977,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <small>{doc.description}</small>
                       </div>
                       <div className="orders-document-card-foot">
-                        <span className="orders-document-meta">{doc.generatedAt ? formatDateTime(doc.generatedAt) : 'Sin generar'}</span>
+                        <span className="orders-document-meta">{doc.kind === 'book' ? 'Carta · Resumen actualizado' : doc.generatedAt ? formatDateTime(doc.generatedAt) : 'Sin generar'}</span>
                         <button
                           type="button"
                           className="ghost-button orders-document-open-button"
