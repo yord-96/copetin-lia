@@ -1,3 +1,4 @@
+import ContractCollectionHistory from './ContractCollectionHistory.jsx';
 import { canManageAccounting } from '../../utils/permissions.js';
 import { buildFundDeliveryStatement, buildFundDeliveryDocumentHtml } from '../../utils/fundDeliveryDocument.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -7550,44 +7551,16 @@ function AccountingSection({
                           </td>
                         </tr>,
                         isExpanded ? (
-                          <tr key={`${row.id}-collections`}>
-                            <td colSpan={13} style={{ padding: '10px 16px 16px' }}>
-                              <div style={{ fontWeight: 700, marginBottom: 8 }}>Detalle de cobros registrados en Caja Grande</div>
-                              {isLoadingCollections ? (
-                                <p className="status">Consultando el historial completo de Caja Grande...</p>
-                              ) : row.collectionMovements.length ? (
-                                <div className="bigcash-table-wrap">
-                                  <table className="accounting-table bigcash-table">
-                                    <thead>
-                                      <tr>
-                                        <th>Fecha</th>
-                                        <th>Qué se cobró</th>
-                                        <th>Cómo</th>
-                                        <th>Monto</th>
-                                        <th>Recibo</th>
-                                        <th>Registrado por</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {row.collectionMovements.map((movement) => (
-                                        <tr key={movement.id}>
-                                          <td>{formatDate(movement.createdAt)}<small>{getHourLabel(movement.createdAt)}</small></td>
-                                          <td>
-                                            <strong>{movement.concept}</strong>
-                                            {movement.description ? <small style={{ whiteSpace: 'pre-line' }}>{movement.description}</small> : null}
-                                          </td>
-                                          <td>{movement.paymentMethodLabel}</td>
-                                          <td className="amount">{formatBs(movement.amountBs)}</td>
-                                          <td>{movement.receiptCode || '-'}</td>
-                                          <td>{movement.registeredBy || '-'}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <p className="status">No se encontraron movimientos reales de Caja vinculados a este contrato.</p>
-                              )}
+                          <tr key={`${row.id}-collections`} className="collection-history-row">
+                            <td colSpan={13} className="collection-history-cell">
+                              <ContractCollectionHistory
+                                contractCode={row.contractCode}
+                                movements={row.collectionMovements}
+                                loading={isLoadingCollections}
+                                formatDate={formatDate}
+                                formatBs={formatBs}
+                                getHourLabel={getHourLabel}
+                              />
                             </td>
                           </tr>
                         ) : null,
