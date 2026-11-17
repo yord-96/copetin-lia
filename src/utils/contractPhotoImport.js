@@ -66,6 +66,7 @@ export function preparePhotoReview(extraction, { items = [], clients = [], respo
 }
 
 export function photoReviewToContract(review, { items = [], responsibles = [], canChooseResponsibles = true, today = '', origin = 'photo' } = {}) {
+  const assisted = origin === 'voice' || origin === 'assisted';
   for (const key of ['guaranteeBs', 'initialPaymentBs']) {
     if (!Number.isFinite(Number(review[key])) || Number(review[key]) < 0 || Number(review[key]) > 10000000) throw new Error('Revisa los montos de garantía y pago inicial.');
   }
@@ -84,7 +85,7 @@ export function photoReviewToContract(review, { items = [], responsibles = [], c
     return { lineKey: `photo-${index}`, itemId: free ? `quick-photo-${index}` : item.id,
       itemName: free ? clean(row.description) : item.name, quantity, unitPriceBs: price,
       grossLineTotalBs: Math.round(quantity * price * 100) / 100, lineTotalBs: Math.round(quantity * price * 100) / 100,
-      observation: origin === 'voice' ? clean(row.observation) : `Leído de foto: ${clean(row.description)}`,
+      observation: assisted ? clean(row.observation) : `Leído de foto: ${clean(row.description)}`,
       ...(free ? { controlsStock: false, verificationStatus: 'pending_verification',
         quickItem: { name: clean(row.description), category: 'Por verificar', rentalPriceBs: price } } : {}),
     };
@@ -92,9 +93,9 @@ export function photoReviewToContract(review, { items = [], responsibles = [], c
   const total = lines.reduce((sum, line) => sum + line.lineTotalBs, 0);
   const responsible = canChooseResponsibles ? responsibles.find(row => row.id === review.responsibleId) : null;
   const logisticsMode = review.logisticsMode === 'recojo' ? 'recojo' : 'envio';
-  const deliveryStart = photoTime(review.deliveryWindowStart) || (origin === 'voice' ? '08:00' : ''), deliveryEnd = photoTime(review.deliveryWindowEnd) || (origin === 'voice' ? '10:00' : '');
-  const pickupStart = photoTime(review.pickupWindowStart) || (origin === 'voice' ? '20:00' : ''), pickupEnd = photoTime(review.pickupWindowEnd) || (origin === 'voice' ? '22:00' : '');
-  const notes = [clean(review.notes), origin === 'voice' ? 'Origen: asistente de voz. Datos transcritos para revisión.' : 'Origen: foto de contrato. Datos transcritos para revisión.',
+  const deliveryStart = photoTime(review.deliveryWindowStart) || (assisted ? '08:00' : ''), deliveryEnd = photoTime(review.deliveryWindowEnd) || (assisted ? '10:00' : '');
+  const pickupStart = photoTime(review.pickupWindowStart) || (assisted ? '20:00' : ''), pickupEnd = photoTime(review.pickupWindowEnd) || (assisted ? '22:00' : '');
+  const notes = [clean(review.notes), assisted ? 'Origen: asistente de voz. Datos transcritos para revisión.' : 'Origen: foto de contrato. Datos transcritos para revisión.',
     ...(review.warnings || []).map(warning => `Revisar: ${warning}`),
     ...(review.uncertainFields || []).map(field => `Lectura dudosa: ${field}`),
     !responsible && review.responsibleName ? `Responsable escrito: ${review.responsibleName}` : '',
@@ -104,7 +105,7 @@ export function photoReviewToContract(review, { items = [], responsibles = [], c
   return { status: 'pendiente', contractCode: photoContractCode(review.contractCode),
     ...(origin === 'voice' ? { entryMethod: 'voice' } : {}),
     customerName: clean(review.customerName), customerPhone: clean(review.customerPhone), customerCi: clean(review.customerCi),
-    clientId: review.clientId || null, address: origin === 'voice' ? clean(review.address).toLocaleUpperCase('es') : clean(review.address), companyName: clean(review.customerName),
+    clientId: review.clientId || null, address: assisted ? clean(review.address).toLocaleUpperCase('es') : clean(review.address), companyName: clean(review.customerName),
     eventDate: review.eventDate, eventTime: photoTime(review.eventTime),
     contractDate: photoDate(review.contractDate) || today,
     deliveryDate: photoDate(review.deliveryDate) || review.eventDate,
@@ -113,7 +114,7 @@ export function photoReviewToContract(review, { items = [], responsibles = [], c
     deliveryWindowStart: deliveryStart, deliveryWindowEnd: deliveryEnd,
     pickupTimeMode: pickupStart && pickupEnd && pickupEnd > pickupStart ? 'fixed' : 'coordinate',
     pickupWindowStart: pickupStart, pickupWindowEnd: pickupEnd, logisticsMode,
-    billingMode: 'sin_factura', observations: origin === 'voice' ? clean(review.operationalNotes) : notes, items: lines, services: [], supplierFulfillmentPlan: [],
+    billingMode: 'sin_factura', observations: assisted ? clean(review.operationalNotes) : notes, items: lines, services: [], supplierFulfillmentPlan: [],
     totals: { totalBs: total, guaranteeBs: Number(review.guaranteeBs) || 0 },
     guarantee: { amountBs: Number(review.guaranteeBs) || 0, status: 'no_validado' },
     payment: { paidAtApprovalBs: Number(review.initialPaymentBs) || 0, initialPaymentMethod: review.initialPaymentMethod || 'efectivo' },

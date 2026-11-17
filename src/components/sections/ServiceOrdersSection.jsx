@@ -1,6 +1,8 @@
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
 import ContractVoiceModal from './ContractVoiceModal';
+import ContractPhotoImportModal from './ContractPhotoImportModal';
+import { parseContractTranscript } from '../../utils/contractTranscript.js';
 import { photoReviewToContract } from '../../utils/contractPhotoImport.js';
 import { contractOperationalNotes, getContractEntryMethod } from '../../utils/contractEntryMethod.js';
 import { Mic } from 'lucide-react';
@@ -1916,6 +1918,8 @@ function ServiceOrdersSection({
 
   const [modalOpen, setModalOpen] = useState(false);
   const [voiceImportOpen, setVoiceImportOpen] = useState(false);
+  const [transcriptImport, setTranscriptImport] = useState(null);
+  const transcriptFileInput = useRef(null);
   const [voiceAvailability, setVoiceAvailability] = useState(null);
   const [voiceAvailabilityError, setVoiceAvailabilityError] = useState('');
   const [isPreparingEditor, setIsPreparingEditor] = useState(false);
@@ -6452,6 +6456,28 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       canChooseResponsibles, today: getInputDate(new Date()), origin: 'voice' });
     if (await openCreateModal('order', 'contract', source)) setVoiceImportOpen(false);
     else throw new Error('No se pudo abrir el editor. Intenta de nuevo.');
+  };
+
+  const loadTranscriptFile = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || readOnly || preparingEditorRef.current) return;
+    preparingEditorRef.current = true;
+    setIsPreparingEditor(true);
+    setFormError('');
+    try {
+      if (file.size > 1024 * 1024) throw new Error('La transcripcion supera 1 MB.');
+      const extraction = parseContractTranscript(await file.text());
+      if (onPrepareEditorData) await onPrepareEditorData();
+      setTranscriptImport(extraction);
+    } catch (error) { setFormError(error.message || 'No se pudo cargar la transcripcion.'); }
+    finally { preparingEditorRef.current = false; setIsPreparingEditor(false); }
+  };
+  const continueTranscriptImport = async review => {
+    const source = photoReviewToContract(review, { items, responsibles: responsibleOptions,
+      canChooseResponsibles, today: getInputDate(new Date()), origin: 'assisted' });
+    if (await openCreateModal('order', 'contract', source)) setTranscriptImport(null);
+    else throw new Error('No se pudo abrir el wizard. Intenta nuevamente.');
   };
 
   const restoreContractDraft = async () => {
@@ -11504,6 +11530,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               + Cotizacion
             </button>
             <button type="button" className="ghost-button orders-new-btn" data-order-action="voice" disabled={isPreparingEditor} onClick={openVoiceImport}>Contrato por voz</button>
+            <button type="button" className="ghost-button orders-new-btn" data-order-action="transcript" disabled={isPreparingEditor} onClick={() => transcriptFileInput.current?.click()}>Cargar transcripción</button>
+            <input ref={transcriptFileInput} type="file" accept=".json,application/json" aria-label="Archivo de transcripción" hidden onChange={loadTranscriptFile} />
             <button type="button" className="ghost-button orders-new-btn" data-order-action="recover" disabled={isPreparingEditor || !recoverableContract} title={recoverableContract ? 'Recuperar el último borrador de este navegador (24 horas)' : 'Todavía no hay un borrador recuperable para este usuario en este navegador'} onClick={restoreContractDraft}>Recuperar borrador</button>
           </div>
         ) : (
@@ -11516,6 +11544,9 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       {voiceImportOpen ? <ContractVoiceModal items={items} responsibles={responsibleOptions} contracts={contracts} rentals={rentals}
         availability={voiceAvailability} availabilityError={voiceAvailabilityError} canChooseResponsibles={canChooseResponsibles}
         onClose={() => setVoiceImportOpen(false)} onContinue={continueVoiceImport} /> : null}
+      {transcriptImport ? <ContractPhotoImportModal initialExtraction={transcriptImport}
+        items={items} clients={clients} responsibles={responsibleOptions} contracts={contracts} rentals={rentals}
+        canChooseResponsibles={canChooseResponsibles} onClose={() => setTranscriptImport(null)} onContinue={continueTranscriptImport} /> : null}
 
       <article className="orders-table-card">
         <div className={`orders-view-switch orders-workflow-tabs ${isCommercialCompactView ? 'is-two-up' : ''} ${activeView === 'contracts' ? 'has-numbering' : ''}`}>

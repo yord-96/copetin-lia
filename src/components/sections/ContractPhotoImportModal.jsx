@@ -4,24 +4,25 @@ import { api } from '../../services/api';
 import { matchPhotoItems, photoContractCode, preparePhotoReview } from '../../utils/contractPhotoImport.js';
 import './ContractPhotoImportModal.css';
 
-export default function ContractPhotoImportModal({ items, clients, responsibles, contracts, rentals, canChooseResponsibles = true, onClose, onContinue }) {
+export default function ContractPhotoImportModal({ items, clients, responsibles, contracts, rentals, initialExtraction = null, canChooseResponsibles = true, onClose, onContinue }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState('');
   const [availability, setAvailability] = useState(null);
   const [reading, setReading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [review, setReview] = useState(null);
+  const [review, setReview] = useState(() => initialExtraction ? preparePhotoReview(initialExtraction, { items, clients, responsibles, contracts, rentals }) : null);
   const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [opening, setOpening] = useState(false);
   const [itemSearch, setItemSearch] = useState({});
   const controller = useRef(null);
   useEffect(() => {
+    if (initialExtraction) return;
     let mounted = true;
     api.contracts.photoReaderStatus().then(value => { if (mounted) setAvailability(value); })
       .catch(() => { if (mounted) setAvailability({ ready: false, message: 'No se pudo consultar el lector local. Revisa la conexión con el servidor.' }); });
     return () => { mounted = false; controller.current?.abort(); };
-  }, []);
+  }, [initialExtraction]);
   useEffect(() => {
     if (!file) { setPreview(''); return; }
     const url = URL.createObjectURL(file); setPreview(url);
@@ -56,17 +57,20 @@ export default function ContractPhotoImportModal({ items, clients, responsibles,
   const next = async () => {
     if (!confirmed || opening) return;
     setOpening(true); setError('');
-    try { await onContinue(review, file); }
+    try {
+      if (initialExtraction && review.clientMatches?.length && !review.clientId) throw new Error('Selecciona el cliente existente para evitar duplicarlo.');
+      await onContinue(review, file);
+    }
     catch (cause) { setError(cause.message || 'No se pudo preparar el borrador.'); }
     finally { setOpening(false); }
   };
   const total = review?.items.filter(row => !row.excluded).reduce((sum, row) => sum + Number(row.quantity || 0) * Number(row.unitPriceBs || 0), 0) || 0;
   return <div className="orders-modal-backdrop contract-photo-backdrop">
     <section className="contract-photo-modal" role="dialog" aria-modal="true" aria-labelledby="contract-photo-title">
-      <header><div><span className="contract-photo-eyebrow">Contrato desde una foto</span><h2 id="contract-photo-title"><Camera size={24} /> Leer contrato escrito</h2><p>La foto prepara un borrador. Tú revisas y creas el contrato al final.</p></div>
+      <header><div><span className="contract-photo-eyebrow">{initialExtraction ? 'Carga asistida' : 'Contrato desde una foto'}</span><h2 id="contract-photo-title"><Camera size={24} /> {initialExtraction ? 'Revisar transcripción' : 'Leer contrato escrito'}</h2><p>Revisa las coincidencias y abre el wizard ya llenado. El contrato se guarda al final.</p></div>
         <button type="button" className="ghost-button" aria-label="Cerrar lectura de contrato" disabled={opening} onClick={onClose}><X size={20} /></button></header>
-      <div className="contract-photo-body">
-        <aside className="contract-photo-source">
+      <div className="contract-photo-body" style={initialExtraction ? { gridTemplateColumns: 'minmax(0, 1fr)' } : undefined}>
+        {!initialExtraction && <aside className="contract-photo-source">
           <label className="contract-photo-upload"><Upload size={22} /><span>{file ? 'Cambiar foto' : 'Subir foto del contrato'}</span>
             <input aria-label="Foto del contrato" type="file" accept="image/jpeg,image/png,image/webp" disabled={reading || opening} onChange={select} /></label>
           <p>Incluye la hoja completa, el número lateral y los datos superiores. Evita sombras, reflejos y partes cortadas.</p>
@@ -74,7 +78,7 @@ export default function ContractPhotoImportModal({ items, clients, responsibles,
           {!availability ? <p role="status">Consultando lector local…</p> : <p className={availability.ready ? '' : 'contract-photo-warning'}>{availability.message}</p>}
           <button type="button" className="primary-button" disabled={!file || !availability?.ready || reading || opening} onClick={read}>{reading ? <><LoaderCircle size={16} className="contract-photo-spin" /> Leyendo… {elapsed}s</> : 'Interpretar foto'}</button>
           {reading ? <><p role="status">{availability?.engine === 'python' ? `El OCR se detiene si supera ${availability.timeoutSeconds || 60} segundos.` : 'La lectura local puede tardar unos minutos.'} Cancelar o cerrar detiene la lectura y no crea registros.</p><button type="button" className="ghost-button" onClick={() => { controller.current?.abort(); setReading(false); }}>Cancelar lectura</button></> : null}
-        </aside>
+        </aside>}
         <div className="contract-photo-review">
           {error ? <p role="alert" className="contract-photo-error">{error}</p> : null}
           {!review ? <div className="contract-photo-placeholder"><h3>Primero lee la foto</h3><p>Se buscarán coincidencias en clientes, responsables y productos. Los nombres y las cifras dudosas necesitan revisión.</p><p>La lectura local no utiliza APIs de pago. No registra cobros ni reserva inventario.</p></div> : <>
@@ -84,7 +88,7 @@ export default function ContractPhotoImportModal({ items, clients, responsibles,
               <label>Número de contrato<input aria-label="Número de contrato leído" value={review.contractCode} onChange={e => field('contractCode', e.target.value)} /><small>Vacío: usa el siguiente número automático.</small></label>
               <label>Fecha del evento<input aria-label="Fecha del evento leída" type="date" value={review.eventDate} onChange={e => field('eventDate', e.target.value)} /></label>
               <label>Nombre del cliente<input value={review.customerName} onChange={e => { field('customerName', e.target.value); field('clientId', ''); }} /></label>
-              {review.clientMatches?.length ? <label>Cliente existente relacionado<select value={review.clientId} onChange={e => field('clientId', e.target.value)}><option value="">Sin vincular; revisar en el wizard</option>{review.clientMatches.map(row => <option key={row.id} value={row.id}>{row.name} · {row.phone}</option>)}</select></label> : null}
+              {review.clientMatches?.length ? <label>Cliente existente relacionado<select value={review.clientId} onChange={e => { field('clientId', e.target.value); const client = review.clientMatches.find(row => row.id === e.target.value); if (client) { field('customerName', client.name); field('customerPhone', client.phone); } }}><option value="">Selecciona el cliente existente</option>{review.clientMatches.map(row => <option key={row.id} value={row.id}>{row.name} · {row.phone}</option>)}</select></label> : null}
               <label>Teléfono<input value={review.customerPhone} onChange={e => field('customerPhone', e.target.value)} /></label>
               <label>CI / documento<input value={review.customerCi} onChange={e => field('customerCi', e.target.value)} /></label>
               <label>Responsable<select value={review.responsibleId} disabled={!canChooseResponsibles} onChange={e => field('responsibleId', e.target.value)}><option value="">Revisar en el wizard{review.responsibleName ? `: ${review.responsibleName}` : ''}</option>{responsibles.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{!canChooseResponsibles ? <small>Se conserva tu asignación habitual; el nombre escrito queda en las notas.</small> : null}</label>
