@@ -1,3 +1,4 @@
+import { canManageAccounting } from '../../utils/permissions.js';
 import { buildFundDeliveryStatement, buildFundDeliveryDocumentHtml } from '../../utils/fundDeliveryDocument.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/api';
@@ -1463,14 +1464,7 @@ function AccountingSection({
       ? fundHistoryRows
       : fundHistoryRows.filter((movement) => movement.fundHistoryKind === fundHistoryView)
   ), [fundHistoryRows, fundHistoryView]);
-  const isDeveloperUser = useMemo(() => {
-    const roles = [
-      ...(Array.isArray(currentUser?.roleIds) ? currentUser.roleIds : []),
-      currentUser?.roleId,
-      currentUser?.role,
-    ];
-    return roles.some((role) => normalizeText(role).replace(/\s+/g, '_').includes('developer'));
-  }, [currentUser]);
+  const canManageCash = canManageAccounting(currentUser);
   const bigCashPeriodRange = bigCashWorkspaceRanges.summary;
   const bigCashMovementRange = bigCashWorkspaceRanges.movements;
   const monthBigCashIncomeRows = useMemo(
@@ -3844,7 +3838,7 @@ function AccountingSection({
   };
 
   const handleDeletePettyExpenseAction = async (movement) => {
-    if (!isDeveloperUser || !movement || isVoidedCashMovement(movement)) return;
+    if (!canManageCash || !movement || isVoidedCashMovement(movement)) return;
     const reason = window.prompt('Motivo obligatorio para eliminar este movimiento de Caja Chica:');
     if (!String(reason ?? '').trim()) return;
     if (!window.confirm(`Eliminar logicamente el movimiento "${movement.description}" por ${formatBs(Math.abs(toNumber(movement.amountBs)))}?`)) return;
@@ -4563,7 +4557,7 @@ function AccountingSection({
   };
 
   const handleDeleteCashDebt = async (debt) => {
-    if (!debt || !isDeveloperUser) return;
+    if (!debt || !canManageCash) return;
     const confirmed = window.confirm(`Eliminar ${debt.code || 'esta deuda'}? Esta accion solo quitara el registro de deuda.`);
     if (!confirmed) return;
     setDebtActionMenuId('');
@@ -4750,7 +4744,7 @@ function AccountingSection({
                     Editar
                   </button>
                 )}
-                {isDeveloperUser ? (
+                {canManageCash ? (
                   <button type="button" onClick={() => { setPettyExpenseActionMenuId(''); handleDeletePettyExpenseAction(movement); }}>
                     Eliminar
                   </button>
@@ -8886,7 +8880,7 @@ function AccountingSection({
                                 Pagar
                               </button>
                             ) : <span className="cash-receipt-muted">{isPaid ? 'Cerrada' : 'Por cobrar'}</span>}
-                            {isDeveloperUser ? (
+                            {canManageCash ? (
                               <div className="petty-debt-menu">
                                 <button
                                   type="button"

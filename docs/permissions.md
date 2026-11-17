@@ -42,3 +42,9 @@ Roles iniciales:
 - `viewer`
 
 Los permisos deben validarse en backend. Ocultar botones en frontend es solo una mejora de UX, no seguridad.
+
+Contabilidad de El Copetin: Developer y las operadoras activas LISBETH MUÑOZ y
+ARACELY SIERRA pueden consultar y trabajar en Caja Grande, Caja Chica Efectivo y
+Caja Chica Digital. El acceso nominal normaliza mayusculas, espacios y tildes;
+no concede el rol Developer ni permisos tecnicos de usuarios, importacion o reset.
+Las eliminaciones de movimientos verifican al operador por su ID en el estado del servidor.

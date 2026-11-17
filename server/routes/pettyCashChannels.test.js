@@ -12,7 +12,10 @@ test('petty cash and digital: independent funds, banks, CRUD and histories prese
   const { default: router } = await import('./state.js');
   const { replaceStateSnapshot, getStateSnapshot } = await import('../storage/fileStateStore.js');
   const big = { id: 'big', cashRegisteredAt: null, cashBoxType: 'BIG_CASH', amountBs: 5000, paymentMethod: 'qr', paymentAccount: 'BANCO FIE', createdAt: '2026-10-01T12:00:00Z' };
-  await replaceStateSnapshot({ settings: {}, cashMovements: [big], cashSessions: [], cashDebts: [], supplierLoans: [] }, null);
+  await replaceStateSnapshot({ settings: {}, users: [
+    { id: 'aracely', fullName: 'ARACELY SIERRA', role: 'super_admin', status: 'active' },
+    { id: 'other', fullName: 'Otra persona', role: 'ventas', status: 'active' },
+  ], cashMovements: [big], cashSessions: [], cashDebts: [], supplierLoans: [] }, null);
   const originalBig = structuredClone((await getStateSnapshot()).state.cashMovements.find(row => row.id === big.id));
   const app = express(); app.use(express.json()); app.use(router);
   app.use((error, req, res, next) => { void next; res.status(error.statusCode || 500).json({ error: error.message }); });
@@ -43,7 +46,8 @@ test('petty cash and digital: independent funds, banks, CRUD and histories prese
     assert.equal(digitalHistory.rows.reduce((sum, row) => sum + Number(row.amountBs), 0), 1400);
     assert.ok(!digitalHistory.rows.some(row => row.id === cash.id || row.id === big.id));
     assert.equal((await send(`/cash/petty-expense/${cash.id}`, 'PATCH', { description: 'QA edit', amountBs: 250, paymentMethod: 'efectivo' })).status, 200);
-    assert.equal((await send(`/cash/petty-expense/${cash.id}`, 'DELETE', { reason: 'QA', userRole: 'developer' })).status, 200);
+    assert.equal((await send(`/cash/petty-expense/${cash.id}`, 'DELETE', { reason: 'QA', userId: 'other', userRole: 'developer', fullName: 'ARACELY SIERRA' })).status, 403, 'posted name or role cannot override the persisted actor');
+    assert.equal((await send(`/cash/petty-expense/${cash.id}`, 'DELETE', { reason: 'QA', userId: 'aracely', userRole: 'Super admin' })).status, 200, 'Aracely can manage cash without becoming developer');
     assert.deepEqual((await getStateSnapshot()).state.cashMovements.find(row => row.id === big.id), originalBig);
   } finally {
     await new Promise(resolve => server.close(resolve));

@@ -179,6 +179,15 @@ export const isDeveloper = (user) => getUserRoleIds(user).includes('developer');
 
 export const isSuperAdmin = (user) => getUserRoleIds(user).includes('super_admin');
 
+// Named accounting operators keep their existing business roles and technical restrictions.
+export const canManageAccounting = (user) => {
+  if (!user || user.deletedAt || ['inactive', 'inactivo', 'disabled', 'eliminado'].includes(String(user.status ?? '').toLowerCase())) return false;
+  if (isDeveloper(user)) return true;
+  const name = String(user.fullName ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim().replace(/\s+/g, ' ').toLowerCase();
+  return Boolean(user.id) && ['lisbeth munoz', 'aracely sierra'].includes(name);
+};
+
 export const getDefaultTabForUser = (user) => {
   const roleIds = getUserRoleIds(user);
   if (roleIds.length === 0) return 'asistencia';
@@ -190,15 +199,16 @@ export const getDefaultTabForUser = (user) => {
 export const getAllowedTabRoots = (user) => new Set(
   [
     ...getUserRoleIds(user).flatMap((roleId) => ROLE_DEFINITIONS[roleId]?.allowedTabs ?? []),
+    ...(canManageAccounting(user) ? ['contabilidad'] : []),
     ...(user && getUserPermissions(user).attendanceEnabled ? ['asistencia'] : []),
   ].filter((tab) => (tab !== 'asistencia' || getUserPermissions(user).attendanceEnabled)
-    && (!tab.startsWith('contabilidad') || isDeveloper(user))),
+    && (!tab.startsWith('contabilidad') || canManageAccounting(user))),
 );
 
 export const canAccessTab = (user, tabId) => {
   if (!user) return false;
   const target = String(tabId ?? '');
-  if (target.startsWith('contabilidad') && !isDeveloper(user)) return false;
+  if (target.startsWith('contabilidad') && !canManageAccounting(user)) return false;
   const permissions = getUserPermissions(user);
   if (target === 'asistencia' && !permissions.attendanceEnabled) return false;
   const roots = getAllowedTabRoots(user);

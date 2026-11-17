@@ -1916,6 +1916,7 @@ export const useAppController = () => {
     try {
       const result = await api.cash.deletePettyExpense({
         ...payload,
+        userId: currentUser?.id,
         userRole: getUserDisplayRole(currentUser),
         deletedBy: getCurrentUserTrace().createdByName,
       });

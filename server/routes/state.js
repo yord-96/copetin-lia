@@ -8,6 +8,7 @@ import { cancellationRecords, cancellationPreview, applyCancellationSettlement, 
 import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
 import { manageAttendance } from '../../src/utils/attendanceManagement.js';
+import { canManageAccounting } from '../../src/utils/permissions.js';
 import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
 import { syncEconomicLedgerCashDate } from '../../src/utils/economicLedgerCashDates.js';
@@ -4736,7 +4737,15 @@ router.patch('/__copetin_db/cash/fund-delivery/:movementId/approve', async (req,
 });
 
 
-const requireDeveloperCashAction = (payload = {}) => {
+const requireAccountingCashAction = async (payload = {}) => {
+  if (payload.userId) {
+    const { state } = await getStateSnapshot();
+    const actor = (state.users ?? []).find(user => String(user.id) === String(payload.userId));
+    if (canManageAccounting(actor)) return;
+    const error = new Error('No tienes permiso para administrar este movimiento de caja.');
+    error.statusCode = 403;
+    throw error;
+  }
   const role = String(payload?.userRole ?? payload?.createdByRole ?? payload?.role ?? '')
     .trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
   if (role !== 'developer' && !role.includes('desarrollador')) {
@@ -4820,7 +4829,7 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
 router.delete('/__copetin_db/cash/petty-expense/:movementId', async (req, res, next) => {
   try {
     const payload = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    requireDeveloperCashAction(payload);
+    await requireAccountingCashAction(payload);
     const movementId = String(req.params.movementId ?? '').trim();
     const reason = String(payload.reason ?? '').trim();
     if (!movementId) return res.status(400).json({ error: 'Movimiento no identificado.' });
