@@ -383,7 +383,10 @@ const sendJsonPayload = async (req, res, payload) => {
   }
 
   const cacheKey = `${revisionKey}:${payloadScope}`;
-  let cacheEntry = jsonPayloadCache.get(cacheKey);
+  // POST queries carry their selection in the body. A route/revision key cannot
+  // distinguish contracts (or users) and must never reuse another query's body.
+  const canCachePayload = req.method === 'GET' || req.method === 'HEAD';
+  let cacheEntry = canCachePayload ? jsonPayloadCache.get(cacheKey) : null;
   let body = cacheEntry?.body;
 
   if (!body) {
@@ -392,7 +395,7 @@ const sendJsonPayload = async (req, res, payload) => {
 
     // Los payloads grandes se usan solo durante esta respuesta. No deben quedar
     // retenidos en memoria junto con su copia comprimida.
-    if (revisionKey !== 'no-revision' && bodyBytes <= JSON_PAYLOAD_CACHE_MAX_BODY_BYTES) {
+    if (canCachePayload && revisionKey !== 'no-revision' && bodyBytes <= JSON_PAYLOAD_CACHE_MAX_BODY_BYTES) {
       cacheEntry = { body, gzipPromise: null };
       jsonPayloadCache.set(cacheKey, cacheEntry);
       if (jsonPayloadCache.size > JSON_PAYLOAD_CACHE_LIMIT) {

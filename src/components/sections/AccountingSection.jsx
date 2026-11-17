@@ -2792,7 +2792,11 @@ function AccountingSection({
       pendingRows.forEach((row) => {
         const key = String(row.id);
         const reference = getReceivableCollectionReferences(row);
-        loadedCollections[key] = (groupsByKey.get(key)?.movements ?? [])
+        const group = groupsByKey.get(key);
+        if (!Array.isArray(group?.movements)) {
+          throw new Error('El servidor no devolvio el historial de este contrato. Vuelve a abrir Ver cobros para reintentar.');
+        }
+        loadedCollections[key] = group.movements
           .filter((movement) => cashMovementMatchesContractReferences(movement, reference));
       });
       setExactFinalizedCollections((current) => ({ ...current, ...loadedCollections }));
