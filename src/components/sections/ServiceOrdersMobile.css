@@ -1,0 +1,48 @@
+/* Mobile commercial layout. Keep desktop tables and wizard styles unchanged. */
+@media (max-width: 768px) {
+  section.panel.orders-view.orders-mobile-refined { min-width: 0; padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); }
+  section.panel.orders-view.orders-mobile-refined > .orders-header { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 1rem !important; padding: 1rem !important; }
+  section.panel.orders-view.orders-mobile-refined > .orders-header > div { width: 100% !important; min-width: 0; }
+  section.panel.orders-view.orders-mobile-refined > .orders-header h2 { max-width: none !important; font-size: 1.65rem !important; line-height: 1.15 !important; }
+  section.panel.orders-view.orders-mobile-refined > .orders-header p { max-width: none !important; font-size: .8rem !important; line-height: 1.45 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-header-actions { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: .5rem !important; margin: 0 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-header-actions .orders-new-btn { width: 100% !important; min-width: 0 !important; max-width: none !important; height: auto !important; min-height: 44px !important; padding: .65rem .4rem !important; color: inherit !important; font-size: .78rem !important; overflow: visible !important; position: static !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-header-actions .orders-new-btn::after { display: none !important; content: none !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-header-actions .primary-button { color: #fff !important; background: #d94706 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-view-switch.orders-workflow-tabs { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: .6rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs > button:not(.orders-board-next-code) { order: 0; width: 100% !important; max-width: none !important; grid-column: auto !important; grid-row: auto !important; display: grid !important; grid-template-columns: 30px minmax(0, 1fr) auto !important; grid-template-rows: auto auto !important; align-items: center !important; gap: .3rem .4rem !important; min-width: 0 !important; min-height: 88px !important; padding: .65rem !important; position: relative !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs .orders-workflow-icon { grid-column: 1 !important; grid-row: 1 / 3 !important; width: 30px !important; height: 30px !important; position: static !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs .orders-workflow-copy { grid-column: 2 / -1 !important; grid-row: 1 !important; min-width: 0; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs .orders-workflow-copy strong { word-break: normal !important; font-size: .8rem !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; overflow-wrap: break-word; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs .orders-workflow-copy small { display: none !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs .orders-workflow-count { grid-column: 2 !important; grid-row: 2 !important; position: static !important; justify-self: start; min-width: 2rem; width: auto !important; font-size: .78rem !important; padding: .2rem .4rem; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs .orders-notification-badge { grid-column: 3 !important; grid-row: 2 !important; position: static !important; transform: none !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering > .orders-board-next-code { order: 1 !important; grid-column: 1 / -1 !important; display: grid !important; grid-template-areas: none !important; grid-template-columns: minmax(0, 1fr) auto auto !important; gap: .8rem !important; min-height: 60px !important; width: 100% !important; padding: .65rem .8rem !important; align-items: center; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering .orders-board-next-code > span { grid-area: auto !important; position: static !important; transform: none !important; grid-column: auto !important; grid-row: auto !important; text-align: left; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering .orders-board-next-code > strong { grid-area: auto !important; font-size: 1rem !important; grid-column: auto !important; grid-row: auto !important; min-width: 3.5rem; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering .orders-board-next-code::after { display: none !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering .orders-board-next-code > strong:nth-of-type(n) { min-width: 3.5rem !important; font-size: 1.05rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering .orders-board-next-code > strong small { font-size: .6rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-workflow-tabs.has-numbering .orders-board-next-code > span { font-size: .65rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-status-tabs { flex-wrap: wrap !important; overflow: visible !important; width: 100% !important; gap: .4rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-status-tabs > button { min-height: 36px !important; flex: 0 1 auto !important; white-space: nowrap; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-card { min-width: 0; overflow: visible !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-card header > div:first-child { display: flex !important; flex-wrap: wrap; gap: .25rem .45rem; align-items: baseline; min-width: 0; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-card header > div:first-child > span { white-space: normal !important; line-height: 1.4 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-bottom { display: flex !important; flex-wrap: wrap; gap: .6rem; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-order { margin-left: auto; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-details { gap: .55rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-details :is(strong, em, span) { min-width: 0; overflow-wrap: break-word; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: .5rem !important; padding-top: .75rem !important; align-items: stretch !important; position: static !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > button { position: static !important; inset: auto !important; transform: none !important; margin: 0 !important; min-width: 0 !important; max-width: none !important; width: 100% !important; height: auto !important; min-height: 48px !important; display: flex !important; align-items: center !important; justify-content: center !important; gap: .25rem !important; padding: .4rem !important; white-space: normal !important; overflow-wrap: anywhere; font-size: .72rem !important; line-height: 1.25 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > .orders-open-btn { grid-column: 1 / 3 !important; grid-row: 1 !important; font-size: .85rem !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > .orders-economic-note-mobile-button { grid-column: 3 / 5 !important; grid-row: 1 !important; border: 1px solid var(--border-color, #64748b) !important; border-radius: .65rem !important; background: transparent !important; color: inherit !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > :is(.orders-contract-whatsapp-contact, .whatsapp-bubble-button, .orders-finalized-check, .transport-row-menu-button) { grid-row: 2 !important; flex-direction: column !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > .orders-contract-whatsapp-contact { grid-column: 1 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > .whatsapp-bubble-button { grid-column: 2 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > .orders-finalized-check { grid-column: 3 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions > .transport-row-menu-button { grid-column: 4 !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-contract-actions svg { flex-shrink: 0; width: 19px !important; height: 19px !important; }
+  section.panel.orders-view.orders-mobile-refined .orders-mobile-action-label { font-size: .6rem !important; line-height: 1.2; }
+}
+

@@ -6,6 +6,7 @@ import { contractOperationalNotes, getContractEntryMethod } from '../../utils/co
 import { Mic } from 'lucide-react';
 import { contractDraftRecoveryKey, readContractDraft, saveContractDraft, createContractDraftAutosave } from '../../utils/contractDraftRecovery.js';
 import './ContractDraftRecovery.css';
+import './ServiceOrdersMobile.css';
 import GuaranteeRefundWarningModal from './GuaranteeRefundWarningModal';
 import { guaranteeRefundDebtMessage } from '../../utils/guaranteeRefundPolicy.js';
 import { reconcileGuaranteeRefundLedger } from '../../utils/guaranteeRefundLedger.js';
@@ -11475,7 +11476,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     : (contractColumnFilters[contractColumnMenu?.key] ?? 'all');
 
   return (
-    <section className="panel orders-view">
+    <section className="panel orders-view orders-mobile-refined">
       <header className="orders-header">
         <div>
           <span className="orders-mobile-eyebrow">Gestión comercial</span>
@@ -12487,7 +12488,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                       </div>
                     </div>
                     <div className="orders-mobile-contract-actions">
-                      <button type="button" className="orders-contract-whatsapp-contact" onClick={() => contactContractWhatsApp(row)} disabled={!getContractWhatsAppContacts(row).length} title="Contactar por WhatsApp Web" aria-label={`Contactar contrato ${row.contractCode} por WhatsApp`}><WhatsAppGlyph /></button>
+                      <button type="button" className="orders-contract-whatsapp-contact" onClick={() => contactContractWhatsApp(row)} disabled={!getContractWhatsAppContacts(row).length} title="Contactar por WhatsApp Web" aria-label={`Contactar contrato ${row.contractCode} por WhatsApp`}><WhatsAppGlyph /><span className="orders-mobile-action-label">Chat</span></button>
                       <button type="button" className="orders-open-btn" onClick={() => handleOpenDocumentsFromContract(row)}>
                         Abrir
                       </button>
@@ -12511,7 +12512,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         aria-pressed={isRowFinalized}
                         aria-label={`${isRowFinalized ? 'Desmarcar' : 'Marcar'} finalizado contrato ${row.contractCode}`}
                       >
-                        {isRowFinalized ? <Check aria-hidden="true" /> : 'F'}
+                        {isRowFinalized ? <Check aria-hidden="true" /> : 'F'}<span className="orders-mobile-action-label">{isRowFinalized ? 'Finalizado' : 'Finalizar'}</span>
                       </button>
                       <button
                         type="button"
@@ -12519,7 +12520,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         onClick={() => openWhatsAppModal('contract', row)}
                         aria-label={`Enviar contrato ${row.contractCode} por WhatsApp`}
                       >
-                        <WhatsAppGlyph />
+                        <WhatsAppGlyph /><span className="orders-mobile-action-label">Enviar PDF</span>
                       </button>
                       <button
                         type="button"
@@ -12527,7 +12528,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         onClick={(event) => toggleActionsMenu('contract', row.id, event)}
                         aria-label={`Mas acciones para ${row.contractCode}`}
                       >
-                        {'\u22ee'}
+                        {'\u22ee'}<span className="orders-mobile-action-label">{'M\u00e1s'}</span>
                       </button>
                     </div>
                   </article>
