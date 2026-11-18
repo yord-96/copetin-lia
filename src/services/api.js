@@ -4733,6 +4733,27 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {
+    generatePaymentSlip: async ({ html, fileName, signal }) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted) controller.abort();
+      signal?.addEventListener('abort', abort, { once: true });
+      const timer = setTimeout(abort, 45000);
+      try {
+        const response = await fetch(getServerStateUrl('/documents/render-pdf'), {
+          method: 'POST', cache: 'no-store', signal: controller.signal,
+          headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ html, fileName, baseUrl: window.location.origin }),
+        });
+        if (!response.ok) throw await createServerStateError(response, 'No se pudo generar la boleta. Tus datos siguen en el formulario.');
+        const blob = await response.blob();
+        if (blob.type !== 'application/pdf') throw new Error('El servidor no devolvió un PDF válido. Puedes reintentar sin volver a completar la boleta.');
+        return blob;
+      } catch (error) {
+        if (controller.signal.aborted && !signal?.aborted) throw new Error('La boleta tardó demasiado en generarse. Tus datos siguen aquí; vuelve a intentarlo.');
+        throw error;
+      } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+    },
     manageRecord: async payload => {
       if (!shouldUseServerState()) return callBridge('attendance', 'manageRecord', true, payload);
       const response = await fetch(getServerStateUrl('/attendance/manage'), { method: 'POST', cache: 'no-store', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
