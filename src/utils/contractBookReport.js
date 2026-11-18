@@ -1,7 +1,7 @@
 const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const amount = value => Number(value || 0).toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function buildContractBookReport({ code, customer, eventDate, rows, subtotalBs, discountBs, discountPercent, deliveryFeeBs, totalBs }) {
+export function buildContractBookReport({ code, customer, eventDate, address, guaranteeBs, rows, subtotalBs, discountBs, discountPercent, deliveryFeeBs, totalBs }) {
   const compact = [];
   const combos = new Map();
   for (const row of rows) {
@@ -35,7 +35,7 @@ export function buildContractBookReport({ code, customer, eventDate, rows, subto
     .subtotal { background:#e3ecd8; } .transport { background:#fff0c5; } .total { background:#f7d778; font-weight:bold; } .replacement { background:#f2e6e6; } .grand { background:#dce8f0; font-weight:bold; }
     .note { margin:5px 0 0; font-size:7pt; color:#555; }
     @media print { th,.subtotal,.transport,.total,.replacement,.grand { print-color-adjust:exact; -webkit-print-color-adjust:exact; } }
-    </style></head><body><header><div><h1>REPORTE PARA LIBRO</h1><p>${escape(customer)}${eventDate ? ` · Evento: ${escape(eventDate)}` : ''}</p></div><div class="code">CONTRATO <b>${escape(code)}</b></div></header>
+    </style></head><body><header><div><h1>REPORTE PARA LIBRO</h1><p>${escape(customer)}${eventDate ? ` · Evento: ${escape(eventDate)}` : ''}</p><p style="margin-top:3px;overflow-wrap:anywhere"><b>DIRECCIÓN:</b> ${escape(address || 'Sin dirección registrada')}</p></div><div class="code">CONTRATO <b>${escape(code)}</b></div></header>
     <table><colgroup><col style="width:4%"><col style="width:44%"><col style="width:9%"><col style="width:12%"><col style="width:13%"><col style="width:18%"></colgroup><thead><tr><th>N°</th><th>DESCRIPCIÓN DEL PRODUCTO</th><th>CANTIDAD</th><th>COSTO<br>UNITARIO</th><th>COSTO<br>TOTAL</th><th>FALTANTES / DEVOLUCIÓN</th></tr></thead><tbody>${body || '<tr><td colspan="6">Sin ítems registrados.</td></tr>'}</tbody></table>
     <table class="summary"><colgroup><col style="width:69%"><col style="width:13%"><col style="width:18%"></colgroup><tbody>
     <tr class="subtotal"><th>SUBTOTAL</th><td class="number">${amount(subtotalBs)}</td><td class="returns" rowspan="4">TOTAL REPOSICIÓN<br><b>${amount(replacementBs)}</b></td></tr>
@@ -43,5 +43,6 @@ export function buildContractBookReport({ code, customer, eventDate, rows, subto
     <tr class="transport"><th>TRANSPORTE</th><td class="number">${amount(deliveryFeeBs)}</td></tr>
     <tr class="total"><th>TOTAL ALQUILER</th><td class="number">${amount(totalBs)}</td></tr>
     <tr class="grand"><th colspan="2">TOTAL ALQUILER + REPOSICIÓN</th><td class="number">${amount(Number(totalBs) + replacementBs)}</td></tr>
+    <tr><th colspan="2">GARANTÍA (SEPARADA DEL ALQUILER)</th><td class="number">${amount(guaranteeBs)}</td></tr>
     </tbody></table><p class="note">Importes en bolivianos. DV: devolución completa registrada. Los espacios vacíos no confirman devolución. Resumen para archivo en libro.</p></body></html>`;
 }

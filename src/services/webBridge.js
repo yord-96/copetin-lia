@@ -8977,6 +8977,7 @@ export const buildContractDocumentHtml = ({
     return buildContractBookReport({
       code: mainCode, customer: documentCustomerName,
       eventDate: formatDocumentDate(contract?.eventDate ?? rental?.eventDate),
+      address: eventAddress, guaranteeBs,
       rows: bookReportRows, subtotalBs: documentItemsSubtotalBs + servicesSubtotalBs,
       discountBs, discountPercent: contract?.totals?.discountPercent ?? rental?.totals?.discountPercent,
       deliveryFeeBs, totalBs: printedTotalBs,

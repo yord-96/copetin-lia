@@ -11,11 +11,13 @@ test('book report keeps combo components, separates courtesy issues and preserve
     { itemId: 'glass', lineKey: 'courtesy', itemName: 'COPA CORTESIA', quantity: 5, unitPriceBs: 0, lineTotalBs: 0 },
   ];
   const html = buildContractDocumentHtml({ documentKind: 'book', deliveries: [], settings: {},
-    contract: { contractCode: '1003', customerName: '<Cliente>', items, totals: { subtotalBs: 260, itemsSubtotalBs: 260, discountPercent: 15, discountBs: 39, deliveryFeeBs: 10, totalBs: 231 } },
+    contract: { contractCode: '1003', customerName: '<Cliente>', address: 'SALÓN <CENTRO>', items, totals: { guaranteeBs: 200, subtotalBs: 260, itemsSubtotalBs: 260, discountPercent: 15, discountBs: 39, deliveryFeeBs: 10, totalBs: 231 } },
     rental: { items, status: 'returned', returnReport: [{ itemId: 'glass', lineKey: 'paid', missingQty: 5, missingUnitChargeBs: 35, penaltyBs: 175 }] },
   });
   assert.match(html, /size: Letter portrait/);
   assert.match(html, /&lt;Cliente&gt;/);
+  assert.match(html, /DIRECCIÓN:<\/b> SALÓN &lt;CENTRO&gt;/);
+  assert.match(html, /GARANTÍA \(SEPARADA DEL ALQUILER\)<\/th><td class="number">200,00/);
   assert.match(html, /SILLA \+ COJIN/);
   assert.equal((html.match(/<td class="index">/g) || []).length, 3);
   assert.equal((html.match(/F5×35=175/g) || []).length, 1);
