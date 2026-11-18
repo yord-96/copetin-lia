@@ -14,10 +14,23 @@ test('pays exact minutes and separates overtime without counting it twice', () =
 });
 test('fixed period salary is explicit and validates payment amounts', () => {
   assert.equal(calculateAttendancePayment(person, { ...draft, mode: 'fixed', salary: '1000' }).net, 975);
-  for (const change of [{ hourRate: '' }, { hourRate: '-1' }, { extraHours: '64' }, { paid: '9999' }, { advances: '9999' }, { salary: 'NaN', mode: 'fixed' }]) {
+  for (const change of [{ hourRate: '-1' }, { extraHours: '64' }, { paid: '9999' }, { advances: '9999' }, { salary: 'NaN', mode: 'fixed' }]) {
     assert.throws(() => calculateAttendancePayment(person, { ...draft, ...change }));
   }
   assert.throws(() => calculateAttendancePayment(null, draft));
+});
+test('missing salary keeps totals blank while recorded advances remain visible; zero amounts print blank', () => {
+  const blankDraft = { ...draft, mode: 'fixed', salary: '', extraHours: '', extraRate: '', bonus: '', advances: '100', discounts: '', paid: '' };
+  const totals = calculateAttendancePayment(person, blankDraft);
+  assert.equal(totals.earned, null); assert.equal(totals.net, null); assert.equal(totals.advances, 100);
+  assert.equal(calculateAttendancePayment(person, { ...blankDraft, salary: '0' }).net, null);
+  const html = buildAttendancePaymentSlip({ person, draft: blankDraft, filters: {}, reference: 'TEST' });
+  assert.equal(html.includes('Tarifa ordinaria'), false);
+  assert.equal(html.includes('Sin sumar:'), false);
+  assert.equal(html.includes('<td>0,00</td>'), false);
+  assert.ok(html.includes('<td>Anticipos</td><td>100,00</td>'));
+  assert.ok(html.includes('<td>Salario / remuneración</td><td></td>'));
+  assert.ok(html.includes('<td>TOTAL A PAGAR</td><td></td>'));
 });
 test('both copies share the same period, reference and totals; escapes entered text', () => {
   const html = buildAttendancePaymentSlip({ person: { ...person, name: '<script>bad</script>' }, draft, filters: { dateFrom: '2026-11-01', dateTo: '2026-11-18' }, reference: 'BP-TEST' });

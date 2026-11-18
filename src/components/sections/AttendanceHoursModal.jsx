@@ -5,7 +5,7 @@ import './AttendanceHoursModal.css';
 import AttendancePaymentSlip from './AttendancePaymentSlip';
 const dateLabel = value => value ? formatAttendanceDate(String(value).includes('T') ? value : value + 'T12:00:00Z') : String.fromCharCode(8212);
 
-export default function AttendanceHoursModal({ filters, maxIntervalHours, onClose, onCreate }) {
+export default function AttendanceHoursModal({ filters, maxIntervalHours, onClose, onCreate, currentUser }) {
   const dialog = useRef(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -62,7 +62,7 @@ export default function AttendanceHoursModal({ filters, maxIntervalHours, onClos
     }
   }}>
     <header><div><h3 id="attendance-hours-title">Horas de asistencia</h3><p>{filters.dateFrom || 'Inicio'} — {filters.dateTo || 'Hoy'}{filters.query ? ` · ${filters.query}` : ''}</p></div><button type="button" onClick={onClose} aria-label="Cerrar horas de asistencia">Cerrar</button></header>
-    {paymentOpen ? <AttendancePaymentSlip people={people} filters={filters} onBack={() => setPaymentOpen(false)} /> : <>
+    {paymentOpen ? <AttendancePaymentSlip people={people} filters={filters} actorId={currentUser?.id} onBack={() => setPaymentOpen(false)} /> : <>
     <div className="attendance-hours-actions"><button type="button" disabled={loading} onClick={() => setRevision(value => value + 1)}>Actualizar</button>{onCreate && <><button type="button" onClick={onCreate}>Crear asistencia</button><button type="button" disabled={loading || Boolean(error) || !people.length} onClick={() => setPaymentOpen(true)}>Generar boleta de pago</button></>}</div>
     <p>Usa los mismos cálculos y filtros del Excel. Solo suma intervalos válidos; las entradas abiertas no suman horas. Límite por intervalo: {maxIntervalHours} horas.</p>
     {loading ? <p role="status">Calculando horas…</p> : error ? <p role="alert">{error}</p> : report && <>

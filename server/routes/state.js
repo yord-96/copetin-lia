@@ -7,7 +7,7 @@ import { reconcileGuaranteeRefundLedger } from '../../src/utils/guaranteeRefundL
 import { cancellationRecords, cancellationPreview, applyCancellationSettlement, editCancellationDate } from '../services/contractCancellation.js';
 import { applyInventoryStockMovement, applyClientUpdate } from '../../src/services/webBridge.js';
 import { getOutstandingInventoryLineQuantity } from '../../src/utils/availability.js';
-import { manageAttendance } from '../../src/utils/attendanceManagement.js';
+import { manageAttendance, canManageAttendance } from '../../src/utils/attendanceManagement.js';
 import { canManageAccounting } from '../../src/utils/permissions.js';
 import { attendanceNeedsPhoto } from '../../src/utils/attendancePolicy.js';
 import { syncEconomicDepositOperations } from '../../src/utils/economicDepositOperations.js';
@@ -48,6 +48,7 @@ import {
 import { filterInventoryMovementHistory } from '../../src/utils/inventoryMovementHistory.js';
 import { mutateItemLoan } from '../services/itemLoans.js';
 import { attendanceRecordMatchesQuery } from '../../src/utils/attendanceAnalysis.js';
+import { getAttendancePaymentCash } from '../../src/utils/attendancePaymentCash.js';
 import { buildInventoryStockCommitments } from '../../src/utils/inventoryStockCommitment.js';
 
 const router = Router();
@@ -4294,6 +4295,18 @@ const summarizeAttendanceUser = (user = {}) => ({
   roleId: user.roleId ?? '',
   roleIds: Array.isArray(user.roleIds) ? user.roleIds : [],
   status: user.status ?? 'active',
+});
+
+router.get('/__copetin_db/attendance/payment-cash', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const state = snapshot.state;
+    const actor = (state.users || []).find(row => String(row.id) === String(req.query.actorId));
+    if (!canManageAttendance(actor)) return res.status(403).json({ error: 'No tienes permiso para consultar los anticipos y descuentos de la boleta.' });
+    const summary = getAttendancePaymentCash(state, { personKey: String(req.query.personKey || ''), dateFrom: String(req.query.dateFrom || ''), dateTo: String(req.query.dateTo || '') });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json(summary);
+  } catch (error) { if (error.statusCode) return res.status(error.statusCode).json({ error: error.message }); next(error); }
 });
 
 router.get('/__copetin_db/attendance/users', async (_req, res, next) => {

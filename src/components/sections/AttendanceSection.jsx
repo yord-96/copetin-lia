@@ -852,7 +852,7 @@ function AttendanceSection({
           </div>
         </article>
       </section>
-      {hoursOpen && <Suspense fallback={<p role="status">Abriendo horas de asistencia…</p>}><AttendanceHoursModal filters={filters} maxIntervalHours={maxIntervalHours} onClose={() => setHoursOpen(false)} onCreate={canManage ? () => { setHoursOpen(false); openManager(); } : undefined} /></Suspense>}
+      {hoursOpen && <Suspense fallback={<p role="status">Abriendo horas de asistencia…</p>}><AttendanceHoursModal currentUser={currentUser} filters={filters} maxIntervalHours={maxIntervalHours} onClose={() => setHoursOpen(false)} onCreate={canManage ? () => { setHoursOpen(false); openManager(); } : undefined} /></Suspense>}
       {canManage && managementDraft ? <div className="orders-modal-backdrop">
         <form className="orders-modal receipt-editor-modal" onSubmit={saveManagedAttendance} onClick={event => event.stopPropagation()}>
           <header className="orders-modal-head"><div><h3>{managementDraft.id ? 'Editar asistencia' : 'Crear asistencia'}</h3><p>Usuario, fecha, hora y datos de la marca.</p></div><button type="button" className="orders-modal-close" disabled={managementBusy} onClick={() => setManagementDraft(null)}>×</button></header>

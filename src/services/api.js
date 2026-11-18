@@ -4733,6 +4733,22 @@ export const api = {
     printHistoryReport: (payload) => callBridge('cash', 'printHistoryReport', false, payload),
   },
   attendance: {
+    getPaymentCash: async ({ actorId, personKey, dateFrom, dateTo, signal }) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted) controller.abort();
+      signal?.addEventListener('abort', abort, { once: true });
+      const timer = setTimeout(abort, 20000);
+      try {
+        const params = new URLSearchParams({ actorId: actorId || '', personKey: personKey || '', dateFrom: dateFrom || '', dateTo: dateTo || '' });
+        const response = await fetch(getServerStateUrl(`/attendance/payment-cash?${params}`), { cache: 'no-store', headers: getInternalHeaders(), signal: controller.signal });
+        if (!response.ok) throw await createServerStateError(response, 'No se pudo consultar Caja Chica. Reintenta antes de generar la boleta.');
+        return await response.json();
+      } catch (error) {
+        if (controller.signal.aborted && !signal?.aborted) throw new Error('Caja Chica tardó demasiado en responder. Reintenta la consulta; tus datos siguen aquí.');
+        throw error;
+      } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+    },
     generatePaymentSlip: async ({ html, fileName, signal }) => {
       const controller = new AbortController();
       const abort = () => controller.abort();
