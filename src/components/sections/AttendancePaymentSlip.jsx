@@ -5,7 +5,7 @@ import { buildAttendancePaymentSlip, calculateAttendancePayment } from '../../ut
 
 export default function AttendancePaymentSlip({ people, filters, actorId, onBack }) {
   const [personId, setPersonId] = useState(people.length === 1 ? people[0].id : '');
-  const [draft, setDraft] = useState({ mode: 'fixed', hourRate: '', salary: '', extraHours: '', extraRate: '', bonus: '', advances: '', discounts: '', paid: '', position: '', representative: '', date: getAttendanceDateKey(new Date()), notes: '' });
+  const [draft, setDraft] = useState({ mode: 'fixed', hourRate: '', salary: '', extraHours: '', extraRate: '', bonus: '', advances: '', discounts: '', paid: '', position: '', representative: 'Marisol Sequeiros', date: getAttendanceDateKey(new Date()), notes: '' });
   const [cash, setCash] = useState(null);
   const [cashError, setCashError] = useState('');
   const [cashRevision, setCashRevision] = useState(0);
