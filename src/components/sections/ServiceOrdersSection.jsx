@@ -10488,6 +10488,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     const customerName = contractEconomicsData?.contract?.customerName || 'Cliente';
     const createdByName = String(currentUser?.fullName ?? currentUser?.name ?? currentUser?.username ?? currentUser?.email ?? 'Sistema').trim() || 'Sistema';
     const syntheticId = entryId || `guarantee-application-${contractCode}-${Date.now()}`;
+    const receiptDate = (contractEconomicsData?.economicLedger ?? []).find(entry => entry.id === entryId)?.createdAt || new Date().toISOString();
     const movement = {
       id: syntheticId,
       type: 'aplicacion_garantia',
@@ -10513,8 +10514,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       linkedOrderCode: contractEconomicsData?.contract?.orderCode ?? '',
       createdByName,
       responsible: createdByName,
-      createdAt: new Date().toISOString(),
-      receiptIssuedAt: new Date().toISOString(),
+      createdAt: receiptDate,
+      receiptIssuedAt: receiptDate,
     };
     await handlePrintEconomicReceipt(movement, providedWindow);
   };
@@ -14182,7 +14183,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                             <span>Estado</span>
                             <span>Detalle</span>
                             <span>Monto</span>
-                            <span>Tipo</span>
+                            <span>Editar</span>
                             <span>Comprobante</span>
                           </div>
                           {internalReceipts.map((entry) => {
@@ -14202,7 +14203,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                                   <b>{entry.note?.replace(/\bdanos?\b/gi, word => word.replace(/n/gi, letter => letter === 'N' ? 'Ñ' : 'ñ')) || 'Aplicación de garantía a daños o faltantes.'}</b>
                                 </span>
                                 <strong className="contract-economics-table-amount is-neutral">{formatBs(entry.amountBs)}</strong>
-                                <span className="contract-economics-table-edit" style={{ color: '#64748b', fontSize: 11 }}>No mueve caja</span>
+                                <span className="contract-economics-table-edit">
+                                  <button type="button" className="contract-economics-receipt-edit-button"
+                                    onClick={() => handleEditContractEconomicLedgerEntry(entry)}
+                                    disabled={readOnly || !canManageContractEconomicLedger || isSavingContractEconomicsLedger}
+                                    title="Corregir la fecha del comprobante interno sin cambiar el importe ni mover dinero de caja">
+                                    <Pencil size={13} aria-hidden="true" />Editar fecha
+                                  </button>
+                                </span>
                                 <span className="contract-economics-table-receipt">
                                   <button
                                     type="button"
