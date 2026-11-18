@@ -96,4 +96,13 @@
 @media(max-width:700px){.lp-workspace-content{padding:18px 16px}.lp-record-board{grid-template-columns:1fr;gap:16px}.lp-root .lp-record-list>button{padding:12px 14px}.lp-record-fields{grid-template-columns:repeat(2,minmax(0,1fr));padding:18px;gap:14px}.lp-record-fields .lp-field-wide{grid-column:1/-1}.lp-root .lp-record-detail h3{font-size:18px}.lp-root .lp-record-empty{padding:20px}.lp-workspace .lp-record-section>.lp-table-toolbar{gap:14px}.lp-workspace .lp-record-section .lp-table-toolbar h2{font-size:23px}}
 @media print{.lp-record-board{display:block}.lp-record-list{display:none}.lp-record-detail{border:0;box-shadow:none}.lp-record-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.lp-record-fields .lp-field-wide{grid-column:1/-1}.lp-record-fields textarea{height:auto!important}}
 .lp-record-print{display:none}
+.lp-event-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-height:400px;overflow:auto;padding:3px}
+.lp-root .lp-event-option{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:6px;padding:18px;min-width:0}
+.lp-event-option strong,.lp-event-option span,.lp-event-option small{overflow-wrap:anywhere;max-width:100%}
+.lp-event-option span,.lp-event-option small{font-size:14px;font-weight:400}
+.lp-root .lp-event-option.is-selected{border:2px solid var(--lp-green);box-shadow:inset 4px 0 var(--lp-green)}
+.lp-selected-event>.lp-actions{flex-wrap:wrap;margin-bottom:16px}
+.lp-event-picker .lp-table-toolbar>div{flex:1;min-width:0}.lp-event-picker .lp-table-toolbar>label{min-width:240px}
+@media(max-width:900px){.lp-event-options{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.lp-event-options{grid-template-columns:1fr;max-height:360px}.lp-event-picker .lp-table-toolbar>label{min-width:0;width:100%}.lp-selected-event>.lp-actions{display:grid}.lp-admin .lp-card{padding:16px}}
 @media print{.lp-record-board{display:none}.lp-record-print{display:block}.lp-record-print article{break-inside:avoid;border-bottom:1px solid #ccc;padding:18px 0}.lp-record-print dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.lp-record-print dt{font-size:14px;color:#777}.lp-record-print dd{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}}

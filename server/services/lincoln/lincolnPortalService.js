@@ -17,7 +17,7 @@ export const getStaffUsers = async () => {
   return [];
 };
 export const isPortalStaff = (user) => user && !user.deletedAt && user.status === 'active'
-  && canAccessCompany(user, 'lincoln') && getUserRoleIds(user).some((role) => ['developer', 'super_admin', 'admin'].includes(role));
+  && canAccessCompany(user, 'lincoln') && getUserRoleIds(user).some((role) => ['developer', 'super_admin', 'admin', 'ventas'].includes(role));
 export const verifyStaffPassword = async (user, password) => {
   if (!isPortalStaff(user) || typeof password !== 'string' || !password) return false;
   if (String(user.passwordHash).startsWith('$2')) return bcrypt.compare(password, user.passwordHash);

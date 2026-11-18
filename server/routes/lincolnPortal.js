@@ -50,7 +50,7 @@ router.post('/logout', wrap(async (req, res) => {
 }));
 router.get('/accounts', wrap(async (req, res) => {
   const { state } = await authorize(req, true);
-  res.json({ accounts: state.accounts.map(publicAccount) });
+  res.json({ accounts: state.accounts.map(publicAccount), plannedEventIds: Object.keys(state.plans) });
 }));
 router.post('/accounts', wrap(async (req, res) => {
   await authorize(req, true);

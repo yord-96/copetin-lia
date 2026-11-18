@@ -86,6 +86,22 @@ test('legacy staff authentication remains compatible', async () => {
   assert.equal(await verifyStaffPassword(user, 'wrong'), false);
 });
 
+test('Lincoln sales staff can manage planners without granting access to other companies or inactive users', async () => {
+  const { isPortalStaff, verifyStaffPassword } = await import('./lincolnPortalService.js');
+  for (const fullName of ['MELANIE BACINELLO', 'SHIRLEY CARRASCO']) {
+    const user = { id: fullName, fullName, role: 'Ventas', status: 'active', companyAccess: ['lincoln'], passwordHash: await bcrypt.hash('sales-password', 4) };
+    assert.equal(isPortalStaff(user), true);
+    assert.equal(await verifyStaffPassword(user, 'sales-password'), true);
+    assert.equal(isPortalStaff({ ...user, companyAccess: ['copetin'] }), false);
+    assert.equal(isPortalStaff({ ...user, status: 'inactive' }), false);
+    assert.equal(isPortalStaff({ ...user, deletedAt: '2026-11-18' }), false);
+    assert.equal(isPortalStaff({ ...user, roleIds: [] }), false);
+  }
+  const overview = await call('/accounts', { token: staffToken });
+  assert.ok(overview.body.plannedEventIds.includes('event-1'));
+  assert.equal(Object.hasOwn(overview.body, 'plans'), false);
+});
+
 test('portal is reachable through the existing Lincoln reverse proxy prefix', async () => {
   const response = await fetch(`${base}/__lincoln_db/portal/accounts`, { headers: { Authorization: `Bearer ${staffToken}` } });
   assert.equal(response.status, 200);
