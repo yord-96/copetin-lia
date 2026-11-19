@@ -9053,7 +9053,9 @@ export const buildContractDocumentHtml = ({
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
   const itemCount = realItemCount + manualRowCount;
-  const densityClass = itemCount >= 7 ? 'is-dense' : '';
+  // Six ordinary lines plus the payment/guarantee summaries can already push
+  // the indivisible closing block onto a mostly empty second sheet.
+  const densityClass = itemCount >= 5 ? 'is-dense' : '';
   const multipageClass = usesMultipageContract ? 'is-multipage' : '';
   const durationFinancialItemsHtml = hasDurationPricing
     ? durationDayBreakdown.map((dayInfo) => `
