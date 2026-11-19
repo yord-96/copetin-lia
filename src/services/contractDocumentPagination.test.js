@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import process from 'node:process';
+import { Buffer } from 'node:buffer';
 import puppeteer from 'puppeteer-core';
 import { buildContractDocumentHtml } from './webBridge.js';
 
