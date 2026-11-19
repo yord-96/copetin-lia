@@ -32,12 +32,12 @@ test('missing salary keeps totals blank while recorded advances remain visible; 
   assert.ok(html.includes('<td>Salario / remuneración</td><td></td>'));
   assert.ok(html.includes('<td>TOTAL A PAGAR</td><td></td>'));
 });
-test('both copies share the same period, reference and totals; escapes entered text', () => {
+test('single half-sheet slip preserves period and amounts and escapes entered text', () => {
   const html = buildAttendancePaymentSlip({ person: { ...person, name: '<script>bad</script>' }, draft, filters: { dateFrom: '2026-11-01', dateTo: '2026-11-18' }, reference: 'BP-TEST' });
-  assert.equal((html.match(/class="slip"/g) || []).length, 2);
-  assert.equal((html.match(/BP-TEST/g) || []).length, 2);
+  assert.equal((html.match(/class="slip"/g) || []).length, 1);
+  assert.equal((html.match(/BP-TEST/g) || []).length, 1);
   assert.ok(html.includes('size:letter'));
-  assert.ok(html.includes('COPIA DEL TRABAJADOR') && html.includes('COPIA DE LA EMPRESA'));
+  assert.equal(html.includes('COPIA DEL'), false); assert.equal(html.includes('COPIA DE LA'), false);
   assert.ok(html.includes('01/11/2026 al 18/11/2026'));
   assert.ok(html.includes('63:22 h'));
   assert.equal(html.includes('<script>'), false);

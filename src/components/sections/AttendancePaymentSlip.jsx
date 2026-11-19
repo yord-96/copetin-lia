@@ -46,7 +46,7 @@ export default function AttendancePaymentSlip({ people, filters, actorId, onBack
     finally { setBusy(false); }
   };
   return <div className="attendance-payment" ref={formRef}>
-    <div className="attendance-hours-actions"><button type="button" disabled={busy} onClick={onBack}>Volver a horas</button><strong>Boleta de pago · Dos copias en hoja carta</strong></div>
+    <div className="attendance-hours-actions"><button type="button" disabled={busy} onClick={onBack}>Volver a horas</button><strong>Boleta de pago · Una boleta en media hoja carta</strong></div>
     <p>Revisa la remuneración del período. Generar esta boleta no registra un pago en Caja ni modifica las asistencias.</p>
     <form onSubmit={generate}>
       <div className="attendance-payment-fields">
@@ -68,7 +68,7 @@ export default function AttendancePaymentSlip({ people, filters, actorId, onBack
       {person && <section className="attendance-payment-summary" aria-label="Anticipos y descuentos registrados"><strong>Caja Chica del período seleccionado · Efectivo y Digital</strong>{cashError ? <p role="alert">{cashError}</p> : !cash || cash.personKey !== personId ? <p role="status">Consultando anticipos y descuentos…</p> : <><span>{cash.movements.length} registro(s). Los importes se completan desde Caja Chica.</span>{cash.warning && <p role="alert">{cash.warning}</p>}<details><summary>Ver registros incluidos</summary>{cash.movements.length ? <ul>{cash.movements.map(row => <li key={row.id}>{row.date} · {row.receiptCode || row.description} · {row.kind === 'advance' ? 'Anticipo' : 'Descuento'} · Bs {row.amountBs.toFixed(2)}</li>)}</ul> : <p>No hay anticipos ni descuentos registrados para esta persona en este período.</p>}</details></>}<button type="button" disabled={busy} onClick={() => setCashRevision(value => value + 1)}>Actualizar Caja Chica</button></section>}
       {totals && <div className="attendance-payment-summary"><span>Total ganado: {totals.earned ? `Bs ${totals.earned.toFixed(2)}` : 'En blanco'}</span><span>Descuentos y anticipos: {totals.deductions ? `Bs ${totals.deductions.toFixed(2)}` : 'En blanco'}</span><strong>Total a pagar: {totals.net ? `Bs ${totals.net.toFixed(2)}` : 'En blanco'}</strong></div>}
       {error && <p role="alert" className="attendance-payment-error">{error}</p>}
-      <div className="attendance-hours-actions"><button type="submit" className="primary-button" disabled={busy || !person || !cash || cash.personKey !== personId || Boolean(cashError)}>{busy ? 'Generando PDF…' : 'Generar PDF con ambas copias'}</button>{preview && <><a className="ghost-button" href={preview} target="_blank" rel="noopener noreferrer">Abrir / imprimir</a><a className="ghost-button" href={preview} download={`${reference}.pdf`}>Descargar boleta</a></>}</div>
+      <div className="attendance-hours-actions"><button type="submit" className="primary-button" disabled={busy || !person || !cash || cash.personKey !== personId || Boolean(cashError)}>{busy ? 'Generando PDF…' : 'Generar boleta PDF'}</button>{preview && <><a className="ghost-button" href={preview} target="_blank" rel="noopener noreferrer">Abrir / imprimir</a><a className="ghost-button" href={preview} download={`${reference}.pdf`}>Descargar boleta</a></>}</div>
     </form>
     {preview && <iframe className="attendance-payment-preview" title="Boleta de pago en hoja carta" src={preview} />}
   </div>;
