@@ -8819,12 +8819,13 @@ export const buildContractDocumentHtml = ({
             : '<span class="rc-observation-line"></span>'}</td>
         </tr>`;
   };
+  const contractServices = normalizeContractServices(contract?.services ?? rental?.services);
   let scheduleDaysForDocument = hasDailySchedulePricing && Array.isArray(pricingPlan?.scheduleDays)
     ? pricingPlan.scheduleDays.filter((day) => day?.id || day?.label || day?.date)
     : [];
   if (hasDailySchedulePricing) {
     const daysByDate = new Map(scheduleDaysForDocument.map(day => [String(day.id), day]));
-    documentItems.forEach((line) => {
+    [...documentItems, ...contractServices].forEach((line) => {
       const lineDate = toDateKey(line?.serviceDate ?? line?.date);
       const lineId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
       if (!lineDate || (lineId && daysByDate.has(lineId)) || (!lineId && [...daysByDate.values()].some(day => toDateKey(day.date) === lineDate))) return;
@@ -8854,10 +8855,28 @@ export const buildContractDocumentHtml = ({
       ? scheduleDaysForDocument.findIndex((day) => normalizeText(day?.label) === lineLabel)
       : -1;
   };
-  const renderScheduleDayHeader = (day, fallbackIndex, lines) => {
+  const renderContractServiceRow = (service) => {
+      contractRowNumber += 1;
+      bookReportRows.push({ name: `SERVICIO: ${service.name}`, quantity: service.quantity, unitPriceBs: service.unitPriceBs, totalBs: service.lineTotalBs, issues: [], returned: false });
+      return `
+        <tr>
+          <td class="rc-row-index">${contractRowNumber}</td>
+          <td>
+            <span class="rc-item-name">SERVICIO: ${escapeHtml(service.name)}</span>
+            ${service.detail ? `<span class="rc-item-meta">${escapeHtml(service.detail)}</span>` : ''}
+          </td>
+          <td class="num">${service.quantity}</td>
+          <td class="num">${formatBs(service.unitPriceBs)}</td>
+          <td class="num">${formatBs(service.lineTotalBs)}</td>
+          <td class="check"></td>
+          <td class="check"></td>
+          <td><span class="rc-observation-line"></span></td>
+        </tr>`;
+    };
+  const renderScheduleDayHeader = (day, fallbackIndex, lines, services = []) => {
     const dayLabel = String(day?.label ?? '').trim() || `Dia ${fallbackIndex + 1}`;
     const dateLabel = day?.date ? ` - ${formatDocumentDate(day.date)}` : '';
-    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
+    const subtotal = lines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0) + services.reduce((sum, service) => sum + Number(service.lineTotalBs || 0), 0);
     return `
         <tr class="rc-duration-day-row">
           <td colspan="8">${escapeHtml(dayLabel)}${escapeHtml(dateLabel)} - Subtotal ${formatBs(subtotal)}</td>
@@ -8870,7 +8889,7 @@ export const buildContractDocumentHtml = ({
       const ensureGroup = (day, index) => {
         const key = String(day?.id ?? `day-${index}`);
         if (!grouped.has(key)) {
-          grouped.set(key, { day: { ...day, id: key }, index, lines: [] });
+          grouped.set(key, { day: { ...day, id: key }, index, lines: [], services: [] });
         }
         return grouped.get(key);
       };
@@ -8883,10 +8902,14 @@ export const buildContractDocumentHtml = ({
           : ensureGroup(fallbackDay, 0);
         group.lines.push(line);
       });
+      contractServices.forEach(service => {
+        const index = resolveScheduleDayIndexForDocumentLine(service);
+        if (index >= 0) ensureGroup(scheduleDaysForDocument[index], index).services.push(service);
+      });
       return Array.from(grouped.values())
-        .filter((group) => group.lines.length > 0)
+        .filter((group) => group.lines.length > 0 || group.services.length > 0)
         .sort((a, b) => a.index - b.index)
-        .map((group) => `${renderScheduleDayHeader(group.day, group.index, group.lines)}${group.lines.map((line) => renderContractItemRow(line)).join('')}`)
+        .map((group) => `${renderScheduleDayHeader(group.day, group.index, group.lines, group.services)}${group.lines.map((line) => renderContractItemRow(line)).join('')}${group.services.map(renderContractServiceRow).join('')}`)
         .join('');
     })()
     : hasDurationPricing
@@ -8896,7 +8919,6 @@ export const buildContractDocumentHtml = ({
         </tr>
         ${documentItems.map((line) => renderContractItemRow(line, dayInfo.multiplier)).join('')}`).join('')
     : documentItems.map((line) => renderContractItemRow(line)).join('');
-  const contractServices = normalizeContractServices(contract?.services ?? rental?.services);
   const servicesSubtotalBs = Number(
     contract?.totals?.servicesSubtotalBs
       ?? rental?.totals?.servicesSubtotalBs
@@ -8950,26 +8972,7 @@ export const buildContractDocumentHtml = ({
   );
   const pendingGuaranteeBs = isGuaranteeValidated ? 0 : Math.max(0, Number(guaranteeBs ?? 0) - documentPayments.reservedBs);
   const customerCreditBs = Math.max(0, Number((effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0)) - printedTotalBs - pendingGuaranteeBs).toFixed(2)));
-  const serviceRows = contractServices
-    .map((service) => {
-      contractRowNumber += 1;
-      bookReportRows.push({ name: `SERVICIO: ${service.name}`, quantity: service.quantity, unitPriceBs: service.unitPriceBs, totalBs: service.lineTotalBs, issues: [], returned: false });
-      return `
-        <tr>
-          <td class="rc-row-index">${contractRowNumber}</td>
-          <td>
-            <span class="rc-item-name">SERVICIO: ${escapeHtml(service.name)}</span>
-            ${service.detail ? `<span class="rc-item-meta">${escapeHtml(service.detail)}</span>` : ''}
-          </td>
-          <td class="num">${service.quantity}</td>
-          <td class="num">${formatBs(service.unitPriceBs)}</td>
-          <td class="num">${formatBs(service.lineTotalBs)}</td>
-          <td class="check"></td>
-          <td class="check"></td>
-          <td><span class="rc-observation-line"></span></td>
-        </tr>`;
-    })
-    .join('');
+  const serviceRows = contractServices.filter(service => !hasDailySchedulePricing || resolveScheduleDayIndexForDocumentLine(service) < 0).map(renderContractServiceRow).join('');
   const realItemCount = documentItems.length + contractServices.length;
   const usesDailySchedulePages = hasDailySchedulePricing && scheduleDaysForDocument.length > 1;
   const usesMultipageContract = usesDailySchedulePages || realItemCount >= 15;
@@ -9031,7 +9034,7 @@ export const buildContractDocumentHtml = ({
       const ensureGroup = (day, index) => {
         const key = String(day?.id ?? `day-${index}`);
         if (!grouped.has(key)) {
-          grouped.set(key, { day: { ...day, id: key }, index, lines: [] });
+          grouped.set(key, { day: { ...day, id: key }, index, lines: [], services: [] });
         }
         return grouped.get(key);
       };
@@ -9044,8 +9047,12 @@ export const buildContractDocumentHtml = ({
           : ensureGroup(fallbackDay, 0);
         group.lines.push(line);
       });
+      contractServices.forEach(service => {
+        const index = resolveScheduleDayIndexForDocumentLine(service);
+        if (index >= 0) ensureGroup(scheduleDaysForDocument[index], index).services.push(service);
+      });
       return Array.from(grouped.values())
-        .filter((group) => group.lines.length > 0)
+        .filter((group) => group.lines.length > 0 || group.services.length > 0)
         .sort((a, b) => a.index - b.index);
     })()
     : [];
@@ -9067,7 +9074,7 @@ export const buildContractDocumentHtml = ({
     ? dailyScheduleGroupsForPrint.map((group) => {
       const dayLabel = String(group.day?.label ?? '').trim() || `Dia ${group.index + 1}`;
       const dayLines = group.lines ?? [];
-      const daySubtotalBs = dayLines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0);
+      const daySubtotalBs = dayLines.reduce((sum, line) => sum + getDocumentLineTotalBs(line), 0) + group.services.reduce((sum, service) => sum + Number(service.lineTotalBs || 0), 0);
       return `
             <div class="rc-financial-item transport"><span>${escapeHtml(dayLabel)}</span><strong>${formatBs(daySubtotalBs)}</strong></div>`;
     }).join('')

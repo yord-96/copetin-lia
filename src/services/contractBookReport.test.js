@@ -14,21 +14,21 @@ test('book report keeps combo components, separates courtesy issues and preserve
     contract: { contractCode: '1003', customerName: '<Cliente>', address: 'SALÓN <CENTRO>', items, totals: { guaranteeBs: 200, subtotalBs: 260, itemsSubtotalBs: 260, discountPercent: 15, discountBs: 39, deliveryFeeBs: 10, totalBs: 231 } },
     rental: { items, status: 'returned', returnReport: [{ itemId: 'glass', lineKey: 'paid', missingQty: 5, missingUnitChargeBs: 35, penaltyBs: 175 }] },
   });
-  assert.match(html, /size: Letter portrait/);
-  assert.match(html, /&lt;Cliente&gt;/);
-  assert.match(html, /DIRECCIÓN:<\/b> SALÓN &lt;CENTRO&gt;/);
-  assert.match(html, /GARANTÍA \(SEPARADA DEL ALQUILER\)<\/th><td class="number">200,00/);
-  assert.match(html, /SILLA \+ COJIN/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /size: Letter portrait/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /&lt;Cliente&gt;/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /DIRECCIÓN:<\/b> SALÓN &lt;CENTRO&gt;/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /GARANTÍA \(SEPARADA DEL ALQUILER\)<\/th><td class="number">200,00/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /SILLA \+ COJIN/);
   assert.equal((html.match(/<td class="index">/g) || []).length, 3);
   assert.equal((html.match(/F5×35=175/g) || []).length, 1);
-  assert.match(html, /TOTAL ALQUILER<\/th><td class="number">231,00/);
-  assert.match(html, /TOTAL ALQUILER \+ REPOSICIÓN<\/th><td class="number">406,00/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /TOTAL ALQUILER<\/th><td class="number">231,00/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /TOTAL ALQUILER \+ REPOSICIÓN<\/th><td class="number">\s*406,00/);
 });
 
 test('book report retains every charged duration day', () => {
   const html = buildContractDocumentHtml({ ...dailyAmountsFixture(), documentKind: 'book' });
-  assert.match(html, /DIA 1: MULETON COCTELERO/);
-  assert.match(html, /DIA 5: MULETON COCTELERO/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /DIA 1: MULETON COCTELERO/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /DIA 5: MULETON COCTELERO/);
   assert.equal((html.match(/<td class="index">/g) || []).length, 20);
-  assert.match(html, /TOTAL ALQUILER<\/th><td class="number">203,50/);
+  assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /TOTAL ALQUILER<\/th><td class="number">203,50/);
 });
