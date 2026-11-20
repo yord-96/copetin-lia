@@ -1,3 +1,4 @@
+import { reflectDigitalContractCash, actualDigitalBankBalance } from './digitalContractCash.js';
 export const PETTY_DIGITAL_ACCOUNTS = ['BANCO FIE', 'CIDRE', 'MERCANTIL', 'BNB', 'BCP'];
 export const pettyCashChannel = row => row?.pettyCashChannel === 'digital'
   || String(row?.paymentMethod ?? '').trim().toLowerCase() === 'qr' ? 'digital' : 'cash';
@@ -16,12 +17,13 @@ export const assertPettyCashChannel = (payload, previous = null) => {
 };
 export const pettyCashChannelBalance = (rows, method, account = '') => {
   const digital = String(method).toLowerCase() === 'qr';
-  return Number(rows.filter(row => String(row?.cashBoxType).toUpperCase() === 'PETTY_CASH'
+  const visible = Number((digital ? reflectDigitalContractCash(rows) : rows).filter(row => String(row?.cashBoxType).toUpperCase() === 'PETTY_CASH'
     && !row.deletedAt && !row.voidedAt && row.receiptStatus !== 'anulado'
     && !row.accountingArchivedAt && row.accountingPeriodStatus !== 'archived'
     && pettyCashChannel(row) === (digital ? 'digital' : 'cash')
     && (!digital || String(row.paymentAccount ?? '').trim().toUpperCase() === String(account).trim().toUpperCase()))
     .reduce((sum, row) => sum + (Number(row.amountBs) || 0), 0).toFixed(2));
+  return digital && account ? Math.min(visible, actualDigitalBankBalance(rows, account)) : visible;
 };
 export const assertPettyCashReplacement = (rows, previous, replacement = null) => {
   const updated = replacement ? { ...previous, ...replacement, ...assertPettyCashChannel(replacement, previous) } : null;

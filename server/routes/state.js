@@ -49,6 +49,8 @@ import { filterInventoryMovementHistory } from '../../src/utils/inventoryMovemen
 import { mutateItemLoan } from '../services/itemLoans.js';
 import { attendanceRecordMatchesQuery } from '../../src/utils/attendanceAnalysis.js';
 import { getAttendancePaymentCash } from '../../src/utils/attendancePaymentCash.js';
+import { reflectDigitalContractCash, isDigitalContractCashMovement, isZeroDigitalOpening, actualDigitalBankBalance } from '../../src/utils/digitalContractCash.js';
+import { pettyCashChannelBalance } from '../../src/utils/pettyCashChannel.js';
 import { buildInventoryStockCommitments } from '../../src/utils/inventoryStockCommitment.js';
 
 const router = Router();
@@ -156,7 +158,7 @@ const summarizeRental = (rental = {}) => ({
 const summarizeAccountingMovement = (movement = {}) => {
   const fields = [
     'id', 'sessionId', 'type', 'amountBs', 'description', 'sourceType', 'sourceId',
-    'createdBy', 'cashBoxType', 'category', 'paymentMethod', 'paymentAccount',
+    'createdBy', 'cashBoxType', 'category', 'paymentMethod', 'paymentAccount', 'digitalContractReflection', 'originalCashBoxType',
     'responsible', 'receipt', 'receiptCode', 'notes', 'isInternalTransfer',
     'transferGroupId', 'receiptStatus', 'voidedAt', 'voidedBy', 'voidReason',
     'replacedByMovementId', 'replacementOfMovementId', 'linkedRentalId',
@@ -2144,11 +2146,12 @@ const getDirectBigCashChannelBalance = (state, paymentMethod, paymentAccount = '
   const method = directPaymentMethod(paymentMethod);
   const account = method === 'qr' ? String(paymentAccount ?? '').trim().toUpperCase() : '';
   const sourceRows = dateValue ? getDirectOperationalFundRowsThrough(state, dateValue) : getDirectOperationalFundRows(state);
-  return Number(sourceRows
+  const balance = Number(sourceRows
     .filter((movement) => directPaymentMethod(movement?.paymentMethod) === method)
     .filter((movement) => method !== 'qr' || String(movement?.paymentAccount ?? '').trim().toUpperCase() === account)
     .reduce((sum, movement) => sum + Number(movement?.amountBs ?? 0), 0)
     .toFixed(2));
+  return method === 'qr' ? Math.min(balance, actualDigitalBankBalance(state.cashMovements ?? [], account)) : balance;
 };
 
 const isBigCashFundDeliveryPayload = (payload = {}) => (
@@ -4491,7 +4494,7 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
     assertIndependentCashMovement(payload);
     const amountBs = directMoney(payload.amountBs);
 
-    if (amountBs <= 0) {
+    if (amountBs <= 0 && !isZeroDigitalOpening(payload)) {
       res.status(400).json({ error: 'El monto del movimiento debe ser mayor a 0.' });
       return;
     }
@@ -4607,17 +4610,14 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
             error.statusCode = 400;
             throw error;
           }
-          if (amountBs > pettyCashBalance) {
+          if (directPaymentMethod(payload.paymentMethod) !== 'qr' && amountBs > pettyCashBalance) {
             const error = new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${pettyCashBalance.toFixed(2)}.`);
             error.statusCode = 400;
             throw error;
           }
           const method = directPaymentMethod(payload.paymentMethod);
           const account = directPaymentAccount(method, payload.paymentAccount);
-          const available = state.cashMovements.filter(row => !isArchivedAccountingRecord(row) && !row.deletedAt && !row.voidedAt && row.receiptStatus !== 'anulado'
-            && row.cashBoxType === 'PETTY_CASH' && directPaymentMethod(row.paymentMethod) === method
-            && (method !== 'qr' || directPaymentAccount(method, row.paymentAccount) === account))
-            .reduce((sum, row) => sum + Number(row.amountBs || 0), 0);
+          const available = pettyCashChannelBalance(state.cashMovements, method, account);
           if (amountBs > available + 0.0001) {
             const error = new Error(`El medio seleccionado de Caja Chica no tiene fondo suficiente. Disponible: Bs ${available.toFixed(2)}.`);
             error.statusCode = 400;
@@ -4678,7 +4678,7 @@ router.post('/__copetin_db/cash/movement', async (req, res, next) => {
         ...buildDirectMovement(state, {
           ...payload,
           sessionId: activeSession?.id ?? null,
-          type: payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
+          type: isZeroDigitalOpening(payload) ? 'apertura' : payload.type === 'egreso' ? 'egreso_manual' : 'ingreso_manual',
           amountBs: signedAmount,
           cashBoxType: isFundDelivery ? 'BIG_CASH' : payload.type === 'egreso' ? 'PETTY_CASH' : payload.cashBoxType,
         }),
@@ -4799,7 +4799,7 @@ router.patch('/__copetin_db/cash/petty-expense/:movementId', async (req, res, ne
         ...payload, amountBs: isIncome ? amountBs : -amountBs,
       });
       const availableIncludingCurrent = directMoney(getDirectCurrentCashBalance(state, 'PETTY_CASH') + oldAmountBs);
-      if ((!isIncome && amountBs > availableIncludingCurrent) || (isIncome && getDirectCurrentCashBalance(state, 'PETTY_CASH') - oldAmountBs + amountBs < -0.009)) {
+      if (directPaymentMethod(movement.paymentMethod) !== 'qr' && ((!isIncome && amountBs > availableIncludingCurrent) || (isIncome && getDirectCurrentCashBalance(state, 'PETTY_CASH') - oldAmountBs + amountBs < -0.009))) {
         const error = new Error(isIncome ? 'No puedes reducir este ingreso a ese monto: sus fondos ya fueron utilizados.' : `Caja Chica no tiene saldo suficiente. Maximo editable: Bs ${availableIncludingCurrent.toFixed(2)}.`);
         error.statusCode = 400;
         throw error;
@@ -7226,7 +7226,7 @@ router.get('/__copetin_db/accounting-context', async (req, res, next) => {
     sortedMovements.slice(0, recentLimit).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
     allMovements.filter(isGuaranteeRefundMovement).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
     // El fondo necesita todo su flujo, incluso recibos retroactivos fuera del límite reciente.
-    allMovements.filter(row => row.cashBoxType === 'PETTY_CASH' && !isArchivedAccountingRecord(row)).forEach(row => selectedMovements.set(String(row.id), row));
+    allMovements.filter(row => (row.cashBoxType === 'PETTY_CASH' || isDigitalContractCashMovement(row)) && !isArchivedAccountingRecord(row)).forEach(row => selectedMovements.set(String(row.id), row));
     getBigCashFundMovements(allMovements).forEach((movement) => selectedMovements.set(String(movement?.id), movement));
 
     const contractRows = Array.isArray(state.contracts) ? state.contracts : [];
@@ -7392,7 +7392,7 @@ router.post('/__copetin_db/accounting/contract-collections', async (req, res, ne
 router.get('/__copetin_db/accounting/petty-history', async (req, res, next) => {
   try {
     const snapshot = await getStateSnapshot();
-    const movements = (Array.isArray(snapshot?.state?.cashMovements) ? snapshot.state.cashMovements : [])
+    const movements = reflectDigitalContractCash(snapshot?.state?.cashMovements ?? [])
       .filter((movement) => !isArchivedAccountingRecord(movement))
       .filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH')
       .sort((a, b) => new Date(b?.createdAt ?? 0) - new Date(a?.createdAt ?? 0))
@@ -7517,7 +7517,7 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
     };
 
     const channel = ['cash', 'digital'].includes(req.query.channel) ? req.query.channel : null;
-    const pettyMovements = (Array.isArray(state.cashMovements) ? state.cashMovements : [])
+    const pettyMovements = reflectDigitalContractCash(state.cashMovements ?? [])
       // Los eliminados siguen visibles en Caja Chica como historial tachado,
       // pero summarizeDirectCashState ya los excluye de saldos y totales.
       .filter((movement) => !movement?.accountingArchivedAt && movement?.accountingPeriodStatus !== 'archived')
@@ -7547,9 +7547,9 @@ router.get('/__copetin_db/accounting/petty-sector', async (req, res, next) => {
     } else if (sector === 'advances') {
       rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
     } else if (sector === 'expenses') {
-      rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) !== 0 && !movement?.isInternalTransfer && !isAdvance(movement));
+      rows = pettyMovements.filter((movement) => (Number(movement?.amountBs ?? 0) !== 0 || movement.type === 'apertura') && !movement?.isInternalTransfer && !isAdvance(movement));
     } else {
-      rows = pettyMovements.filter(movement => Number(movement.amountBs) !== 0);
+      rows = pettyMovements.filter(movement => Number(movement.amountBs) !== 0 || movement.type === 'apertura');
     }
 
     rows = rows

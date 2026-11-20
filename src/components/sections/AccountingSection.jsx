@@ -1,4 +1,5 @@
 import ContractCollectionHistory from './ContractCollectionHistory.jsx';
+import { reflectDigitalContractCash } from '../../utils/digitalContractCash.js';
 import { canManageAccounting } from '../../utils/permissions.js';
 import { buildFundDeliveryStatement, buildFundDeliveryDocumentHtml } from '../../utils/fundDeliveryDocument.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1224,11 +1225,11 @@ function AccountingSection({
   );
 
   const sortedMovements = useMemo(
-    () => attachCashLedgerOrder(cashMovements)
+    () => attachCashLedgerOrder(isDigitalPetty ? reflectDigitalContractCash(cashMovements) : cashMovements)
       .filter((movement) => !isArchivedAccountingRecord(movement))
       .slice()
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-    [cashMovements],
+    [cashMovements, isDigitalPetty],
   );
 
   const postedMovements = useMemo(
@@ -1959,7 +1960,7 @@ function AccountingSection({
       if (!isPettyCash(movement)) return;
       const amount = toNumber(movement.amountBs);
       const type = String(movement.type ?? '').toLowerCase();
-      const isOpening = type === 'apertura' && amount > 0;
+      const isOpening = type === 'apertura' && amount >= 0;
       const isReposition = amount > 0;
       const isExpense = !movement.isInternalTransfer && amount < 0;
 
@@ -4235,7 +4236,7 @@ function AccountingSection({
       <section class="signatures"><div class="signature"><strong>ENTREGADO POR</strong><small>${esc(getMovementUserLabel(movement))}</small></div><div class="signature"><strong>RECIBIDO POR</strong><small>${esc(movement?.fundRecipientName || 'Nombre / CI')}</small></div><div class="signature"><strong>APROBADO POR</strong><small>${approved ? esc(movement?.fundApprovedBy || 'Aprobado') : 'Nombre / cargo / firma'}</small></div></section>
     </body></html>`);
     popup.document.close();
-  }, [formatBs, formatDateTime, getFundSnapshotForMovement, getMovementUserLabel, sortedMovements, getDailyCustomerName, getMovementReference, getDailyMovementNature]);
+  }, [formatBs, formatDateTime, getFundSnapshotForMovement, getMovementUserLabel, sortedMovements, getDailyCustomerName, getMovementReference, getDailyMovementNature, pettyLabel]);
 
   const openFundHistoryDocument = async (movement) => {
     if (!movement) return;
@@ -4254,7 +4255,8 @@ function AccountingSection({
     event.preventDefault();
     if (!fundModal || fundSubmitting) return;
     const amountBs = Math.max(0, toNumber(fundForm.amountBs));
-    if (amountBs <= 0) { setFundActionError('Ingresa un monto mayor a cero.'); return; }
+    const zeroOpening = fundModal === 'in' && fundBoxType === 'PETTY_CASH' && isDigitalPetty && amountBs === 0;
+    if (amountBs <= 0 && !zeroOpening) { setFundActionError('Ingresa un monto mayor a cero.'); return; }
     if (fundForm.paymentMethod === 'qr' && !fundForm.paymentAccount) { setFundActionError('Selecciona la cuenta QR.'); return; }
     if (fundModal === 'out' && !String(fundForm.recipientName ?? '').trim()) { setFundActionError('Indica quién recibe los fondos.'); return; }
     setFundSubmitting(true);
@@ -4270,8 +4272,8 @@ function AccountingSection({
         cashBoxType: fundBoxType,
         amountBs,
         description: fundForm.description || `${fundModal === 'in' ? 'Ingreso' : 'Entrega'} de fondos de ${fundBoxLabel}`,
-        category: fundModal === 'in' ? 'ingreso_fondos' : 'entrega_fondos',
-        accountingTag: `${fundBoxType === 'PETTY_CASH' ? 'petty_cash' : 'big_cash'}_fund_${fundModal}`,
+        category: zeroOpening ? 'apertura' : fundModal === 'in' ? 'ingreso_fondos' : 'entrega_fondos',
+        accountingTag: zeroOpening ? 'opening_balance' : `${fundBoxType === 'PETTY_CASH' ? 'petty_cash' : 'big_cash'}_fund_${fundModal}`,
         paymentMethod: fundForm.paymentMethod,
         paymentAccount: fundForm.paymentMethod === 'qr' ? fundForm.paymentAccount : '',
         responsible: currentUserName,
@@ -4295,11 +4297,11 @@ function AccountingSection({
           digitalBs: Number((after.digitalBs - (!isCash ? signed : 0)).toFixed(2)),
         } : before;
         printFundDeliveryReport(movement, { before: movementBefore, after: after ?? selectedFundSummary });
-      } else if (movement) {
+      } else if (movement && !zeroOpening) {
         await printCashReceipt(resolvePrintableCashMovementId(created, fundBoxType));
       }
       setFundModal(null);
-      setCashActionFeedback(fundModal === 'in' ? 'Ingreso de fondos registrado.' : 'Entrega registrada y reporte generado para firma y aprobación.');
+      setCashActionFeedback(zeroOpening ? 'Apertura en Bs 0 registrada. El saldo existente no cambió.' : fundModal === 'in' ? 'Ingreso de fondos registrado.' : 'Entrega registrada y reporte generado para firma y aprobación.');
     } catch (error) {
       setFundActionError(error?.message || 'No se pudo registrar el movimiento de fondos.');
     } finally {
@@ -4721,6 +4723,7 @@ function AccountingSection({
         </div>
       );
     }
+    if (movement.digitalContractReflection) return <div className="cash-receipt-status"><button type="button" className="section-link blue" onClick={() => printCashReceipt(movement)}>Ver recibo</button><small>Contrato · editar desde Económico</small></div>;
     if (!canPrintCashMovement(movement)) {
       return <span className="cash-receipt-muted">Sin recibo</span>;
     }
@@ -6349,7 +6352,8 @@ function AccountingSection({
               <form className="fund-action-form" onSubmit={handleSubmitFundAction}>
                 <label>
                   <span>Monto (Bs)</span>
-                  <input type="number" min="0.01" step="0.01" value={fundForm.amountBs} onChange={(event) => setFundForm((current) => ({ ...current, amountBs: event.target.value }))} required />
+                  <input type="number" min={fundModal === 'in' && isDigitalPetty ? '0' : '0.01'} step="0.01" value={fundForm.amountBs} onChange={(event) => setFundForm((current) => ({ ...current, amountBs: event.target.value }))} required />
+                  {fundModal === 'in' && isDigitalPetty ? <small>Bs 0 registra una apertura sin modificar el saldo actual.</small> : null}
                 </label>
                 <label>
                   <span>Fecha y hora</span>
@@ -8372,7 +8376,7 @@ function AccountingSection({
         <header className="accounting-bigcash-head pettycash-head">
           <div>
             <h2>{pettyLabel}</h2>
-            <p>Control independiente de ingresos, egresos, gastos y adelantos. {isDigitalPetty ? 'Operaciones por QR, separadas por banco.' : 'Operaciones exclusivamente en efectivo.'}</p>
+            <p>Control independiente de ingresos, egresos, gastos y adelantos. {isDigitalPetty ? 'Incluye cobros y devoluciones QR de contratos desde el 01/10/2026, en el banco del recibo. No duplica ingresos en Caja Grande.' : 'Operaciones exclusivamente en efectivo.'}</p>
             <span className="accounting-source-badge"><i />Fondo propio de {pettyLabel}</span>
           </div>
           <div className="accounting-overview-actions">
@@ -8387,6 +8391,8 @@ function AccountingSection({
         </header>
 
         {isDigitalPetty ? <div className="petty-digital-accounts" aria-label="Saldos por banco">{PETTY_DIGITAL_ACCOUNTS.map(account => <article className="petty-kpi-card" key={account}><small>{account}</small><strong>{formatBs(sumBy(postedMovements.filter(row => isPettyCash(row) && String(row.paymentAccount || '').toUpperCase() === account), row => row.amountBs))}</strong></article>)}</div> : null}
+
+        {isDigitalPetty && postedMovements.some(row => row.digitalContractReflection && !PETTY_DIGITAL_ACCOUNTS.includes(String(row.paymentAccount || '').trim().toUpperCase())) ? <p className="status">Hay movimientos QR sin banco reconocido. Revisa su banco desde Económico para asignarlos correctamente.</p> : null}
 
         <section className="petty-kpi-grid petty-money-grid">
           <article className="petty-kpi-card balance petty-balance-primary">

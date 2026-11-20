@@ -1,4 +1,5 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
+import { reflectDigitalContractCash } from '../utils/digitalContractCash.js';
 import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
 import { matchesPettyCashChannel } from '../utils/pettyCashChannel.js';
 import { compareCashLedgerOrder } from '../utils/cashLedgerOrder.js';
@@ -4562,7 +4563,7 @@ export const api = {
     getPettyHistory: async () => {
       if (!shouldUseServerState()) {
         const movements = await callBridge('cash', 'listMovements', false);
-        const pettyMovements = movements.filter((movement) => (
+        const pettyMovements = reflectDigitalContractCash(movements).filter((movement) => (
           String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH'
         ));
         return { movements: pettyMovements, total: pettyMovements.length };
@@ -4592,8 +4593,8 @@ export const api = {
           rows = await callBridge('cash', 'listDebts', false);
         } else {
           const movements = await callBridge('cash', 'listMovements', false);
-          const timeline = buildPettyCashFundTimeline(movements.filter(row => matchesPettyCashChannel(row, filters.channel)));
-          const pettyMovements = movements.filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && matchesPettyCashChannel(movement, filters.channel) && !movement.accountingArchivedAt && movement.accountingPeriodStatus !== 'archived')
+          const timeline = buildPettyCashFundTimeline(reflectDigitalContractCash(movements).filter(row => matchesPettyCashChannel(row, filters.channel)));
+          const pettyMovements = reflectDigitalContractCash(movements).filter((movement) => String(movement?.cashBoxType ?? '').toUpperCase() === 'PETTY_CASH' && matchesPettyCashChannel(movement, filters.channel) && !movement.accountingArchivedAt && movement.accountingPeriodStatus !== 'archived')
             .map(row => {
               const balance = timeline.byMovementId.get(String(row.id));
               return { ...row, fundBalanceBs: balance?.totalBs ?? null, fundCashBalanceBs: balance?.cashBs ?? null, fundDigitalBalanceBs: balance?.digitalBs ?? null };
@@ -4603,7 +4604,7 @@ export const api = {
           if (normalizedSector === 'advances') {
             rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) < 0 && !movement?.isInternalTransfer && isAdvance(movement));
           } else if (normalizedSector === 'expenses') {
-            rows = pettyMovements.filter((movement) => Number(movement?.amountBs ?? 0) !== 0 && !movement?.isInternalTransfer && !isAdvance(movement));
+            rows = pettyMovements.filter((movement) => (Number(movement?.amountBs ?? 0) !== 0 || movement.type === 'apertura') && !movement?.isInternalTransfer && !isAdvance(movement));
           } else {
             rows = pettyMovements;
           }

@@ -17,6 +17,7 @@ import { reconcileContractDocumentPayments } from '../utils/contractDocumentPaym
 import { normalizeInventoryArea, resolveInventoryArea } from '../utils/inventoryArea.js';
 import { resolveEconomicReceiptDisplayTimestamp } from '../utils/economicReceiptTimestamp.js';
 import { assertIndependentCashMovement, buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
+import { isZeroDigitalOpening, actualDigitalBankBalance } from '../utils/digitalContractCash.js';
 
 export const WEB_DB_STORAGE_KEY = 'prestamos-web-db-v3-empty';
 const WEB_SESSION_STORAGE_KEY = 'prestamos-auth-session-v1';
@@ -18658,7 +18659,7 @@ const createWebBridge = () => ({
       if (!['ingreso', 'egreso', 'transferencia'].includes(movementType)) {
         throw new Error('Tipo de movimiento invalido. Usa ingreso, egreso o transferencia.');
       }
-      if (amountRaw <= 0) {
+      if (amountRaw <= 0 && !isZeroDigitalOpening(payload)) {
         throw new Error('El monto del movimiento debe ser mayor a 0.');
       }
       if (!description) {
@@ -18712,12 +18713,13 @@ const createWebBridge = () => ({
         if (movementType === 'transferencia' && amountRaw > availableBigCashBs) {
           throw new Error(`Caja Grande no tiene saldo suficiente. Disponible: Bs ${availableBigCashBs.toFixed(2)}.`);
         }
-        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH && amountRaw > Math.min(availablePettyCashBs, pettyCashChannelBalance(state.cashMovements, paymentMethod, paymentAccount))) {
+        if (movementType === 'egreso' && cashBoxType === CASH_BOX_TYPES.PETTY_CASH && amountRaw > Math.min(paymentMethod === 'qr' ? Infinity : availablePettyCashBs, pettyCashChannelBalance(state.cashMovements, paymentMethod, paymentAccount))) {
           throw new Error(`Caja Chica no tiene saldo suficiente. Disponible: Bs ${availablePettyCashBs.toFixed(2)}.`);
         }
         if (isBigCashFundDelivery && amountRaw > availableBigCashBs) {
           throw new Error(`Caja Grande no tiene fondo suficiente. Disponible: Bs ${availableBigCashBs.toFixed(2)}.`);
         }
+        if (isBigCashFundDelivery && paymentMethod === 'qr' && amountRaw > actualDigitalBankBalance(state.cashMovements, paymentAccount)) throw new Error('La cuenta bancaria no tiene saldo suficiente. Revisa también sus egresos de Caja Digital.');
         const sessionId = activeSession?.id ?? null;
 
         if (movementType === 'transferencia') {
@@ -18781,7 +18783,7 @@ const createWebBridge = () => ({
           const receiptCode = nextCashReceiptCode(state);
           createdMovement = buildCashMovement({
             sessionId,
-            type: movementType === 'ingreso' ? 'ingreso_manual' : 'egreso_manual',
+            type: isZeroDigitalOpening(payload) ? 'apertura' : movementType === 'ingreso' ? 'ingreso_manual' : 'egreso_manual',
             amountBs: signedAmount,
             description,
             sourceType: 'manual',

@@ -123,6 +123,26 @@ test('migración única y API: Caja Chica empieza en cero, se financia sola y no
     assert.equal(badIncomeEdit.status,400);
     assert.equal((await store.getStateSnapshot()).state.cashMovements.find(row=>row.id===income.body.movement.id).amountBs,350);
 
+
+    const openingPayload = {...payload, paymentMethod:'qr', paymentAccount:'CIDRE', amountBs:0, category:'apertura', accountingTag:'opening_balance'};
+    const beforeOpening = (await store.getStateSnapshot()).state.cashMovements.reduce((sum,row)=>sum+Number(row.amountBs||0),0);
+    const opening = await request('/cash/movement', openingPayload);
+    assert.equal(opening.status,200,JSON.stringify(opening.body));
+    assert.equal(opening.body.movement.type,'apertura');
+    assert.equal((await store.getStateSnapshot()).state.cashMovements.reduce((sum,row)=>sum+Number(row.amountBs||0),0),beforeOpening);
+    assert.equal((await request('/cash/movement',{...openingPayload,category:'ingreso_fondos'})).status,400);
+    const contractReceipt = {id:'contract-qr',cashBoxType:'BIG_CASH',type:'cobro_saldo_alquiler',amountBs:500,paymentMethod:'qr',paymentAccount:'CIDRE',linkedContractId:'contract',createdAt:'2026-10-02T12:00:00Z'};
+    await store.updateStateSnapshot(state=>({...state,cashMovements:[...state.cashMovements,contractReceipt]}));
+    const reflected = await request('/accounting/petty-sector?sector=expenses&channel=digital');
+    assert.ok(reflected.body.rows.some(row=>row.id==='contract-qr' && row.digitalContractReflection));
+    assert.ok(reflected.body.rows.some(row=>row.id===opening.body.movement.id));
+    const cashOnly = await request('/accounting/petty-sector?sector=expenses&channel=cash');
+    assert.ok(!cashOnly.body.rows.some(row=>row.id==='contract-qr'));
+    const spentDigital = await request('/cash/movement',{...payload,type:'egreso',amountBs:450,paymentMethod:'qr',paymentAccount:'CIDRE'});
+    assert.equal(spentDigital.status,200,JSON.stringify(spentDigital.body));
+    assert.equal((await request('/cash/movement',{...payload,type:'egreso',amountBs:151,paymentMethod:'qr',paymentAccount:'CIDRE'})).status,400);
+    assert.equal((await store.getStateSnapshot()).state.cashMovements.find(row=>row.id==='contract-qr').cashBoxType,'BIG_CASH');
+
   } finally {
     if(server) await new Promise(resolve=>server.close(resolve));
     await fs.rm(directory,{recursive:true,force:true});
