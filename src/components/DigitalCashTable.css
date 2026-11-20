@@ -1,0 +1,29 @@
+.digital-bank-tabs { display:flex; gap:8px; overflow-x:auto; padding:12px 0; max-width:100%; }
+.digital-bank-tabs button { flex:1 0 135px; padding:12px 14px; border:1px solid #52657e; border-radius:10px; background:transparent; color:inherit; text-align:left; cursor:pointer; }
+.digital-bank-tabs button[aria-pressed="true"] { background:#174b89; border-color:#75b2f6; color:white; }
+.digital-bank-tabs button strong,.digital-bank-tabs button small { display:block; }
+.digital-bank-tabs button small { margin-top:6px; }
+.digital-ledger { min-width:0; max-width:100%; }
+.digital-ledger-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:8px 0 12px; }
+.digital-ledger-summary > div { border:1px solid #63758c60; border-radius:10px; padding:14px; min-width:0; }
+.digital-ledger-summary small,.digital-ledger-summary strong { display:block; overflow-wrap:anywhere; }
+.digital-ledger-summary strong { margin-top:7px; font-size:18px; }
+.digital-ledger-caption { font-size:12px; opacity:.8; }
+.digital-ledger-scroll { max-width:100%; overflow-x:auto; border:1px solid #63758c60; border-radius:12px; }
+.digital-ledger .digital-ledger-table { width:100%; min-width:1320px; table-layout:fixed; border-collapse:collapse; font-size:12px; }
+.digital-ledger .digital-ledger-table th,.digital-ledger .digital-ledger-table td { padding:14px 10px; vertical-align:middle; border-bottom:1px solid #63758c50; border-right:1px solid #63758c30; white-space:normal; overflow-wrap:anywhere; }
+.digital-ledger-table thead { background:#17477f; color:white; }
+.accounting-pettycash-view.accounting-redesign .digital-ledger-table th:nth-child(1) { width:10%; }.accounting-pettycash-view.accounting-redesign .digital-ledger-table th:nth-child(2) { width:12%; }.accounting-pettycash-view.accounting-redesign .digital-ledger-table th:nth-child(3) { width:19%; }.accounting-pettycash-view.accounting-redesign .digital-ledger-table th:nth-child(4) { width:8%; }.accounting-pettycash-view.accounting-redesign .digital-ledger-table th:nth-child(5) { width:9%; }
+.accounting-pettycash-view.accounting-redesign .digital-ledger-table th:nth-child(n+6) { width:8.4%; }
+.digital-ledger-table small,.digital-ledger-table strong { display:block; }
+.digital-ledger-table small { margin-top:6px; font-size:11px; opacity:.8; }
+.digital-ledger-table tbody tr:nth-child(even) { background:#63758c0c; }
+.digital-ledger .digital-money { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.digital-ledger .digital-balance,.digital-ledger-opening,.digital-ledger-table tfoot { background:#467cb51c; font-weight:700; }
+.digital-ledger .income { color:#20a777; }.digital-ledger .expense { color:#e77550; }
+.digital-ledger .cash-receipt-status,.digital-ledger .cash-receipt-actions { display:flex; flex-direction:column; gap:6px; min-width:0; max-width:100%; }
+.digital-ledger .cash-receipt-status small { white-space:normal; overflow-wrap:anywhere; margin:0; }
+.digital-ledger button { max-width:100%; white-space:normal; }
+@media(max-width:800px) { .digital-ledger-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }.digital-ledger-summary strong { font-size:16px; } }
+
+.is-digital-ledger .petty-floating-expense { position:static !important; transform:none; box-shadow:none; }

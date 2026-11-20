@@ -1,3 +1,5 @@
+import DigitalCashTable from '../DigitalCashTable.jsx';
+import { buildDigitalBankLedger } from '../../utils/digitalBankLedger.js';
 import ContractCollectionHistory from './ContractCollectionHistory.jsx';
 import { reflectDigitalContractCash } from '../../utils/digitalContractCash.js';
 import { canManageAccounting } from '../../utils/permissions.js';
@@ -746,6 +748,7 @@ function AccountingSection({
 
   const [pettyCashTypeFilter, setPettyCashTypeFilter] = useState('all');
   const [pettyCashQuery, setPettyCashQuery] = useState('');
+  const [digitalBank, setDigitalBank] = useState('all');
   const [pettyWorkspaceTab, setPettyWorkspaceTab] = useState('expenses');
   const [pettyWorkspaceRanges, setPettyWorkspaceRanges] = useState(() => ({
     expenses: { dateFrom: '', dateTo: '' },
@@ -1949,6 +1952,12 @@ function AccountingSection({
     [selectedDayAdvanceRows],
   );
   const pagedPettyExpenseRows = useMemo(() => pettySectorPages.expenses.rows.slice().sort(compareCashLedgerOrder), [pettySectorPages.expenses.rows]);
+  const digitalLedger = useMemo(() => buildDigitalBankLedger(sortedMovements.map(row => ({ ...row,
+    categoryClass: getPettyExpenseCategory(row).className,
+    categoryLabel: getPettyExpenseCategory(row).label,
+    customerLabel: getDailyCustomerName(row), referenceLabel: getMovementReference(row),
+  })), { bank: digitalBank, ...pettyWorkspaceRanges.expenses, query: pettyCashQuery, category: pettyCashTypeFilter }),
+  [sortedMovements, digitalBank, pettyWorkspaceRanges.expenses, pettyCashQuery, pettyCashTypeFilter, getPettyExpenseCategory, getDailyCustomerName, getMovementReference]);
   const pagedPersonnelAdvanceRows = pettySectorPages.advances.rows;
   const pagedCashDebts = pettySectorPages.debts.rows;
 
@@ -6001,6 +6010,7 @@ function AccountingSection({
   };
 
   const fetchAllPettySectionRows = async (section) => {
+    if (isDigitalPetty && section === 'expenses') return digitalLedger.rows;
     const range = pettyWorkspaceRanges[section] ?? {};
     const filters = {
       dateFrom: range.dateFrom,
@@ -6070,6 +6080,11 @@ function AccountingSection({
   const getPettyReportDefinition = async (section) => {
     const rawRows = await fetchAllPettySectionRows(section);
     const range = pettyWorkspaceRanges[section] ?? {};
+    if (isDigitalPetty && section === 'expenses') return {
+      title: `Caja Digital - ${digitalBank === 'all' ? 'Todos los bancos' : digitalBank}`,
+      subtitle: `Saldo actual total digital: ${formatBs(digitalLedger.totalBs)}. Saldos acumulados con historial completo.`, rows: rawRows, range,
+      columns: [['Fecha', r => formatDateTime(r.createdAt)], ['Recibo', r => r.receipt || r.receiptCode || '-'], ['Cliente', r => r.customerLabel], ['Referencia', r => r.referenceLabel], ['Concepto', r => r.description], ['Banco', r => r.bank], ['Registrado por', r => r.createdBy || r.responsible || '-'], ['Ingreso', r => Math.max(0, r.amountBs)], ['Egreso', r => Math.max(0, -r.amountBs)], ['Saldo banco', r => r.bankBalanceBs], ['Saldo total digital', r => r.digitalBalanceBs]],
+    };
     if (section === 'expenses') return { title: `Movimientos de ${pettyLabel}`, subtitle: 'Ingresos y egresos propios según filtros actuales.', rows: rawRows,
       columns: [['Fecha', (r) => formatDate(r.createdAt)], ['Concepto', (r) => r.description || '-'], ['Proveedor / Destino', (r) => r.responsible || r.createdBy || '-'], ['Categoría', (r) => getPettyExpenseCategory(r).label], ['Medio / Banco', (r) => getPaymentMethodLabel(r)], ['Comprobante', (r) => r.receipt || '-'], ['Registrado por', (r) => r.createdBy || r.responsible || '-'], ['Monto', (r) => toNumber(r.amountBs)], ['Fondo', (r) => r.fundBalanceBs ?? '—']], range };
     if (section === 'advances') return { title: 'Adelantos al personal', subtitle: `Adelantos pagados desde ${pettyLabel}.`, rows: rawRows,
@@ -8372,7 +8387,7 @@ function AccountingSection({
 
   if (isPettyView) {
     return (
-      <section ref={pettyViewRef} className="panel accounting-pettycash-view accounting-redesign">
+      <section ref={pettyViewRef} className={`panel accounting-pettycash-view accounting-redesign ${isDigitalPetty ? 'is-digital-ledger' : ''}`}>
         <header className="accounting-bigcash-head pettycash-head">
           <div>
             <h2>{pettyLabel}</h2>
@@ -8450,7 +8465,7 @@ function AccountingSection({
 
         <nav className="petty-workspace-tabs" aria-label="Secciones de Caja Chica">
           {[
-            ['expenses', 'Movimientos', pettySectorPages.expenses.total],
+            ['expenses', 'Movimientos', isDigitalPetty ? digitalLedger.rows.length : pettySectorPages.expenses.total],
             ['advances', 'Adelantos', pettySectorPages.advances.total],
             ['suppliers', 'Proveedores', pettySectorPages.suppliers.total],
             ['debts', 'Deudas', pettySectorPages.debts.total],
@@ -8502,6 +8517,9 @@ function AccountingSection({
               </div>
             </header>
             {renderPettyReportBar('expenses')}
+            {isDigitalPetty ? <nav className="digital-bank-tabs" aria-label="Seleccionar banco">
+              {['all', ...PETTY_DIGITAL_ACCOUNTS, ...Object.keys(digitalLedger.balances).filter(bank => !PETTY_DIGITAL_ACCOUNTS.includes(bank))].map(bank => <button key={bank} type="button" aria-pressed={digitalBank === bank} onClick={() => setDigitalBank(bank)}><strong>{bank === 'all' ? 'Todos los bancos' : bank}</strong><small>{formatBs(bank === 'all' ? digitalLedger.totalBs : digitalLedger.balances[bank] || 0)}</small></button>)}
+            </nav> : null}
 
             <div className="petty-toolbar">
               <label>
@@ -8524,6 +8542,7 @@ function AccountingSection({
               </label>
             </div>
 
+            {isDigitalPetty ? <DigitalCashTable ledger={digitalLedger} bank={digitalBank} formatBs={formatBs} formatDateTime={formatDateTime} renderActions={renderReceiptActions} /> : <>
             <div className="bigcash-table-wrap petty-table-wrap">
               <table className="accounting-table petty-table">
                 <thead>
@@ -8595,8 +8614,10 @@ function AccountingSection({
               </table>
             </div>
 
+            </>}
+
             {pettySectorPages.expenses.error ? <p className="status error">{pettySectorPages.expenses.error}</p> : null}
-            {pettySectorPages.expenses.hasMore ? (
+            {!isDigitalPetty && pettySectorPages.expenses.hasMore ? (
               <button type="button" className="section-link blue" disabled={pettySectorPages.expenses.loading} onClick={() => loadPettySector('expenses', {
                 append: true,
                 offset: pagedPettyExpenseRows.length,
