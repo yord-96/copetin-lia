@@ -36,3 +36,19 @@ test('daily schedule totals use each day own lines; simple contracts gain no dai
   fixture.contract.pricingPlan = { mode: 'simple' };
   assert.doesNotMatch(buildContractDocumentHtml(fixture), /rc-duration-day-row">/);
 });
+
+test('two days sharing an edited date keep separate products and subtotals in the document', () => {
+  const fixture = dailyAmountsFixture();
+  fixture.contract.pricingPlan = { mode: 'daily_schedule', scheduleDays: [
+    { id: 'd1', label: 'Dia 1', date: '2026-11-25' },
+    { id: 'd9', label: 'Dia 9', date: '2026-11-25' },
+  ] };
+  fixture.contract.items = [
+    { itemId: 'a', itemName: 'MESA', quantity: 1, lineTotalBs: 55, serviceDayId: 'd1', serviceDate: '2026-11-25' },
+    { itemId: 'b', itemName: 'SILLA', quantity: 1, lineTotalBs: 20, serviceDayId: 'd9', serviceDate: '2026-11-25' },
+  ];
+  const html = buildContractDocumentHtml(fixture).replace(/\s|&nbsp;/g, '');
+  assert.match(html, /<span>Dia1<\/span><strong>Bs55[.,]00/);
+  assert.match(html, /<span>Dia9<\/span><strong>Bs20[.,]00/);
+  assert.equal([...html.matchAll(/class="rc-duration-day-row"/g)].length, 2);
+});

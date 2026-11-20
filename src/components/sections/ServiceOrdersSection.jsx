@@ -1,3 +1,4 @@
+import { findScheduleDayForLine, updateDraftScheduleDay } from '../../utils/scheduleDayAssignment.js';
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
 import ContractVoiceModal from './ContractVoiceModal';
@@ -1180,23 +1181,6 @@ const calculateDurationPricing = ({ mode, days, tiers, baseSubtotalBs }) => {
     effectiveMultiplier: safeBase > 0 ? Number((chargeableSubtotalBs / safeBase).toFixed(4)) : 0,
     breakdown,
   };
-};
-
-const findScheduleDayForLine = (line, scheduleDays, fallbackDay = null, options = {}) => {
-  const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
-  const lineDate = getDateKey(line?.serviceDate ?? line?.date);
-  const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
-  const dayById = scheduleDays.find((day) => String(day?.id ?? '') === lineDayId) ?? null;
-  const dayByDate = lineDate ? scheduleDays.find((day) => getDateKey(day?.date) === lineDate) ?? null : null;
-  const dayByLabel = lineLabel ? scheduleDays.find((day) => normalizeText(day?.label) === lineLabel) ?? null : null;
-  const primaryDay = lineDate || options?.preferDate
-    ? (dayByDate ?? dayById)
-    : (dayById ?? dayByDate);
-  return primaryDay
-    ?? dayByLabel
-    ?? fallbackDay
-    ?? scheduleDays[0]
-    ?? null;
 };
 
 const escapeDocText = (value) =>
@@ -6181,11 +6165,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
       ? record.pricingPlan.scheduleDays.map((day, index) => normalizeScheduleDay(day, index, deliveryDate))
       : buildScheduleDaysFromRange(deliveryDate, pickupDate);
     if (record?.pricingPlan?.mode === 'daily_schedule') {
-      const daysByDate = new Map(scheduleDays.map((day) => [getDateKey(day.date), day]).filter(([date]) => Boolean(date)));
+      const daysByDate = new Map(scheduleDays.map(day => [String(day.id), day]));
       [...(record?.items ?? []), ...(record?.services ?? [])].forEach((line) => {
         const lineDate = getDateKey(line?.serviceDate ?? line?.date);
-        if (!lineDate || daysByDate.has(lineDate)) return;
-        daysByDate.set(lineDate, normalizeScheduleDay({
+        const lineId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+        if (!lineDate || (lineId && daysByDate.has(lineId)) || (!lineId && [...daysByDate.values()].some(day => getDateKey(day.date) === lineDate))) return;
+        daysByDate.set(lineId || `day-${lineDate}`, normalizeScheduleDay({
           id: String(line?.serviceDayId ?? line?.scheduleDayId ?? `day-${lineDate}`).trim() || `day-${lineDate}`,
           label: String(line?.serviceDayLabel ?? '').trim() || `Dia ${daysByDate.size + 1}`,
           date: lineDate,
@@ -7803,12 +7788,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const updateScheduleDay = (dayId, patch) => {
-    setDraft((current) => ({
-      ...current,
-      scheduleDays: (current.scheduleDays ?? []).map((day, index) => (
-        day.id === dayId ? normalizeScheduleDay({ ...day, ...patch }, index, current.deliveryDate || current.eventDate) : day
-      )),
-    }));
+    setDraft(current => {
+      const index = (current.scheduleDays || []).findIndex(day => day.id === dayId);
+      if (index < 0) return current;
+      const updated = normalizeScheduleDay({ ...current.scheduleDays[index], ...patch }, index, current.deliveryDate || current.eventDate);
+      return updateDraftScheduleDay(current, dayId, updated);
+    });
   };
 
   const removeScheduleDay = (dayId) => {

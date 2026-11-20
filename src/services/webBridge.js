@@ -1063,7 +1063,7 @@ const alignLinesToDailySchedule = (pricingPlan, lines = []) => {
       ? scheduleDays.find((day) => normalizeText(day?.label) === normalizeText(lineLabel))
       : null;
 
-    const assignedDay = dayByDate ?? dayById ?? dayByLabel ?? scheduleDays[0];
+    const assignedDay = dayById ?? dayByDate ?? dayByLabel ?? scheduleDays[0];
     return {
       ...line,
       serviceDayId: String(assignedDay?.id ?? lineDayId).trim() || null,
@@ -8823,11 +8823,12 @@ export const buildContractDocumentHtml = ({
     ? pricingPlan.scheduleDays.filter((day) => day?.id || day?.label || day?.date)
     : [];
   if (hasDailySchedulePricing) {
-    const daysByDate = new Map(scheduleDaysForDocument.map((day) => [toDateKey(day?.date), day]).filter(([date]) => Boolean(date)));
+    const daysByDate = new Map(scheduleDaysForDocument.map(day => [String(day.id), day]));
     documentItems.forEach((line) => {
       const lineDate = toDateKey(line?.serviceDate ?? line?.date);
-      if (!lineDate || daysByDate.has(lineDate)) return;
-      daysByDate.set(lineDate, {
+      const lineId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
+      if (!lineDate || (lineId && daysByDate.has(lineId)) || (!lineId && [...daysByDate.values()].some(day => toDateKey(day.date) === lineDate))) return;
+      daysByDate.set(lineId || `day-${lineDate}`, {
         id: String(line?.serviceDayId ?? line?.scheduleDayId ?? `day-${lineDate}`).trim() || `day-${lineDate}`,
         label: String(line?.serviceDayLabel ?? '').trim() || `Dia ${daysByDate.size + 1}`,
         date: lineDate,
@@ -8844,11 +8845,11 @@ export const buildContractDocumentHtml = ({
     const byDate = lineDate
       ? scheduleDaysForDocument.findIndex((day) => toDateKey(day?.date) === lineDate)
       : -1;
-    if (byDate >= 0) return byDate;
     const byId = lineDayId
       ? scheduleDaysForDocument.findIndex((day) => String(day?.id ?? '') === lineDayId)
       : -1;
     if (byId >= 0) return byId;
+    if (byDate >= 0) return byDate;
     return lineLabel
       ? scheduleDaysForDocument.findIndex((day) => normalizeText(day?.label) === lineLabel)
       : -1;
@@ -9826,8 +9827,8 @@ export const buildWeeklyInventoryHtml = ({
       const lineDate = toDateKey(line?.serviceDate ?? line?.date);
       const lineDayId = String(line?.serviceDayId ?? line?.scheduleDayId ?? '').trim();
       const lineLabel = normalizeText(line?.serviceDayLabel ?? line?.dayLabel);
-      let dayIndex = lineDate ? scheduleDays.findIndex((day) => day.date === lineDate) : -1;
-      if (dayIndex < 0 && lineDayId) dayIndex = scheduleDays.findIndex((day) => String(day.id) === lineDayId);
+      let dayIndex = lineDayId ? scheduleDays.findIndex((day) => String(day.id) === lineDayId) : -1;
+      if (dayIndex < 0 && lineDate) dayIndex = scheduleDays.findIndex((day) => day.date === lineDate);
       if (dayIndex < 0 && lineLabel) dayIndex = scheduleDays.findIndex((day) => normalizeText(day.label) === lineLabel);
       groups[Math.max(0, dayIndex)].lines.push(line);
     });
