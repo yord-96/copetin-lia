@@ -8,6 +8,7 @@ const amount = value => Number(value || 0).toLocaleString('es-BO', {
 
 export function buildContractBookReport({
   code,
+  documentLabel = 'CONTRATO',
   customer,
   eventDate,
   address,
@@ -23,7 +24,7 @@ export function buildContractBookReport({
   const combos = new Map();
 
   for (const row of rows) {
-    const key = row.comboKey ? `${row.comboKey}:${row.quantity}` : '';
+    const key = row.comboKey ? `${row.dayKey || ''}:${row.comboKey}:${row.quantity}` : '';
     const existing = key && combos.get(key);
 
     if (existing) {
@@ -61,7 +62,14 @@ export function buildContractBookReport({
     Number(replacementBs || 0) +
     Number(guaranteeBs || 0);
 
-  const body = compact.map((row, index) => `
+  const dayTotals = new Map();
+  compact.forEach(row => { if (row.dayKey) dayTotals.set(row.dayKey, (dayTotals.get(row.dayKey) || 0) + Number(row.totalBs || 0)); });
+  let previousDay = null;
+  const body = compact.map((row, index) => {
+    const header = row.dayKey && row.dayKey !== previousDay ? `<tr class="book-day"><th colspan="6">${escape(row.dayLabel)}${row.dayDate ? ` - ${escape(row.dayDate.split('-').reverse().join('/'))}` : ''} - SUBTOTAL Bs ${amount(dayTotals.get(row.dayKey))}</th></tr>` : '';
+    previousDay = row.dayKey;
+    return `${header}
+
     <tr>
       <td class="index">${index + 1}</td>
       <td class="description">${escape(row.names.join(' + '))}</td>
@@ -78,8 +86,9 @@ export function buildContractBookReport({
             : ''
       }</td>
     </tr>
-  `).join('');
+  `; }).join('');
 
+  const dayStyle = '<style>.book-day th{text-align:left;background:#e6edf4;padding:5px 4px;font-weight:bold;break-after:avoid}</style>';
   const fontSize = compact.length > 35 ? '8pt' : '9pt';
 
   return `<!doctype html>
@@ -258,6 +267,7 @@ export function buildContractBookReport({
 </style>
 </head>
 
+${dayStyle}
 <body>
 
 <header>
@@ -276,7 +286,7 @@ export function buildContractBookReport({
   </div>
 
   <div class="code">
-    CONTRATO <b>${escape(code)}</b>
+    ${escape(documentLabel)} <b>${escape(code)}</b>
   </div>
 </header>
 

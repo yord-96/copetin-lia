@@ -8490,18 +8490,19 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     openCreateModal('quote', 'quote', quote);
   };
 
-  const handleOpenQuoteDocument = async (quote, paperSize = 'oficio') => {
+  const handleOpenQuoteDocument = async (quote, paperSize = 'oficio', layout = 'quote') => {
+    if (layout === 'book') paperSize = 'carta';
     setMenuState(null);
     setFormError('');
     try {
       const renderedPdf = await fetchQuotePdf({
         identifier: quote.id ?? quote.quoteCode,
-        paperSize,
+        paperSize, layout,
       });
       setDocumentPreview({
-        kind: 'quote',
+        kind: layout === 'book' ? 'quote_book' : 'quote',
         orderCode: quote.quoteCode ?? quote.id,
-        title: `Cotizacion ${quote.quoteCode || quote.id}`,
+        title: `${layout === 'book' ? 'Reporte para libro' : 'Cotizacion'} ${quote.quoteCode || quote.id}`,
         fileName: buildDocumentFileBase(quote.customerName, quote.quoteCode || quote.id, 'cotizacion'),
         html: '',
         blobUrl: renderedPdf.blobUrl,
@@ -8878,14 +8879,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
-  const fetchQuotePdf = async ({ identifier, paperSize = 'oficio' }) => {
+  const fetchQuotePdf = async ({ identifier, paperSize = 'oficio', layout = 'quote' }) => {
     const requestedId = String(identifier ?? '').trim();
     if (!requestedId) {
       throw new Error('No se pudo identificar la cotizacion.');
     }
 
     const response = await fetch(
-      getDocumentApiUrl(`/__copetin_db/quotes/${encodeURIComponent(requestedId)}/pdf?paper=${encodeURIComponent(paperSize)}`),
+      getDocumentApiUrl(`/__copetin_db/quotes/${encodeURIComponent(requestedId)}/pdf?paper=${encodeURIComponent(paperSize)}&layout=${encodeURIComponent(layout)}`),
       {
         method: 'GET',
         cache: 'no-store',
@@ -11954,7 +11955,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <td className="orders-total">{formatBs(row.totalBs)}</td>
                         <td className="orders-menu">
                           <div className="orders-row-actions">
-                            <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
+                            <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row, 'carta', 'book')}>Reporte para libro</button>
+                          <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
                               Abrir
                             </button>
                             <button
@@ -12036,6 +12038,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           </div>
                         </div>
                         <div className="orders-row-actions">
+                          <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row, 'carta', 'book')}>Reporte para libro</button>
                           <button type="button" className="orders-open-btn" onClick={() => handleOpenQuoteDocument(row)}>
                             Abrir
                           </button>

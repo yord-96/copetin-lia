@@ -8391,7 +8391,7 @@ export const buildContractDocumentHtml = ({
   paperSize = 'oficio',
   documentKind = 'contract',
 }) => {
-  const isQuoteDocument = String(documentKind ?? '').trim().toLowerCase() === 'quote';
+  const isQuoteDocument = ['quote', 'book_quote'].includes(String(documentKind ?? '').trim().toLowerCase());
   const deliveryOut = deliveries[0] ?? null;
   const deliveryBack = deliveries[1] ?? null;
   const company = getDocumentCompany(settings);
@@ -8791,10 +8791,13 @@ export const buildContractDocumentHtml = ({
           : Number(baseUnitPriceBs.toFixed(2));
         const returnIssueSummary = getReturnIssueSummaryForLine(line);
         const movement = isQuoteDocument ? null : contractDocumentMovement(line, rental);
+        const bookDayIndex = hasDailySchedulePricing ? resolveScheduleDayIndexForDocumentLine(line) : hasDurationPricing ? Math.floor(bookReportRows.length / Math.max(1, documentItems.length)) : -1;
+        const bookDay = hasDailySchedulePricing ? scheduleDaysForDocument[bookDayIndex] : null;
         bookReportRows.push({
-          name: `${hasDurationPricing ? `DIA ${Math.floor(bookReportRows.length / Math.max(1, documentItems.length)) + 1}: ` : hasDailySchedulePricing ? `${line.serviceDayLabel || line.serviceDate || `DIA ${Math.max(0, resolveScheduleDayIndexForDocumentLine(line)) + 1}`}: ` : ''}${line.itemName}`,
+          name: `${hasDurationPricing ? `DIA ${bookDayIndex + 1}: ` : ''}${line.itemName}`,
+          dayKey: bookDay?.id || (hasDurationPricing ? `duration-${bookDayIndex}` : ''), dayLabel: bookDay?.label || (hasDurationPricing ? `Dia ${bookDayIndex + 1}` : ''), dayDate: bookDay?.date || '',
           quantity: displayQuantity, unitPriceBs, totalBs: lineTotalBs,
-          comboKey: !hasDailySchedulePricing && !hasDurationPricing ? line.comboLineKey : '',
+          comboKey: line.comboLineKey || '',
           returned: Boolean(movement?.returned && movement.returnedQty >= movement.quantity),
           issues: returnIssueSummary ? [{ text: returnIssueSummary.text.split(' · ')[0], chargeBs: returnIssueSummary.chargeBs }] : [],
         });
@@ -8857,7 +8860,8 @@ export const buildContractDocumentHtml = ({
   };
   const renderContractServiceRow = (service) => {
       contractRowNumber += 1;
-      bookReportRows.push({ name: `SERVICIO: ${service.name}`, quantity: service.quantity, unitPriceBs: service.unitPriceBs, totalBs: service.lineTotalBs, issues: [], returned: false });
+      const serviceDay = hasDailySchedulePricing ? scheduleDaysForDocument[resolveScheduleDayIndexForDocumentLine(service)] : null;
+      bookReportRows.push({ dayKey: serviceDay?.id || (hasDailySchedulePricing ? 'general-services' : ''), dayLabel: serviceDay?.label || (hasDailySchedulePricing ? 'Servicios generales' : ''), dayDate: serviceDay?.date || '', name: `SERVICIO: ${service.name}`, quantity: service.quantity, unitPriceBs: service.unitPriceBs, totalBs: service.lineTotalBs, issues: [], returned: false });
       return `
         <tr>
           <td class="rc-row-index">${contractRowNumber}</td>
@@ -8978,9 +8982,9 @@ export const buildContractDocumentHtml = ({
   const usesMultipageContract = usesDailySchedulePages || realItemCount >= 15;
   const manualRowCount = realItemCount <= 8 ? 0 : realItemCount <= 13 ? 1 : 2;
   const rows = `${itemRows}${serviceRows}`;
-  if (documentKind === 'book') {
+  if (documentKind === 'book' || documentKind === 'book_quote') {
     return buildContractBookReport({
-      code: mainCode, customer: documentCustomerName,
+      code: mainCode, customer: documentCustomerName, documentLabel: isQuoteDocument ? 'COTIZACION' : 'CONTRATO',
       eventDate: formatDocumentDate(contract?.eventDate ?? rental?.eventDate),
       address: eventAddress, guaranteeBs,
       rows: bookReportRows, subtotalBs: documentItemsSubtotalBs + servicesSubtotalBs,

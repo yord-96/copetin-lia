@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildContractDocumentHtml } from './webBridge.js';
-import { dailyAmountsFixture } from './webBridge.contractDailyAmounts.test.js';
+import { dailyAmountsFixture, dailyServicesFixture } from './webBridge.contractDailyAmounts.test.js';
 
 test('book report keeps combo components, separates courtesy issues and preserves financial totals', () => {
   const items = [
@@ -31,4 +31,22 @@ test('book report retains every charged duration day', () => {
   assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /DIA 5: MULETON COCTELERO/);
   assert.equal((html.match(/<td class="index">/g) || []).length, 20);
   assert.match(html.replace(/\s+/g, ' ').replace(/>\s+</g, '><'), /TOTAL ALQUILER<\/th><td class="number">203,50/);
+});
+
+test('contract and quote book reports separate days, services and their subtotals', () => {
+  for (const documentKind of ['book', 'book_quote']) {
+    const fixture = dailyServicesFixture();
+    fixture.contract.quoteCode = 'COT-03165';
+    const html = buildContractDocumentHtml({ ...fixture, documentKind });
+    const groups = html.split('class="book-day"').slice(1);
+    assert.equal(groups.length, 12);
+    groups.forEach((group, index) => {
+      assert.match(group, new RegExp(`Dia ${index + 1} -`));
+      assert.match(group, /SUBTOTAL Bs 360,00/);
+      assert.equal([...group.matchAll(/SERVICIO: TRANSPORTE/g)].length, 1);
+    });
+    assert.match(html, documentKind === 'book_quote' ? /COTIZACION <b>COT-03165/ : /CONTRATO <b>3278/);
+    assert.equal([...html.matchAll(/SERVICIO: TRANSPORTE/g)].length, 12);
+    assert.match(html, /4\.320,00|4,320\.00/);
+  }
 });
