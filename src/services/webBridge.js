@@ -8381,6 +8381,11 @@ const getReferenceContractStyles = (paperSize = 'oficio') => {
 `;
 };
 
+// Both documents display the agreed contract date, not the later import or
+// technical registration timestamp. Older records can retain it on the rental.
+const contractCreationDate = (contract, rental) => contract?.contractDate
+  ?? rental?.contractDate ?? contract?.createdAt ?? rental?.createdAt;
+
 export const buildContractDocumentHtml = ({
   rental,
   contract,
@@ -8618,7 +8623,7 @@ export const buildContractDocumentHtml = ({
     .filter(Boolean);
   const documentCustomerCi = String(contract?.customerCi ?? contract?.nitCi ?? rental?.customerCi ?? rental?.nitCi ?? '').trim();
   const documentTitle = buildDocumentFileBase(documentCustomerName, mainCode, isQuoteDocument ? 'cotizacion' : 'contrato');
-  const issuedAt = formatDocumentLongDate(contract?.contractDate ?? rental?.contractDate ?? contract?.createdAt ?? rental.createdAt ?? new Date().toISOString());
+  const issuedAt = formatDocumentLongDate(contractCreationDate(contract, rental) ?? new Date().toISOString());
   const eventLongDate = formatDocumentLongDate(contract?.eventDate ?? rental?.eventDate ?? contract?.deliveryDate ?? rental?.rentalDate);
   const eventAddress = contract?.address ?? rental.eventAddress ?? deliveryOut?.address ?? '-';
   const operationalPlaceLabel = isCustomerPickup ? 'Recojo por cliente' : eventAddress;
@@ -10101,7 +10106,7 @@ export const buildWeeklyInventoryHtml = ({
       <header class="wi-header">
         <div class="wi-brand"><span class="wi-brand-mark">C</span><div><h1>${escapeHtml(company.name)}</h1><p>Control operativo de inventario</p></div></div>
         <div class="wi-header-contract"><small>Contrato</small><strong>${escapeHtml(documentCode)}</strong></div>
-        <div class="wi-period"><small>Contrato creado</small><strong>${escapeHtml(formatDocumentLongDate(selectedOrder?.contract?.createdAt ?? selectedOrder?.rental?.createdAt))}</strong></div>
+        <div class="wi-period"><small>Contrato creado</small><strong>${escapeHtml(formatDocumentLongDate(contractCreationDate(selectedOrder?.contract, selectedOrder?.rental)))}</strong></div>
       </header>
       <section class="wi-intro">
         <div><h2>Hoja de alistamiento, salida y retorno</h2><p>Control individual para una orden operativa.</p></div>
