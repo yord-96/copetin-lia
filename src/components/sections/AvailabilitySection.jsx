@@ -10,6 +10,7 @@ import {
   MapPin,
   PackageCheck,
   PackageSearch,
+  Printer,
   Search,
   ShieldCheck,
   Truck,
@@ -21,6 +22,8 @@ import { buildAvailabilityPeriod, getProjectedInventoryAvailability, toDateKey }
 import { getInventoryAreaLabel, INVENTORY_AREAS, resolveInventoryArea } from '../../utils/inventoryArea';
 import { getComboAvailabilityRows } from '../../utils/comboAvailability';
 import ProductImage from '../common/ProductImage';
+import { api } from '../../services/api';
+import { buildAvailabilityReport } from '../../utils/availabilityReport.js';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -184,6 +187,21 @@ function AvailabilitySection({
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(initialDate);
   const [selectedCommitmentRow, setSelectedCommitmentRow] = useState(null);
+  const [reportPreview, setReportPreview] = useState(null);
+  const reportController = useRef(null);
+  const reportUrl = useRef('');
+  const reportFrame = useRef(null);
+  useEffect(() => () => {
+    reportController.current?.abort();
+    if (reportUrl.current) URL.revokeObjectURL(reportUrl.current);
+  }, []);
+
+  const closeReport = () => {
+    reportController.current?.abort();
+    if (reportUrl.current) URL.revokeObjectURL(reportUrl.current);
+    reportUrl.current = '';
+    setReportPreview(null);
+  };
 
   const clientById = useMemo(
     () => new Map((Array.isArray(clients) ? clients : []).map((client) => [String(client.id), client])),
@@ -396,6 +414,29 @@ function AvailabilitySection({
     [resultEntries, visibleResultCount],
   );
   const hiddenResultCount = Math.max(0, resultEntries.length - visibleResultEntries.length);
+  const generateReport = async () => {
+    if (reportPreview?.loading || moduleLoading) return;
+    const controller = new AbortController();
+    reportController.current = controller;
+    const fileName = `Disponibilidad-${dateFrom}-${dateTo || dateFrom}.pdf`;
+    const title = `Disponibilidad del ${formatDate(dateFrom)} al ${formatDate(dateTo || dateFrom)}`;
+    setReportPreview({ loading: true, title, fileName });
+    try {
+      const html = buildAvailabilityReport({ entries: resultEntries, dateFrom, dateTo, clients, filters: [
+        query && `Búsqueda: ${query}`,
+        categoryFilter !== 'all' && `Categoría: ${categoryFilter}`,
+        areaFilter !== 'all' && `Área: ${getInventoryAreaLabel(areaFilter)}`,
+        statusFilter !== 'all' && `Estado: ${({ available: 'Disponible', limited: 'Limitado', empty: 'Agotado', uncontrolled: 'Sin control' })[statusFilter]}`,
+      ] });
+      const blob = await api.reports.renderPdf({ html, fileName, signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (reportUrl.current) URL.revokeObjectURL(reportUrl.current);
+      reportUrl.current = URL.createObjectURL(blob);
+      setReportPreview({ loading: false, title, fileName, url: reportUrl.current });
+    } catch (error) {
+      if (!controller.signal.aborted) setReportPreview({ loading: false, title, fileName, error: error.message || 'No se pudo generar el reporte.' });
+    }
+  };
   const selectedCommitments = useMemo(
     () => (selectedCommitmentRow ? getItemCommitments(selectedCommitmentRow) : []),
     [getItemCommitments, selectedCommitmentRow],
@@ -554,7 +595,12 @@ function AvailabilitySection({
                   <p>Mostrando {visibleResultEntries.length.toLocaleString('es-BO')} primero para mantener la vista fluida.</p>
                 ) : null}
               </div>
-              <small>{formatDate(dateFrom)} {dateTo !== dateFrom ? `al ${formatDate(dateTo)}` : ''}</small>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.7rem' }}>
+                <small>{formatDate(dateFrom)} {dateTo !== dateFrom ? `al ${formatDate(dateTo)}` : ''}</small>
+                <button type="button" className="primary-button" onClick={generateReport} disabled={moduleLoading || reportPreview?.loading || !resultEntries.length || !dateFrom || !dateTo || dateTo < dateFrom}>
+                  <Printer size={17} /> {reportPreview?.loading ? 'Generando reporte...' : 'Imprimir reporte'}
+                </button>
+              </div>
             </header>
 
             <div className="availability-results-table">
@@ -742,6 +788,21 @@ function AvailabilitySection({
         </section>
       )}
 
+      {reportPreview ? (
+        <div className="orders-modal-backdrop document-preview-backdrop" style={{ zIndex: 4500 }}>
+          <section className="orders-modal orders-preview-modal" role="dialog" aria-modal="true" aria-labelledby="availability-report-title">
+            <header className="orders-modal-head"><div><h3 id="availability-report-title">{reportPreview.title}</h3><p>Reporte detallado de los productos y filtros seleccionados. Formato carta.</p></div><button type="button" className="orders-modal-close" aria-label="Cerrar reporte" onClick={closeReport}><X /></button></header>
+            <div className="orders-preview-body">
+              {reportPreview.loading ? <p role="status" style={{ padding: '2rem' }}>Preparando reporte con todos los contratos...</p>
+                : reportPreview.error ? <div role="alert" style={{ padding: '2rem' }}><p>{reportPreview.error}</p><button type="button" className="primary-button" onClick={generateReport}>Reintentar</button></div>
+                  : <iframe ref={reportFrame} title="Reporte de disponibilidad" src={reportPreview.url} className="orders-document-frame" />}
+            </div>
+            <footer className="orders-modal-foot"><button type="button" className="ghost-button" onClick={closeReport}>Cerrar</button>
+              {reportPreview.url ? <><a className="ghost-button" href={reportPreview.url} download={reportPreview.fileName}>Descargar PDF</a><a className="ghost-button" href={reportPreview.url} target="_blank" rel="noopener noreferrer">Abrir PDF</a><button type="button" className="primary-button" onClick={() => { try { reportFrame.current?.contentWindow?.focus(); reportFrame.current?.contentWindow?.print(); } catch { window.open(reportPreview.url, '_blank', 'noopener,noreferrer'); } }}>Imprimir / guardar PDF</button></> : null}
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {selectedCommitmentRow ? (
         <div className="availability-modal-backdrop" role="presentation" onMouseDown={() => setSelectedCommitmentRow(null)}>
           <section

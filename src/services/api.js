@@ -4326,6 +4326,27 @@ export const api = {
     update: (payload) => callBridge('settings', 'update', true, payload),
   },
   reports: {
+    renderPdf: async ({ html, fileName, signal }) => {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (signal?.aborted) controller.abort();
+      signal?.addEventListener('abort', abort, { once: true });
+      const timer = setTimeout(abort, 45000);
+      try {
+        const response = await fetch(getServerStateUrl('/documents/render-pdf'), {
+          method: 'POST', cache: 'no-store', signal: controller.signal,
+          headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ html, fileName, baseUrl: window.location.origin }),
+        });
+        if (!response.ok) throw await createServerStateError(response, 'No se pudo generar el reporte.');
+        const blob = await response.blob();
+        if (blob.type !== 'application/pdf') throw new Error('El servidor no devolvió un reporte PDF válido.');
+        return blob;
+      } catch (error) {
+        if (controller.signal.aborted && !signal?.aborted) throw new Error('El reporte tardó demasiado en generarse. Vuelve a intentarlo.');
+        throw error;
+      } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
+    },
     listGenerated: async () => { await ensureServerCollectionsLoaded(['generatedReports'], 'generated-reports'); return callBridge('reports', 'listGenerated', false); },
     generate: (payload) => callBridge('reports', 'generate', true, payload),
   },
