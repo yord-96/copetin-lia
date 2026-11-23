@@ -11883,13 +11883,13 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
               <table className="orders-table orders-commercial-table orders-quotes-table">
                 <colgroup>
                   <col style={{ width: '12%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '13%' }} />
-                  <col style={{ width: '15%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '16%' }} />
                   <col style={{ width: '8%' }} />
-                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '14%' }} />
                 </colgroup>
                 <thead>
                   <tr>

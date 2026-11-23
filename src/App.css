@@ -72003,12 +72003,13 @@ button.inventory-loss-row-action:hover {
     border: 1px solid #d9e1ef;
     border-radius: 0.9rem;
     background: #ffffff;
-    overflow-x: auto;
+    overflow-x: hidden;
     box-shadow: 0 0.65rem 1.6rem rgba(20, 45, 86, 0.07);
   }
 
   .orders-view .orders-quotes-table {
-    min-width: 1120px;
+    width: 100%;
+    min-width: 0;
     border-collapse: separate;
     border-spacing: 0;
     table-layout: fixed;
@@ -72205,8 +72206,29 @@ button.inventory-loss-row-action:hover {
   }
 
   .orders-view .orders-quotes-table .orders-row-actions {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 0.34rem;
+  }
+
+  .orders-view .orders-quotes-table :is(th, td) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .orders-view .orders-quotes-table :is(.orders-cell-main, .orders-responsible-cell, .orders-responsible-cell > div, .orders-transport-cell) {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .orders-view .orders-quotes-table :is(.orders-quote-code, .orders-quote-source-badge, .orders-status-badge, .orders-open-btn) {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 
