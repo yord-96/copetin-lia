@@ -1,3 +1,4 @@
+import { getDailyGuaranteeApplications } from '../../src/utils/dailyGuaranteeApplications.js';
 import { syncContractCashCollection } from '../../src/utils/contractCashCollection.js';
 import { getContractEntryMethod } from '../../src/utils/contractEntryMethod.js';
 import { voiceCodeExists, voiceContractCode } from '../../src/utils/contractVoice.js';
@@ -7199,6 +7200,7 @@ router.get('/__copetin_db/accounting/daily-report', async (req, res, next) => {
         && row.type !== 'apertura' && row.category !== 'apertura' && row.accountingTag !== 'opening_balance' && Math.abs(Number(row.amountBs)) > 0.0001)
         .sort(compareCashLedgerOrder).map(summarizeAccountingMovement);
       payload = { date, revision: snapshot.revision, movements: rows, openingBalance: timeline.openingBalance,
+        guaranteeApplications: getDailyGuaranteeApplications(snapshot.state?.contracts, snapshot.state?.cashMovements, date),
         fundByMovementId: Object.fromEntries(rows.map(row => [String(row.id), timeline.byMovementId.get(String(row.id)) ?? null])) };
       rememberAccountingCache(accountingDailyCache,key,payload,8);
     }
