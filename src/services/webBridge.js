@@ -8991,8 +8991,7 @@ export const buildContractDocumentHtml = ({
   const customerCreditBs = Math.max(0, Number((effectiveDocumentPaidBs + Math.max(0, Number(prepaidAppliedBs ?? 0)) - printedTotalBs - pendingGuaranteeBs).toFixed(2)));
   const serviceRows = contractServices.filter(service => !hasDailySchedulePricing || resolveScheduleDayIndexForDocumentLine(service) < 0).map(renderContractServiceRow).join('');
   const realItemCount = documentItems.length + contractServices.length;
-  const usesDailySchedulePages = hasDailySchedulePricing && scheduleDaysForDocument.length > 1;
-  const usesMultipageContract = usesDailySchedulePages || realItemCount >= 15;
+  const usesMultipageContract = realItemCount >= 15;
   const manualRowCount = realItemCount <= 8 ? 0 : realItemCount <= 13 ? 1 : 2;
   const rows = `${itemRows}${serviceRows}`;
   if (documentKind === 'book' || documentKind === 'book_quote') {
@@ -9078,7 +9077,7 @@ export const buildContractDocumentHtml = ({
   const itemTablesHtml = renderContractItemsTable(rows);
 
   const observations = contract?.observations || rental?.observations || 'Sin observaciones registradas.';
-  const itemCount = realItemCount + manualRowCount;
+  const itemCount = realItemCount + manualRowCount + (hasDailySchedulePricing ? scheduleDaysForDocument.length : 0);
   // Six ordinary lines plus the payment/guarantee summaries can already push
   // the indivisible closing block onto a mostly empty second sheet.
   const densityClass = itemCount >= 5 ? 'is-dense' : '';
