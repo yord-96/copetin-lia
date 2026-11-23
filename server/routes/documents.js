@@ -11,6 +11,7 @@ import {
 } from '../storage/documentPdfRenderer.js';
 import { hasValidPublicQuoteAccess } from '../security/publicQuoteAccess.js';
 import { buildItemLoanDocumentHtml } from '../../src/utils/itemLoanDocument.js';
+import { buildContractBookWorkbook } from '../../src/utils/contractBookWorkbook.js';
 import {
   buildContractDocumentHtml,
   buildWeeklyInventoryHtml,
@@ -448,6 +449,23 @@ router.post(
     });
   },
 );
+
+router.get('/__copetin_db/contracts/:id/book.xlsx', requireInternalKey, async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    const context = resolveContractContext(snapshot?.state, String(req.params.id || '').trim());
+    if (!context?.contract) return res.status(404).json({error:'Contrato no encontrado.'});
+    if (context.contract._summaryOnly) return res.status(409).json({error:'No se dispone del contrato completo para exportar.'});
+    const report = buildContractDocumentHtml({contract:context.contract,rental:context.rental || {},deliveries:context.deliveries,
+      settings:snapshot.state?.settings || {},items:snapshot.state?.items || [],cashMovements:snapshot.state?.cashMovements || [],documentKind:'book',bookOutput:'data'});
+    const workbook = await buildContractBookWorkbook(report);
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',`attachment; filename="Reporte-para-libro-${sanitizeFilePart(report.code)}.xlsx"`);
+    res.setHeader('Cache-Control','no-store');
+    res.send(Buffer.from(buffer));
+  } catch(error) {next(error);}
+});
 
 router.get(
   '/__copetin_db/contracts/:id/pdf',

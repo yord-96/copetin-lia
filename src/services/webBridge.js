@@ -8396,6 +8396,7 @@ export const buildContractDocumentHtml = ({
   cashMovements = [],
   paperSize = 'oficio',
   documentKind = 'contract',
+  bookOutput = 'html',
 }) => {
   const isQuoteDocument = ['quote', 'book_quote'].includes(String(documentKind ?? '').trim().toLowerCase());
   const deliveryOut = deliveries[0] ?? null;
@@ -8995,14 +8996,15 @@ export const buildContractDocumentHtml = ({
   const manualRowCount = realItemCount <= 8 ? 0 : realItemCount <= 13 ? 1 : 2;
   const rows = `${itemRows}${serviceRows}`;
   if (documentKind === 'book' || documentKind === 'book_quote') {
-    return buildContractBookReport({
+    const bookData = {
       code: mainCode, customer: documentCustomerName, documentLabel: isQuoteDocument ? 'COTIZACION' : 'CONTRATO',
       eventDate: formatDocumentDate(contract?.eventDate ?? rental?.eventDate),
       address: eventAddress, guaranteeBs,
       rows: bookReportRows, subtotalBs: documentItemsSubtotalBs + servicesSubtotalBs,
       discountBs, discountPercent: contract?.totals?.discountPercent ?? rental?.totals?.discountPercent,
       deliveryFeeBs, totalBs: printedTotalBs,
-    });
+    };
+    return bookOutput === 'data' ? bookData : buildContractBookReport(bookData);
   }
   const contractTableCols = `
           <colgroup>

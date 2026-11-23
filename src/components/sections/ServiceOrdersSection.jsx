@@ -2051,6 +2051,7 @@ function ServiceOrdersSection({
   const [operationalOrder, setOperationalOrder] = useState(null);
   const [operationalDraft, setOperationalDraft] = useState({ inventoryNote: '', transportNote: '' });
   const [documentPreview, setDocumentPreview] = useState(null);
+  const [bookExporting, setBookExporting] = useState(false);
   const [isExportingOrdersReport, setIsExportingOrdersReport] = useState(false);
   const documentPreviewCacheRef = useRef(new Map());
   const documentPreviewUrlRef = useRef('');
@@ -10892,6 +10893,25 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     }
   };
 
+  const handleExportBookReport = async (orderRow) => {
+    if (bookExporting) return;
+    setBookExporting(true); setFormError('');
+    try {
+      const identifier = orderRow.contractId || orderRow.contractCode || orderRow.orderCode || orderRow.id;
+      const response = await fetch(getDocumentApiUrl(`/__copetin_db/contracts/${encodeURIComponent(identifier)}/book.xlsx`), {
+        cache:'no-store', headers:{...(DOCUMENT_INTERNAL_KEY ? {'X-App-Internal-Key':DOCUMENT_INTERNAL_KEY} : {})},
+      });
+      if (!response.ok) { const payload = await response.json().catch(()=>null); throw new Error(payload?.error || 'No se pudo exportar el reporte para libro.'); }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a'); anchor.href=url;
+      anchor.download=`Reporte-para-libro-${orderRow.contractCode || orderRow.orderCode || 'contrato'}.xlsx`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+      setActionFeedback('Reporte para libro exportado a Excel.');
+    } catch(error) {setFormError(error.message || 'No se pudo exportar el reporte para libro.');}
+    finally {setBookExporting(false);}
+  };
+
   const handlePrintOrderDocument = async (kind, orderRow, requestedPaperSize = 'oficio') => {
     const isContractPdf = kind === 'contract' || kind === 'book';
     const paperSize = kind === 'book' || requestedPaperSize === 'carta' ? 'carta' : 'oficio';
@@ -15003,8 +15023,10 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <strong>{doc.title}</strong>
                         <small>{doc.description}</small>
                       </div>
-                      <div className="orders-document-card-foot">
+                      <div className="orders-document-card-foot" style={{flexWrap:'wrap'}}>
                         <span className="orders-document-meta">{doc.kind === 'book' ? 'Carta · Resumen actualizado' : doc.generatedAt ? formatDateTime(doc.generatedAt) : 'Sin generar'}</span>
+                        <span style={{display:'flex',gap:6,marginLeft:'auto'}}>
+                        {doc.kind === 'book' ? <button type="button" className="ghost-button orders-document-open-button" title="Exportar reporte para libro a Excel" disabled={bookExporting} onClick={() => handleExportBookReport(documentsOrder)}>{bookExporting ? 'Exportando...' : 'Exportar'}</button> : null}
                         <button
                           type="button"
                           className="ghost-button orders-document-open-button"
@@ -15012,6 +15034,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         >
                           Abrir
                         </button>
+                        </span>
                       </div>
                     </article>
                   ))}

@@ -6,20 +6,7 @@ const amount = value => Number(value || 0).toLocaleString('es-BO', {
   maximumFractionDigits: 2
 });
 
-export function buildContractBookReport({
-  code,
-  documentLabel = 'CONTRATO',
-  customer,
-  eventDate,
-  address,
-  guaranteeBs,
-  rows,
-  subtotalBs,
-  discountBs,
-  discountPercent,
-  deliveryFeeBs,
-  totalBs
-}) {
+export function prepareContractBookReport({rows = [], totalBs, guaranteeBs}) {
   const compact = [];
   const combos = new Map();
 
@@ -61,6 +48,25 @@ export function buildContractBookReport({
     Number(totalBs || 0) +
     Number(replacementBs || 0) +
     Number(guaranteeBs || 0);
+
+  return {compact, replacementBs, grandTotalBs};
+}
+
+export function buildContractBookReport({
+  code,
+  documentLabel = 'CONTRATO',
+  customer,
+  eventDate,
+  address,
+  guaranteeBs,
+  rows,
+  subtotalBs,
+  discountBs,
+  discountPercent,
+  deliveryFeeBs,
+  totalBs
+}) {
+  const {compact, replacementBs, grandTotalBs} = prepareContractBookReport({rows,totalBs,guaranteeBs});
 
   const dayTotals = new Map();
   compact.forEach(row => { if (row.dayKey) dayTotals.set(row.dayKey, (dayTotals.get(row.dayKey) || 0) + Number(row.totalBs || 0)); });
@@ -116,6 +122,9 @@ export function buildContractBookReport({
   }
 
   body {
+    width: 185mm;
+    max-width: 100%;
+    margin: 0 auto;
     font-size: ${fontSize};
   }
 
