@@ -133,6 +133,8 @@ const periodFromCommercialRecord = (record) => {
   });
 };
 
+export { periodFromRental as buildRentalAvailabilityPeriod, periodFromCommercialRecord as buildCommercialAvailabilityPeriod };
+
 const normalizeLineQuantity = (line) => {
   const quantity = Math.max(0, Math.trunc(Number(line?.quantity ?? 0)));
   const explicitInternal = line?.internalReservedQty == null || line.internalReservedQty === ''

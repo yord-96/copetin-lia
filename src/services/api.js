@@ -4326,6 +4326,10 @@ export const api = {
     update: (payload) => callBridge('settings', 'update', true, payload),
   },
   reports: {
+    contractStockDay: async date => {
+      const payload = await fetchServerJson(getServerStateUrl(`/availability/contracts-report?date=${encodeURIComponent(date)}`), 'No se pudo consultar el inventario por contratos.');
+      return payload.report;
+    },
     renderPdf: async ({ html, fileName, signal }) => {
       const controller = new AbortController();
       const abort = () => controller.abort();

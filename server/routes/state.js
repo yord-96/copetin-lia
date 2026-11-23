@@ -28,6 +28,7 @@ import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { getStateMeta, getStateSnapshot, getAttendanceStateSnapshot, updateAttendanceStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { stringifyPayload } from '../storage/cooperativeJson.js';
+import { buildDailyContractStockModel } from '../../src/utils/dailyContractStockReport.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
@@ -8752,6 +8753,18 @@ const enrichInventoryMovementReference = (movement = {}, commitmentContext = {})
       : (summarized.reason ?? summarized.detail ?? ''),
   };
 };
+
+router.get('/__copetin_db/availability/contracts-report', requireInternalKey, async (req, res, next) => {
+  try {
+    const date = String(req.query.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T12:00:00Z`)) || new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date) {
+      res.status(400).json({ error: 'Selecciona una fecha válida.' });
+      return;
+    }
+    const snapshot = await getStateSnapshot();
+    res.json({ report: buildDailyContractStockModel({ ...snapshot.state, date }), revision: snapshot.revision });
+  } catch (error) { next(error); }
+});
 
 router.get('/__copetin_db/availability/overview', async (req, res, next) => {
   try {

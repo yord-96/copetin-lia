@@ -24,6 +24,7 @@ import { getComboAvailabilityRows } from '../../utils/comboAvailability';
 import ProductImage from '../common/ProductImage';
 import { api } from '../../services/api';
 import { buildAvailabilityReport } from '../../utils/availabilityReport.js';
+import { buildDailyContractStockHtml } from '../../utils/dailyContractStockReport.js';
 
 const normalizeText = (value) =>
   String(value ?? '')
@@ -188,6 +189,7 @@ function AvailabilitySection({
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(initialDate);
   const [selectedCommitmentRow, setSelectedCommitmentRow] = useState(null);
   const [reportPreview, setReportPreview] = useState(null);
+  const [contractReportDate, setContractReportDate] = useState(initialDate);
   const reportController = useRef(null);
   const reportUrl = useRef('');
   const reportFrame = useRef(null);
@@ -414,15 +416,16 @@ function AvailabilitySection({
     [resultEntries, visibleResultCount],
   );
   const hiddenResultCount = Math.max(0, resultEntries.length - visibleResultEntries.length);
-  const generateReport = async () => {
+  const generateReport = async (type = 'products') => {
     if (reportPreview?.loading || moduleLoading) return;
     const controller = new AbortController();
     reportController.current = controller;
-    const fileName = `Disponibilidad-${dateFrom}-${dateTo || dateFrom}.pdf`;
-    const title = `Disponibilidad del ${formatDate(dateFrom)} al ${formatDate(dateTo || dateFrom)}`;
-    setReportPreview({ loading: true, title, fileName });
+    const kind = type === 'contracts' ? 'contracts' : 'products';
+    const fileName = kind === 'contracts' ? `Contratos-inventario-${contractReportDate}.pdf` : `Disponibilidad-${dateFrom}-${dateTo || dateFrom}.pdf`;
+    const title = kind === 'contracts' ? `Contratos e inventario del ${formatDate(contractReportDate)}` : `Disponibilidad del ${formatDate(dateFrom)} al ${formatDate(dateTo || dateFrom)}`;
+    setReportPreview({ loading: true, title, fileName, kind });
     try {
-      const html = buildAvailabilityReport({ entries: resultEntries, dateFrom, dateTo, clients, filters: [
+      const html = kind === 'contracts' ? buildDailyContractStockHtml(await api.reports.contractStockDay(contractReportDate)) : buildAvailabilityReport({ entries: resultEntries, dateFrom, dateTo, clients, filters: [
         query && `Búsqueda: ${query}`,
         categoryFilter !== 'all' && `Categoría: ${categoryFilter}`,
         areaFilter !== 'all' && `Área: ${getInventoryAreaLabel(areaFilter)}`,
@@ -432,9 +435,9 @@ function AvailabilitySection({
       if (controller.signal.aborted) return;
       if (reportUrl.current) URL.revokeObjectURL(reportUrl.current);
       reportUrl.current = URL.createObjectURL(blob);
-      setReportPreview({ loading: false, title, fileName, url: reportUrl.current });
+      setReportPreview({ loading: false, title, fileName, kind, url: reportUrl.current });
     } catch (error) {
-      if (!controller.signal.aborted) setReportPreview({ loading: false, title, fileName, error: error.message || 'No se pudo generar el reporte.' });
+      if (!controller.signal.aborted) setReportPreview({ loading: false, title, fileName, kind, error: error.message || 'No se pudo generar el reporte.' });
     }
   };
   const selectedCommitments = useMemo(
@@ -528,6 +531,14 @@ function AvailabilitySection({
 
       {mode === 'date' ? (
         <>
+          <section className="availability-filter-card">
+            <div className="availability-filter-heading"><div><span>Reporte por contratos</span><strong>Productos y stock comprometido por contrato en un día</strong></div></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'end', gap: '0.8rem' }}>
+              <label><span>Día del reporte</span><input type="date" aria-label="Día del reporte por contratos" value={contractReportDate} onChange={event => setContractReportDate(event.target.value)} /></label>
+              <button type="button" className="primary-button" disabled={!contractReportDate || moduleLoading || reportPreview?.loading} onClick={() => generateReport('contracts')}><Printer size={17} /> Imprimir por contratos</button>
+              <small>Incluye todos los productos del día, sus cantidades propias y subalquiladoras. No aplica la búsqueda de abajo.</small>
+            </div>
+          </section>
           <section className="availability-filter-card">
             <div className="availability-filter-heading">
               <div>
@@ -791,10 +802,10 @@ function AvailabilitySection({
       {reportPreview ? (
         <div className="orders-modal-backdrop document-preview-backdrop" style={{ zIndex: 4500 }}>
           <section className="orders-modal orders-preview-modal" role="dialog" aria-modal="true" aria-labelledby="availability-report-title">
-            <header className="orders-modal-head"><div><h3 id="availability-report-title">{reportPreview.title}</h3><p>Reporte detallado de los productos y filtros seleccionados. Formato carta.</p></div><button type="button" className="orders-modal-close" aria-label="Cerrar reporte" onClick={closeReport}><X /></button></header>
+            <header className="orders-modal-head"><div><h3 id="availability-report-title">{reportPreview.title}</h3><p>{reportPreview.kind === 'contracts' ? 'Detalle por contrato: stock propio, comprometido, libre y subalquiladoras. Formato carta.' : 'Reporte detallado de los productos y filtros seleccionados. Formato carta.'}</p></div><button type="button" className="orders-modal-close" aria-label="Cerrar reporte" onClick={closeReport}><X /></button></header>
             <div className="orders-preview-body">
               {reportPreview.loading ? <p role="status" style={{ padding: '2rem' }}>Preparando reporte con todos los contratos...</p>
-                : reportPreview.error ? <div role="alert" style={{ padding: '2rem' }}><p>{reportPreview.error}</p><button type="button" className="primary-button" onClick={generateReport}>Reintentar</button></div>
+                : reportPreview.error ? <div role="alert" style={{ padding: '2rem' }}><p>{reportPreview.error}</p><button type="button" className="primary-button" onClick={() => generateReport(reportPreview.kind)}>Reintentar</button></div>
                   : <iframe ref={reportFrame} title="Reporte de disponibilidad" src={reportPreview.url} className="orders-document-frame" />}
             </div>
             <footer className="orders-modal-foot"><button type="button" className="ghost-button" onClick={closeReport}>Cerrar</button>
