@@ -6,17 +6,20 @@ const contract = (id, quantity, extra = {}) => ({ id, contractCode: id, status: 
 const item = { id: 'cojin', name: 'COJÍN MARFIL', totalStock: 600, availableStock: 0 };
 
 test('600 physical, 300 in this contract, no other reservations leaves 300; linked contract/rental is counted once', () => {
-  const c = contract('100', 300, { rentalId: 'r' });
+  const c = contract('100', 300, { rentalId: 'r', logisticsMode: 'envio', eventAddress: 'SALÓN <CENTRO>', city: 'Cochabamba' });
   const input = { date: '2026-11-24', items: [item], contracts: [c, contract('future', 600, { eventDate: '2026-12-12', pickupDate: '2026-12-13' })], rentals: [{ ...c, id: 'r', contractId: c.id, status: 'active' }] };
   const before = JSON.stringify(input);
   const model = buildDailyContractStockModel(input);
   assert.equal(model.groups.length, 1);
   assert.deepEqual(model.groups[0].rows.map(row => [row.stock, row.own, row.other, row.free]), [[600, 300, 0, 300]]);
   assert.equal(JSON.stringify(input), before);
+  const html = buildDailyContractStockHtml(model);
+  assert.match(html, /Ubicación:<\/strong> SALÓN &lt;CENTRO&gt; · Cochabamba/);
+  assert.match(html, /Tipo de entrega:<\/strong> Envío por el equipo/);
 });
 
 test('other contracts reduce the true daily free balance; external coverage never increases own stock', () => {
-  const c = contract('100', 400, { supplierFulfillmentPlan: [{ itemId: 'cojin', lineKey: 'line-100', neededQty: 100, supplierName: 'ALQUILADORA <CENTRO>' }] });
+  const c = contract('100', 400, { logisticsMode: 'recojo', supplierFulfillmentPlan: [{ itemId: 'cojin', lineKey: 'line-100', neededQty: 100, supplierName: 'ALQUILADORA <CENTRO>' }] });
   const model = buildDailyContractStockModel({ date: '2026-11-24', items: [item], contracts: [c, contract('200', 100), contract('deleted', 500, { deletedAt: '2026-11-23' }), contract('cancelled', 500, { status: 'cancelled' })] });
   assert.equal(model.groups.length, 2);
   const row = model.groups[0].rows[0];
@@ -30,6 +33,7 @@ test('other contracts reduce the true daily free balance; external coverage neve
   assert.match(html, /ALQUILADORA &lt;CENTRO&gt;/);
   assert.match(html, /Origen propio/);
   assert.match(html, /Otros contratos/);
+  assert.match(html, /Tipo de entrega:<\/strong> Recojo por el cliente/);
 });
 
 test('supplier-only products are included, and each scheduled day keeps its own quantities', () => {
