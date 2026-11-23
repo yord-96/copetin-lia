@@ -1,3 +1,4 @@
+import { isGuaranteeDamageApplication } from '../utils/dailyGuaranteeApplications.js';
 import { syncContractCashCollection } from '../utils/contractCashCollection.js';
 import { buildContractBookReport } from '../utils/contractBookReport.js';
 import { contractDocumentMovement } from '../utils/contractDocumentMovement.js';
@@ -8470,9 +8471,16 @@ export const buildContractDocumentHtml = ({
       )
     ))
     .reduce((sum, entry) => sum + Math.max(0, Number(entry?.documentContractAllocationBs ?? entry?.amountBs ?? entry?.amount ?? 0)), 0);
-  const ledgerChargeCoverageBs = activeEconomicLedger
-    .filter((entry) => entry?.type === 'charge')
-    .reduce((sum, entry) => sum + Math.max(0, Number(entry?.amountBs ?? entry?.amount ?? 0)), 0);
+  const damageCoverageByOperation = new Map();
+  activeEconomicLedger.forEach(entry => {
+    const internal = isGuaranteeDamageApplication(entry);
+    const cashConfirmed = Boolean(entry.cashMovementId || entry.isCashRegistered);
+    const collected = entry.type === 'charge' && entry.cashCollectionTarget === 'damage' && cashConfirmed;
+    const amount = internal || collected ? Number(entry.amountBs || 0) : cashConfirmed ? Number(entry.damageAllocationBs || 0) : 0;
+    const key = String(entry.cashMovementId || entry.id);
+    damageCoverageByOperation.set(key, Math.max(damageCoverageByOperation.get(key) || 0, amount));
+  });
+  const ledgerChargeCoverageBs = [...damageCoverageByOperation.values()].reduce((sum, amount) => sum + amount, 0);
   const getReturnIssueChargeBs = (issue) => {
     const damagedQty = Math.max(0, Math.trunc(Number(issue?.damagedQty ?? 0)));
     const missingQty = Math.max(0, Math.trunc(Number(issue?.missingQty ?? 0)));
@@ -9153,7 +9161,7 @@ export const buildContractDocumentHtml = ({
     0,
     printedTotalBs - effectiveDocumentPaidBs - Math.max(0, Number(prepaidAppliedBs ?? 0)),
   );
-  const economicPendingBs = Math.max(
+  const storedAdjustedPendingBs = Math.max(
     0,
     Number((
       storedSettlementPendingBs
@@ -9161,20 +9169,25 @@ export const buildContractDocumentHtml = ({
       - storedSettlementCommercialBs
     ).toFixed(2)),
   );
-  const economicPendingItemsBs = Math.max(
-    0,
-    Math.min(
-      economicPendingBs,
-      currentCommercialPendingBs,
-    ),
-  );
-  const economicPendingDamageBs = Math.max(
-    0,
-    Math.min(
-      economicTotalsForDocument.chargesBs,
-      economicPendingBs - economicPendingItemsBs,
-    ),
-  );
+  // A return snapshot can predate the later application of a guarantee.
+  // Reconcile its damage balance against confirmed coverage without creating
+  // a new payment or subtracting the same guarantee twice.
+  const storedDamageCoverageBs = Math.max(0, Number(rental?.returnSettlement?.discountCoveredByDepositBs || 0)
+    - Number(rental?.returnSettlement?.outstandingRentalBs || 0)) + Math.max(0,
+      Number(rental?.returnSettlement?.damageCollectedBs || 0), Number(rental?.returnSettlement?.penaltiesCollectedBs || 0),
+      Number(rental?.payment?.damageCollectedBs || 0), Number(rental?.totals?.damageCollectedBs || 0));
+  const explicitIssueCoverageBs = returnIssues.reduce((sum, issue) => {
+    if (String(issue?.chargeOwner || 'cliente').toLowerCase() !== 'cliente') return sum;
+    const penalty = getReturnIssueChargeBs(issue);
+    const explicit = Math.max(0, Number(issue.appliedToGuaranteeBs || 0), Number(issue.guaranteeAppliedBs || 0), Number(issue.paidBs || 0), Number(issue.collectedBs || 0));
+    return sum + (isReturnIssueSettled(issue) ? penalty : Math.min(penalty, explicit));
+  }, 0);
+  const damageStillDueBs = Math.max(0, economicTotalsForDocument.chargesBs - Math.max(ledgerChargeCoverageBs, storedDamageCoverageBs, explicitIssueCoverageBs));
+  const storedDamagePendingBs = Math.max(0, storedAdjustedPendingBs - currentCommercialPendingBs);
+  const economicPendingItemsBs = currentCommercialPendingBs;
+  const economicPendingDamageBs = Math.max(0, Number((rental?.returnSettlement?.pendingCollectionBs == null
+    ? damageStillDueBs : Math.min(storedDamagePendingBs, damageStillDueBs)).toFixed(2)));
+  const economicPendingBs = Number((economicPendingItemsBs + economicPendingDamageBs).toFixed(2));
   const guaranteePaidBs = Math.max(0, Number((Number(guaranteeBs ?? 0) - pendingGuaranteeBs).toFixed(2)));
   const totalPendingNowBs = Math.max(
     0,
@@ -9207,7 +9220,8 @@ export const buildContractDocumentHtml = ({
     if (receiptCode) return receiptCode;
     if (entry?.type === 'guarantee') return 'DINERO SEPARADO';
     if (entry?.type === 'refund') return 'DEVUELTO';
-    if (entry?.type === 'charge' && !entry?.isCashRegistered) return 'APLICADO A GARANTIA';
+    if (isGuaranteeDamageApplication(entry)) return 'APLICADO A GARANTIA';
+    if (entry?.type === 'charge' && !entry?.isCashRegistered && !entry?.cashMovementId) return 'PENDIENTE';
     if (entry?.isCashRegistered) return 'COBRADO EN CAJA';
     return entry?.type === 'note' ? 'INFORMATIVO' : 'ANOTADO';
   };

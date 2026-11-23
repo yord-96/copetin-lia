@@ -3,6 +3,16 @@ import { getCashBusinessDate, getCashEffectiveDate } from './cashLedgerOrder.js'
 const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const active = row => !row.deletedAt && !row.voidedAt && row.receiptStatus !== 'anulado';
 
+export const isInternalGuaranteeApplication = entry => {
+  if (!active(entry) || entry.cashMovementId || entry.isCashRegistered || entry.cashCollectionTarget || !Number.isFinite(Number(entry.amountBs)) || Number(entry.amountBs) <= 0) return false;
+  const note = normalize(entry.note);
+  return entry.type === 'guarantee_apply'
+    || (entry.type === 'charge' && /garantia/.test(note) && /aplicad|aplicacion/.test(note));
+};
+
+export const isGuaranteeDamageApplication = entry => isInternalGuaranteeApplication(entry)
+  && (entry.type === 'charge' || ['damage', 'penalties'].includes(entry.applicationTarget) || /dano|faltante/.test(normalize(entry.note)));
+
 // Informational economic entries only. Never insert these into cashMovements,
 // cash totals or bank/physical-fund timelines: that money was received earlier.
 export function getDailyGuaranteeApplications(contracts = [], movements = [], date) {
@@ -11,11 +21,7 @@ export function getDailyGuaranteeApplications(contracts = [], movements = [], da
   return contracts.filter(active).flatMap(contract => {
     const ledger = (contract.economicLedger || []).filter(active);
     return ledger.filter(entry => {
-      if (entry.cashMovementId || entry.isCashRegistered || entry.cashCollectionTarget || !Number.isFinite(Number(entry.amountBs)) || Number(entry.amountBs) <= 0) return false;
-      const note = normalize(entry.note);
-      const applied = entry.type === 'guarantee_apply'
-        || (entry.type === 'charge' && /garantia/.test(note) && /aplicad|aplicacion/.test(note));
-      return applied && getCashBusinessDate(entry.receiptIssuedAt || entry.createdAt) === date;
+      return isInternalGuaranteeApplication(entry) && getCashBusinessDate(entry.receiptIssuedAt || entry.createdAt) === date;
     }).flatMap(entry => {
       const key = `${contract.id}:${entry.id}`;
       if (seen.has(key)) return [];
