@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { preserveCashLedgerOrder } from '../../src/utils/cashLedgerOrder.js';
 import { assertIndependentCashMovement } from '../../src/utils/pettyCashFund.js';
+import { cloneState, serializeState } from './cooperativeJson.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..', '..');
@@ -40,13 +41,6 @@ const protectedBusinessCollections = [
 ];
 
 const destructiveResetActions = new Set(['database_import', 'execute']);
-
-const checksumForState = (state) =>
-  crypto
-    .createHash('sha256')
-    .update(JSON.stringify(state ?? null))
-    .digest('hex')
-    .slice(0, 16);
 
 const revisionForPayload = (payload) =>
   payload?.state
@@ -98,7 +92,7 @@ const sleep = (milliseconds) => new Promise((resolve) => {
   setTimeout(resolve, milliseconds);
 });
 
-const replaceFileWithRetry = async (temporaryPath, serialized) => {
+const replaceFileWithRetry = async (temporaryPath) => {
   if (process.platform === 'win32') {
     const backupPath = `${stateFilePath}.write-backup`;
     let hasBackup = false;
@@ -114,7 +108,7 @@ const replaceFileWithRetry = async (temporaryPath, serialized) => {
 
       // Windows puede rechazar rename() cuando el destino existe o es inspeccionado
       // temporalmente por antivirus/indexadores. La escritura directa evita ese bloqueo.
-      await fs.writeFile(stateFilePath, serialized, 'utf8');
+      await fs.copyFile(temporaryPath, stateFilePath);
       await fs.rm(temporaryPath, { force: true });
       await fs.rm(backupPath, { force: true });
       return;
@@ -153,11 +147,21 @@ const writeJsonFile = async (payload) => {
   );
 
   try {
-    const serialized = JSON.stringify(payload, null, 2);
-    await fs.writeFile(temporaryPath, serialized, 'utf8');
-    await replaceFileWithRetry(temporaryPath, serialized);
+    const hash = crypto.createHash('sha256');
+    async function* serializedPayload() {
+      yield '{"state":';
+      for await (const chunk of serializeState(payload.state)) {
+        hash.update(chunk);
+        yield chunk;
+      }
+      payload.checksum = hash.digest('hex').slice(0, 16);
+      yield `,"version":${JSON.stringify(payload.version)},"checksum":${JSON.stringify(payload.checksum)},"updatedAt":${JSON.stringify(payload.updatedAt)}}`;
+    }
+    await fs.writeFile(temporaryPath, serializedPayload(), 'utf8');
+    await replaceFileWithRetry(temporaryPath);
     cachedPayload = payload;
     cachedFileSignature = await getFileSignature();
+    return payload.checksum;
   } catch (error) {
     console.error('[state-store] No se pudo escribir el estado del sistema.', {
       stateFilePath,
@@ -454,9 +458,8 @@ const flushAttendanceJobs = async () => {
       }
       const state = { ...current.state, attendanceRecords: records };
       const version = Number(current.version ?? 0) + 1;
-      const checksum = checksumForState(state);
       const updatedAt = new Date().toISOString();
-      await writeJsonFile({ state, version, checksum, updatedAt });
+      const checksum = await writeJsonFile({ state, version, updatedAt });
       return { initialized: true, revision: version + ':' + checksum, version, updatedAt };
     });
     accepted.forEach(job => job.resolve(result));
@@ -488,13 +491,11 @@ export const replaceStateSnapshot = async (state, expectedRevision) => {
     assertSafeStateTransition(current?.state, safeState);
 
     const version = Number(current?.version ?? 0) + 1;
-    const checksum = checksumForState(safeState);
     const updatedAt = new Date().toISOString();
 
-    await writeJsonFile({
+    const checksum = await writeJsonFile({
       state: safeState,
       version,
-      checksum,
       updatedAt,
     });
 
@@ -507,7 +508,9 @@ export const replaceStateSnapshot = async (state, expectedRevision) => {
   });
 };
 
-export const updateStateSnapshot = async (updater, expectedRevision = undefined) => {
+// A scoped updater must only mutate the named collections; all other routes
+// retain a fully isolated draft. Patch requests replace rows, never edit them.
+export const updateStateSnapshot = async (updater, expectedRevision = undefined, { cloneCollections = null } = {}) => {
   if (typeof updater !== 'function') {
     throw new Error('Debes enviar una funcion de actualizacion.');
   }
@@ -537,7 +540,7 @@ export const updateStateSnapshot = async (updater, expectedRevision = undefined)
       };
     }
 
-    const nextState = await updater(cloneJson(current.state));
+    const nextState = await updater(await cloneState(current.state, cloneCollections));
     if (!nextState || typeof nextState !== 'object' || Array.isArray(nextState)) {
       return {
         ok: true,
@@ -553,13 +556,11 @@ export const updateStateSnapshot = async (updater, expectedRevision = undefined)
     assertSafeStateTransition(current.state, safeState);
 
     const version = Number(current?.version ?? 0) + 1;
-    const checksum = checksumForState(safeState);
     const updatedAt = new Date().toISOString();
 
-    await writeJsonFile({
+    const checksum = await writeJsonFile({
       state: safeState,
       version,
-      checksum,
       updatedAt,
     });
 

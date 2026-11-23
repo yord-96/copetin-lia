@@ -1,3 +1,4 @@
+import { updateDraftEventDate } from '../../utils/draftEventDate.js';
 import { findScheduleDayForLine, updateDraftScheduleDay } from '../../utils/scheduleDayAssignment.js';
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
@@ -6733,20 +6734,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   };
 
   const setDraftEventDate = (value) => {
-    setDraft((current) => {
-      const nextDraft = {
-        ...current,
-        eventDate: value,
-        deliveryDate: value || current.deliveryDate,
-        pickupDate: !current.pickupDate || (value && current.pickupDate < value) ? value : current.pickupDate,
-      };
-
-      if (current.entityType !== 'contract') {
-        nextDraft.validUntil = !current.validUntil || (value && current.validUntil < value) ? value : current.validUntil;
-      }
-
-      return nextDraft;
-    });
+    setDraft((current) => updateDraftEventDate(current, value));
   };
 
   const clearClientFields = () => {
@@ -16076,6 +16064,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
 
                 {mode === 'date' ? (
                   <>
+                    <p><strong>Período consultado:</strong> {formatDate(draftAvailabilityPeriod.startDate)} {draftAvailabilityPeriod.startTime} hasta {formatDate(draftAvailabilityPeriod.endDate)} {draftAvailabilityPeriod.endTime}. Incluye el día de recojo.</p>
                     <div className="orders-availability-formula">
                       <span><small>Stock físico</small><strong>{totalStock}</strong></span>
                       <b>−</b>
@@ -16687,6 +16676,14 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                           <input type="date" value={draft.eventDate} onChange={(event) => setDraftEventDate(event.target.value)} />
                         </span>
                       </label>
+                      <label className="orders-icon-field calendar">
+                        Fecha de recojo (fin de reserva)
+                        <span>
+                          <i aria-hidden="true"><CalendarDays /></i>
+                          <input type="date" aria-label="Fecha de recojo para disponibilidad" min={draft.eventDate || undefined} value={draft.pickupDateMode === 'coordinate' ? draft.eventDate : draft.pickupDate} disabled={draft.pickupDateMode === 'coordinate'} onChange={(event) => setDraftField('pickupDate', event.target.value)} />
+                        </span>
+                        <small>{draft.pickupDateMode === 'coordinate' ? 'Por coordinar: se consulta el día del evento.' : 'La disponibilidad incluye hasta este día.'}</small>
+                      </label>
                       <label className="orders-icon-field time">
                         Hora evento *
                         <span>
@@ -17048,7 +17045,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                         <CalendarDays className="orders-availability-icon" aria-hidden="true" />
                         <span>Evento objetivo</span>
                         <strong>{formatDate(draft.eventDate)} {draft.eventTime || ''}</strong>
-                        <small>Disponibilidad calculada para esta fecha.</small>
+                        <small>Disponibilidad: {formatDate(draftAvailabilityPeriod.startDate)} al {formatDate(draftAvailabilityPeriod.endDate)} (incluye recojo).</small>
                       </article>
                       <article className="returns">
                         <RefreshCw className="orders-availability-icon" aria-hidden="true" />

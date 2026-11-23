@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { getStateMeta, getStateSnapshot, getAttendanceStateSnapshot, updateAttendanceStateSnapshot, replaceStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
+import { stringifyPayload } from '../storage/cooperativeJson.js';
 import { heartbeatPresence, leavePresence, listPresence } from '../storage/presenceStore.js';
 import { clearUpdateNotice, getUpdateNotice, publishUpdateNotice } from '../storage/updateNoticeStore.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
@@ -394,7 +395,7 @@ const sendJsonPayload = async (req, res, payload) => {
   let body = cacheEntry?.body;
 
   if (!body) {
-    body = JSON.stringify(payload);
+    body = await stringifyPayload(payload);
     const bodyBytes = Buffer.byteLength(body);
 
     // Los payloads grandes se usan solo durante esta respuesta. No deben quedar
@@ -6789,7 +6790,9 @@ router.post('/__copetin_db/patch', async (req, res, next) => {
       }
 
       return nextState;
-    }, req.body.revision);
+    }, req.body.revision, {
+      cloneCollections: [...new Set([...Object.keys(upserts), ...Object.keys(deletes), ...(settings ? ['settings'] : [])])],
+    });
 
     if (!result.initialized) {
       res.status(404).json({ error: 'La base de datos aun no esta inicializada.' });
