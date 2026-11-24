@@ -6,6 +6,20 @@ import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary
 const contract = { id: 'contract-1', rentalId: 'rental-1', contractCode: '2026', orderCode: 'OS-001', totals: { guaranteeBs: 200 }, economicLedger: [] };
 const receipt = (id, fields = {}) => ({ id, type: 'ingreso_alquiler', cashBoxType: 'BIG_CASH', amountBs: 100, receiptCode: `REC-${id}`, collectionTarget: 'balance', ...fields });
 
+test('ledger evidence retains active foreign receipts and duplicate voided receipt codes in original order', () => {
+  const item = { ...contract, economicLedger: [{ id: 'deposit', type: 'deposit', amountBs: 100,
+    cashMovementId: 'active', cashReceiptCode: 'RC-legacy', isCashRegistered: true }] };
+  const rows = [receipt('voided', { contractId: 'other', receiptCode: 'RC-legacy', voidedAt: '2026-10-06' }),
+    receipt('active', { contractId: item.id, receiptCode: 'RC-legacy' }),
+    receipt('foreign', { contractId: 'other', receiptCode: 'RC-foreign' })];
+  const candidates = createOrdersCashIndex(rows)(item);
+  assert.deepEqual(candidates.map(row => row.id), ['voided', 'active']);
+  assert.deepEqual(getOrdersContractCashEconomicSummary(item, candidates), getOrdersContractCashEconomicSummary(item, rows));
+  item.economicLedger[0].cashReceiptCode = 'RC-foreign';
+  assert.deepEqual(createOrdersCashIndex(rows)(item).map(row => row.id), ['active', 'foreign']);
+  assert.deepEqual(getOrdersContractCashEconomicSummary(item, createOrdersCashIndex(rows)(item)), getOrdersContractCashEconomicSummary(item, rows));
+});
+
 test('partial guarantee receipt does not inflate to the declared amount and refunds leave the real remainder',()=>{
   const partial={...contract,totals:{guaranteeBs:480},guarantee:{amountBs:480,status:'validado',validatedBs:480},economicLedger:[{id:'g',type:'deposit',amountBs:400,guaranteeAllocationBs:400,isCashRegistered:true}]};
   const summary=getOrdersGuaranteeEconomicSummary(partial,[],{guaranteePaidBs:400});

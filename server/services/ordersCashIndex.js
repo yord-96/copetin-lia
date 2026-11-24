@@ -9,11 +9,18 @@ export function createOrdersCashIndex(movements = []) {
   const rows = Array.isArray(movements) ? movements : [];
   const byReference = new Map();
   const legacy = [];
-  const archivedById = new Map();
+  const byId = new Map();
+  const byReceipt = new Map();
+  const remember = (map, key, position) => {
+    if (!key) return;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(position);
+  };
   rows.forEach((row, position) => {
     if (!row) return;
+    remember(byId, String(row.id ?? ''), position);
+    remember(byReceipt, String(row.receiptCode ?? ''), position);
     if (row.deletedAt || row.voidedAt || ['anulado', 'eliminado'].includes(row.receiptStatus)) {
-      archivedById.set(String(row.id), position);
       return;
     }
     const keys = new Set(movementFields.map((field) => reference(row[field])).filter(Boolean));
@@ -31,10 +38,12 @@ export function createOrdersCashIndex(movements = []) {
   });
   return (contract) => {
     const positions = new Set(legacy);
-    // Reconciliation needs evidence that a ledger's receipt was voided, too.
+    // Ledger evidence can refer to a receipt whose structured contract link is
+    // absent or different. Keep all code matches (legacy codes are not unique),
+    // including voided originals, in the same order as the complete ledger.
     for (const entry of contract.economicLedger ?? []) {
-      const archived = archivedById.get(String(entry.cashMovementId ?? ''));
-      if (archived !== undefined) positions.add(archived);
+      for (const position of byId.get(String(entry.cashMovementId ?? '')) ?? []) positions.add(position);
+      for (const position of byReceipt.get(String(entry.cashReceiptCode ?? '')) ?? []) positions.add(position);
     }
     for (const field of contractFields) {
       const key = reference(contract?.[field]);

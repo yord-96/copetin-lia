@@ -191,10 +191,18 @@ const isGuaranteeRefundMovement = (movement = {}) => {
     || values.includes('egreso_devolucion_garantia_manual');
 };
 
-const summarizeBootstrapCollection = (name, rows, fullState = null) => {
+const summarizeBootstrapCollection = async (name, rows, fullState = null) => {
   if (name === 'contracts') {
-    const cashMovements = Array.isArray(fullState?.cashMovements) ? fullState.cashMovements : [];
-    return rows.map((contract) => summarizeOrdersContract(contract, cashMovements));
+    // Bootstrap runs on revision changes in every module, including inventory.
+    // Passing the complete cash ledger to each contract blocked the event loop
+    // for almost a minute with 2,366 contracts and 4,608 cash movements.
+    const cashForContract = createOrdersCashIndex(fullState?.cashMovements);
+    const summaries = [];
+    for (const [position, contract] of rows.entries()) {
+      summaries.push(summarizeOrdersContract(contract, cashForContract(contract)));
+      if ((position + 1) % 50 === 0) await yieldToRequests();
+    }
+    return summaries;
   }
   if (name === 'rentals') return rows.map(summarizeRental);
   return rows;
@@ -10881,10 +10889,10 @@ router.get('/__copetin_db', async (req, res, next) => {
       deferredBootstrapCollections.forEach((collection) => {
         delete state[collection];
       });
-      summarizedBootstrapCollections.forEach((collection) => {
+      for (const collection of summarizedBootstrapCollections) {
         const rows = Array.isArray(snapshot.state[collection]) ? snapshot.state[collection] : [];
-        state[collection] = summarizeBootstrapCollection(collection, rows, snapshot.state);
-      });
+        state[collection] = await summarizeBootstrapCollection(collection, rows, snapshot.state);
+      }
       await sendJsonPayload(req, res, {
         ...snapshot,
         state,
