@@ -75957,6 +75957,7 @@ body:has(.bigcash-report-backdrop) {
 .inventory-view-adjust .adjustments-table-modern td:nth-child(9) { white-space: normal; overflow-wrap: anywhere; }
 /* Estado de cuenta y conciliación VIP. */
 .vip-account-workspace { min-width: 0; margin: 18px 0; color: #eef4ff; }
+.vip-account-workspace h3, .vip-contract-table td { color: #eef4ff; }
 .vip-account-toolbar, .vip-action-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
 .vip-account-toolbar h3 { margin: 0 0 7px; }
 .vip-account-toolbar p, .vip-range-note { color: #a9bbce; font-size: 13px; line-height: 1.5; }
