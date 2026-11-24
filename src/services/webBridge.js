@@ -577,8 +577,8 @@ const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
   return movements
     .map((movement) => {
       const amountBs = toPositiveRoundedNumber(movement?.amountBs ?? 0);
-      const type = movement?.type === 'charge' ? 'charge' : 'deposit';
-      const signedAmountBs = type === 'charge' ? -Math.abs(amountBs) : Math.abs(amountBs);
+      const type = ['charge', 'adjustment'].includes(movement?.type) ? movement.type : 'deposit';
+      const signedAmountBs = type === 'adjustment' ? Number(movement.amountBs || 0) : type === 'charge' ? -Math.abs(amountBs) : Math.abs(amountBs);
       runningBalance = Number((runningBalance + signedAmountBs).toFixed(2));
 
       return {
@@ -591,6 +591,10 @@ const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
         orderCode: String(movement?.orderCode ?? '').trim() || null,
         balanceAfterBs: Number(Number(movement?.balanceAfterBs ?? runningBalance ?? fallbackBalance).toFixed(2)),
         nonPhysical: Boolean(movement?.nonPhysical),
+        ...(movement.serviceBs !== undefined ? { serviceBs: Number(movement.serviceBs) } : {}),
+        ...(movement.damageBs !== undefined ? { damageBs: Number(movement.damageBs) } : {}),
+        reference: movement.reference ?? '',
+        registeredAt: movement.registeredAt ?? null,
         paymentMethod: String(movement?.paymentMethod ?? '').trim().toLowerCase(),
         paymentAccount: String(movement?.paymentAccount ?? '').trim().toUpperCase(),
         createdBy: String(movement?.createdBy ?? '').trim(),
@@ -1822,6 +1826,12 @@ const normalizeState = (state) => {
       prepaidTotalDepositedBs: Math.max(0, toPositiveRoundedNumber(client?.prepaidTotalDepositedBs ?? prepaidMovements.filter((entry) => entry.amountBs > 0).reduce((sum, entry) => sum + entry.amountBs, 0))),
       prepaidTotalUsedBs: Math.max(0, toPositiveRoundedNumber(client?.prepaidTotalUsedBs ?? Math.abs(prepaidMovements.filter((entry) => entry.amountBs < 0).reduce((sum, entry) => sum + entry.amountBs, 0)))),
       prepaidMovements,
+      mergedIntoClientId: client?.mergedIntoClientId ?? null,
+      mergedClientIds: client?.mergedClientIds ?? [],
+      mergedClients: client?.mergedClients ?? [],
+      mergedAt: client?.mergedAt ?? null,
+      deletedAt: client?.deletedAt ?? null,
+      vipOperations: client?.vipOperations ?? [],
       deliveryAddresses: Array.isArray(client?.deliveryAddresses)
         ? client.deliveryAddresses
           .map((entry) => ({
@@ -2835,6 +2845,7 @@ const normalizeState = (state) => {
           ? deepClone(contract.supplierPlanRemovalApproval)
           : null,
         economicLedger: normalizedEconomicLedger,
+        vipSettlements: contract?.vipSettlements ?? [],
         economicLedgerUpdatedAt: contract?.economicLedgerUpdatedAt ?? null,
         economicResetAt: contract?.economicResetAt ?? null,
         economicResetVersion: Number(contract?.economicResetVersion ?? 0),

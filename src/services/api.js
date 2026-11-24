@@ -4753,6 +4753,24 @@ export const api = {
       if (!shouldUseServerState()) return { ok: true, repaired: 0, repairs: [] };
       return callDirectCashOperation('/accounting/vip-prepaid/repair', {});
     },
+    getVipWorkspace: async (clientId, signal) => {
+      if (!shouldUseServerState()) throw new Error('La conciliación VIP requiere conexión con el servidor.');
+      return fetchServerJson(getServerStateUrl('/accounting/vip-prepaid/workspace?' + new URLSearchParams({ clientId })), 'No se pudo cargar la cuenta VIP.', { signal, headers: getInternalHeaders(), cache: 'no-store' });
+    },
+    previewVipMerge: async (payload) => {
+      const response = await fetch(getServerStateUrl('/accounting/vip-prepaid/merge-preview'), { method: 'POST', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
+      if (!response.ok) throw await createServerStateError(response, 'No se pudo preparar la unificación.');
+      return response.json();
+    },
+    manageVipAccount: async (payload) => {
+      if (!shouldUseServerState()) throw new Error('La conciliación VIP requiere conexión con el servidor.');
+      const result = await callDirectCashOperation('/accounting/vip-prepaid/manage', payload);
+      markServerStateStale('vip-reconciliation');
+      ['clients', 'contracts', 'rentals', 'quotes', 'cashMovements', 'legacyContracts'].forEach(name => loadedServerCollections.delete(name));
+      announceDataChange({ domain: 'cash', method: 'vipReconciliation', collections: ['clients', 'contracts', 'rentals'] });
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('copetin:vip-prepaid-updated', { detail: result }));
+      return result;
+    },
     createDebt: (payload) => callBridge('cash', 'createDebt', true, payload),
     payDebt: (payload) => callBridge('cash', 'payDebt', true, payload),
     deleteDebt: (payload) => callBridge('cash', 'deleteDebt', true, payload),

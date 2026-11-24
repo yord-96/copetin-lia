@@ -1,4 +1,5 @@
 import DailyGuaranteeApplications from '../DailyGuaranteeApplications.jsx';
+import VipAccountWorkspace from './VipAccountWorkspace.jsx';
 import { getDailyGuaranteeApplications } from '../../utils/dailyGuaranteeApplications.js';
 import DigitalCashTable from '../DigitalCashTable.jsx';
 import { buildDigitalBankLedger } from '../../utils/digitalBankLedger.js';
@@ -1090,7 +1091,7 @@ function AccountingSection({
 
   const prepaidClientRows = useMemo(
     () => clients
-      .filter((client) => Boolean(client?.prepaidEnabled))
+      .filter((client) => Boolean(client?.prepaidEnabled) && !client?.deletedAt && !client?.mergedIntoClientId)
       .map((client) => {
         const movements = Array.isArray(client?.prepaidMovements) ? client.prepaidMovements : [];
         const lastMovement = movements
@@ -1152,7 +1153,7 @@ function AccountingSection({
       if (row.amountBs >= 0) return;
       const rentalId = String(row?.rental?.id ?? row?.movement?.sourceId ?? '').trim();
       if (!rentalId) return;
-      map.set(rentalId, Number(((map.get(rentalId) ?? 0) + Math.abs(toNumber(row.amountBs))).toFixed(2)));
+      map.set(rentalId, Number(((map.get(rentalId) ?? 0) + toNumber(row.movement?.serviceBs ?? Math.abs(toNumber(row.amountBs)))).toFixed(2)));
     });
     return map;
   }, [prepaidLedgerRows]);
@@ -7354,9 +7355,12 @@ function AccountingSection({
           {renderBigCashWorkspaceSearch('Buscar cliente VIP, contrato o movimiento...', 'prepaid', 'Fecha del movimiento')}
           <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap', margin: '0 0 14px' }}>
             <label style={{ minWidth: 280, display: 'grid', gap: 5 }}><small>Cliente para estado de cuenta</small><select value={vipReportClientId || prepaidClientRows[0]?.id || ''} onChange={(event) => setVipReportClientId(event.target.value)}>{prepaidClientRows.map((row) => <option key={row.id} value={row.id}>{row.name} · {formatBs(row.balanceBs)}</option>)}</select></label>
-            <button type="button" className="ghost-button" onClick={() => setShowVipReport(true)} disabled={!prepaidClientRows.length}>Generar reporte</button>
-            <button type="button" className="ghost-button" onClick={exportVipReportWorkbook} disabled={!prepaidClientRows.length || isExportingVipReport}>{isExportingVipReport ? 'Generando Excel...' : 'Exportar a Excel'}</button>
+            <button type="button" className="ghost-button" onClick={() => setShowVipReport(true)} disabled={!prepaidClientRows.length}>Reporte de movimientos</button>
+            <button type="button" className="ghost-button" onClick={exportVipReportWorkbook} disabled={!prepaidClientRows.length || isExportingVipReport}>{isExportingVipReport ? 'Generando Excel...' : 'Excel de movimientos'}</button>
           </div>
+          <VipAccountWorkspace clientId={selectedVipReportClient?.id || ''} enabled={bigCashWorkspaceTab === 'prepaid'} currentUser={currentUser} />
+          <details className="vip-account-history">
+          <summary>Historial general de movimientos VIP</summary>
           <div className="bigcash-table-wrap bigcash-vip-table-wrap">
             <table className="accounting-table bigcash-table bigcash-vip-table">
               <thead>
@@ -7404,6 +7408,7 @@ function AccountingSection({
               </tbody>
             </table>
           </div>
+          </details>
         </section>
 
         <section className="bigcash-workspace-stack">

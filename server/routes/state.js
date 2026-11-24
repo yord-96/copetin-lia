@@ -1,4 +1,5 @@
 import { getDailyGuaranteeApplications } from '../../src/utils/dailyGuaranteeApplications.js';
+import vipPrepaidRouter from './vipPrepaid.js';
 import { syncContractCashCollection } from '../../src/utils/contractCashCollection.js';
 import { getContractEntryMethod } from '../../src/utils/contractEntryMethod.js';
 import { voiceCodeExists, voiceContractCode } from '../../src/utils/contractVoice.js';
@@ -617,6 +618,7 @@ const readRawRequestBody = async (req, maxBytes = MAX_CHUNKED_STATE_BYTES) => {
 };
 
 router.use('/__copetin_db', requireInternalKey);
+router.use('/__copetin_db/accounting/vip-prepaid', vipPrepaidRouter);
 
 router.post('/__copetin_db/database/export', async (req, res, next) => {
   try {
@@ -1839,7 +1841,7 @@ const reconcileVipPrepaidRental = (state, rental, contract = null) => {
       String(movement?.sourceId ?? '') === String(rental.id)
       || (movement?.orderCode && String(movement.orderCode) === String(rental?.orderCode ?? ''))
     ));
-  const prepaidChargedBs = directMoney(charges.reduce((sum, movement) => sum + Math.abs(Number(movement?.amountBs ?? 0)), 0));
+  const prepaidChargedBs = directMoney(charges.reduce((sum, movement) => sum + Number(movement?.serviceBs ?? Math.abs(Number(movement?.amountBs ?? 0))), 0));
   if (prepaidChargedBs <= 0) return null;
 
   const storedPrepaidBs = directMoney(Math.max(
