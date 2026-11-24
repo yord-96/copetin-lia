@@ -72216,6 +72216,7 @@ button.inventory-loss-row-action:hover {
 
   .orders-view .orders-quotes-table :is(th, td) {
     min-width: 0;
+    white-space: normal;
     overflow-wrap: anywhere;
   }
 
@@ -72229,6 +72230,16 @@ button.inventory-loss-row-action:hover {
     max-width: 100%;
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  .orders-view .orders-quotes-table .orders-quote-source-badge {
+    white-space: normal !important;
+    flex-wrap: wrap;
+    box-sizing: border-box;
+  }
+
+  .orders-view .orders-quotes-table :is(.orders-cell-main, .orders-transport-cell) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
