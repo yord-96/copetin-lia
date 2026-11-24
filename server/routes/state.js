@@ -1,5 +1,6 @@
 import { getDailyGuaranteeApplications } from '../../src/utils/dailyGuaranteeApplications.js';
 import vipPrepaidRouter from './vipPrepaid.js';
+import { syncVoidedVipLedger } from '../../src/utils/vipPrepaidLedger.js';
 import { syncContractCashCollection } from '../../src/utils/contractCashCollection.js';
 import { getContractEntryMethod } from '../../src/utils/contractEntryMethod.js';
 import { voiceCodeExists, voiceContractCode } from '../../src/utils/contractVoice.js';
@@ -1512,6 +1513,7 @@ const rebuildClientPrepaidBalances = (client) => {
   let totalUsedBs = 0;
 
   movements.forEach((movement) => {
+    if (movement.deletedAt) return;
     const type = String(movement?.type ?? '').trim().toLowerCase();
     const rawAmountBs = Number(movement?.amountBs ?? 0);
     const absoluteAmountBs = directMoney(Math.abs(rawAmountBs));
@@ -1836,7 +1838,7 @@ const reconcileVipPrepaidRental = (state, rental, contract = null) => {
   if (!client?.prepaidEnabled) return null;
 
   const charges = (Array.isArray(client?.prepaidMovements) ? client.prepaidMovements : [])
-    .filter((movement) => movement?.type === 'charge')
+    .filter((movement) => movement?.type === 'charge' && !movement.deletedAt)
     .filter((movement) => (
       String(movement?.sourceId ?? '') === String(rental.id)
       || (movement?.orderCode && String(movement.orderCode) === String(rental?.orderCode ?? ''))
@@ -6549,6 +6551,7 @@ router.put('/__copetin_db/contracts/:id/economic-ledger', async (req, res, next)
       }
 
       syncEconomicDepositOperations(state, existingContract, existingLedger, savedLedger, now);
+      syncVoidedVipLedger(state, existingContract, existingLedger, savedLedger, { now, reason: 'Aplicación anulada desde el económico del contrato', actorName: String(req.body.updatedByName || req.body.userName || 'Sistema') });
       updatedContract = {
         ...existingContract,
         economicLedger: savedLedger,

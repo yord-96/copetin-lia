@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { getVipAvailableBalance, voidVipUsage, findOrphanedVipCharges, vipDate } from '../../src/utils/vipPrepaidLedger.js';
 import { calculateReceivableBreakdown } from '../../src/utils/receivables.js';
 import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary } from './ordersEconomicSummary.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
@@ -9,7 +10,7 @@ const phone = value => String(value ?? '').replace(/\D/g, '').replace(/^591(?=\d
 const active = row => !row.deletedAt && !['eliminado', 'anulado', 'cancelled', 'canceled'].includes(norm(row.status));
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 const sum = (rows, get) => money(rows.reduce((total, row) => total + money(get(row)), 0));
-const clientSummary = client => ({ id: client.id, name: client.name || client.companyName, phone: client.phone, prepaidEnabled: Boolean(client.prepaidEnabled), balanceBs: money(client.prepaidBalanceBs), updatedAt: client.updatedAt || null });
+const clientSummary = client => ({ id: client.id, name: client.name || client.companyName, phone: client.phone, prepaidEnabled: Boolean(client.prepaidEnabled), balanceBs: money(client.prepaidBalanceBs), availableBs: getVipAvailableBalance(client), usageFrom: client.prepaidUsageFrom || '', updatedAt: client.updatedAt || null });
 const clientFamily = client => new Set([client.id, ...(client.mergedClientIds || [])]);
 const getClient = (state, id) => {
   const client = (state.clients || []).find(row => row.id === id && !row.deletedAt && !row.mergedIntoClientId);
@@ -51,12 +52,12 @@ export function buildVipWorkspace(state, clientId) {
       eventDate: contract.eventDate, createdAt: contract.contractDate || contract.createdAt,
       customerName: contract.customerName, address: contract.address || rental?.address || '', logisticsMode: contract.logisticsMode || rental?.logisticsMode,
       ...balance, damageBs: money(damageBs), prepaidBs: prepaid, vipConsumedBs: sum(prepaidRows, row => Math.abs(row.amountBs)), storedPrepaidBs: storedPrepaid,
-      historicalPaidBs: sum((contract.vipSettlements || []).filter(row => row.mode === 'historical'), row => row.serviceBs + row.damageBs),
+      historicalPaidBs: sum((contract.vipSettlements || []).filter(row => row.mode === 'historical' && !row.deletedAt), row => row.serviceBs + row.damageBs),
       items: (contract.items || rental?.items || []).map(row => ({ name: row.itemName || row.name, quantity: row.quantity, amountBs: row.lineTotalBs, date: row.serviceDate, day: row.serviceDayLabel })),
       services: (contract.services || []).map(row => ({ name: row.name || row.serviceName || row.description || 'Servicio', amountBs: row.totalBs ?? row.lineTotalBs ?? row.amountBs, date: row.serviceDate })),
       receipts: linkedCash.map(row => ({ id: row.id, code: row.receiptCode || row.receipt, date: row.cashEffectiveDate || row.createdAt, amountBs: row.amountBs, description: row.description, paymentMethod: row.paymentMethod, paymentAccount: row.paymentAccount })),
       economicLedger: (contract.economicLedger || []).filter(row => !row.deletedAt).map(row => ({ id: row.id, type: row.type, amountBs: row.amountBs, date: row.createdAt, note: row.note, receipt: row.cashReceiptCode, nonPhysical: row.nonPhysical })),
-      settlements: contract.vipSettlements || [], warnings,
+      settlements: (contract.vipSettlements || []).filter(row => !row.deletedAt), warnings,
     };
   }).sort((a, b) => String(b.eventDate || '').localeCompare(String(a.eventDate || '')) || String(a.code).localeCompare(String(b.code)));
   let runningBs = 0;
@@ -69,9 +70,10 @@ export function buildVipWorkspace(state, clientId) {
     phone(client.phone) && phone(row.phone) === phone(client.phone)
     || norm(row.name).split(',')[0] === norm(client.name).split(',')[0]
   )).map(row => ({ ...clientSummary(row), contractCount: (state.contracts || []).filter(c => active(c) && c.clientId === row.id).length }));
-  return { client: clientSummary(client), mergedClients: client.mergedClients || [], mergeCandidates: candidates, rows, movements,
+  return { client: clientSummary(client), mergedClients: client.mergedClients || [], mergeCandidates: candidates, rows, movements, orphanedMovements: findOrphanedVipCharges(state, client).map(row => ({ id: row.id, orderCode: row.orderCode, amountBs: row.amountBs, description: row.description })), archivedMovements: (client.prepaidMovements || []).filter(row => row.deletedAt),
     summary: { contracts: rows.length, paidCount: rows.filter(row => row.totalPendingBs <= .009).length, pendingCount: rows.filter(row => row.totalPendingBs > .009).length,
       pendingBs: sum(rows, row => row.totalPendingBs), serviceBs: sum(rows, row => row.totalBs), paidBs: sum(rows, row => row.paidBs),
+      addedBs: sum(ledger.filter(row => row.amountBs > 0), row => row.amountBs), deductedBs: sum(ledger.filter(row => row.amountBs < 0), row => Math.abs(row.amountBs)),
       ledgerBalanceBs: runningBs, balanceDifferenceBs: money(Number(client.prepaidBalanceBs || 0) - runningBs) } };
 }
 
@@ -147,7 +149,52 @@ export function mutateVipAccount(state, payload, now = new Date().toISOString())
     if (!Object.hasOwn(payload, 'expectedBalanceBs') || money(payload.expectedBalanceBs) !== money(client.prepaidBalanceBs) || (payload.expectedUpdatedAt || null) !== (client.updatedAt || null)) fail('La cuenta cambió. Actualiza antes de conciliar.', 409);
     const createdAt = dateAt(payload.date);
     client.prepaidMovements ||= [];
-    if (payload.action === 'adjust') {
+    if (payload.action === 'repair-orphans') {
+      const orphaned = findOrphanedVipCharges(state, client);
+      if (!orphaned.length) fail('No quedan aplicaciones sin respaldo. Actualiza la cuenta.', 409);
+      for (const movement of orphaned) voidVipUsage(state, client, movement, { now, reason, actorName });
+      detail = `Sincronizó ${orphaned.length} aplicaciones cuyo pago fue eliminado. ${reason}`;
+    } else if (payload.action === 'movement') {
+      const entry = client.prepaidMovements.find(row => row.id === payload.movementId && !row.deletedAt);
+      if (payload.movementAction !== 'create' && !entry) fail('El movimiento ya no está activo. Actualiza la cuenta.', 409);
+      if (entry?.type === 'charge') {
+        if (payload.movementAction !== 'void') fail('Para cambiar una aplicación, anúlala y registra el importe correcto desde el contrato.');
+        voidVipUsage(state, client, entry, { now, reason, actorName });
+        detail = `Anuló aplicación VIP ${Math.abs(entry.amountBs).toFixed(2)}. Saldo devuelto a la cuenta. ${reason}`;
+      } else {
+        if (!['create', 'edit', 'void'].includes(payload.movementAction)) fail('Acción de movimiento inválida.');
+        const voiding = payload.movementAction === 'void';
+        const amountBs = voiding ? 0 : money(payload.amountBs);
+        if (!voiding && (!Number.isFinite(Number(payload.amountBs)) || (entry?.type === 'adjustment' ? amountBs === 0 : amountBs <= 0))) fail('Indica un importe válido para el aporte o ajuste.');
+        if (!voiding && payload.availableFromDate) dateAt(payload.availableFromDate);
+        const beforeBs = Number(entry?.amountBs || 0);
+        const nextBalance = money(Number(client.prepaidBalanceBs || 0) - beforeBs + amountBs);
+        if (nextBalance < 0) fail('Ese saldo ya fue utilizado. Primero anula o corrige las aplicaciones a contratos para no dejar la cuenta negativa.', 409);
+        const cash = entry?.cashMovementId && (state.cashMovements || []).find(row => row.id === entry.cashMovementId);
+        if (cash && !(cash.vipClientId === client.id || cash.sourceType === 'client_prepaid' && [client.id, ...(client.mergedClientIds || [])].includes(cash.sourceId))) fail('El recibo asociado no pertenece a esta cuenta VIP.', 409);
+        if (cash && (cash.voidedAt || cash.deletedAt || cash.receiptStatus === 'anulado') && !voiding && !payload.nonPhysical) fail('El recibo está anulado. Reconoce un saldo histórico o registra una nueva recarga real.');
+        if (!voiding && !payload.nonPhysical && !cash) fail('Para dinero nuevo usa Recargar saldo VIP. Este formulario registra aportes históricos sin dinero nuevo.');
+        if (cash && (voiding || payload.nonPhysical)) {
+          cash.voidedAt = now;cash.voidedBy = actorName;cash.receiptStatus = 'anulado';cash.voidReason = `Corrección de aporte VIP: ${reason}`;
+        } else if (cash) {
+          cash.vipEditHistory = [...(cash.vipEditHistory || []), { amountBs: cash.amountBs, createdAt: cash.createdAt, date: cash.cashEffectiveDate, editedAt: now, reason, actorName }];
+          cash.amountBs = amountBs;cash.receivedAmountBs = amountBs;cash.cashEffectiveDate = payload.date;cash.createdAt = createdAt;cash.receiptIssuedAt = createdAt;cash.updatedAt = now;
+          cash.notes = reason;cash.receiptDetail = `Aporte VIP de ${client.name}. ${payload.reference || ''}. ${reason}`;
+        }
+        if (voiding) { entry.deletedAt = now;entry.deletedByName = actorName;entry.deletionReason = reason; }
+        else if (entry) {
+          entry.editHistory = [...(entry.editHistory || []), { amountBs: entry.amountBs, createdAt: entry.createdAt, availableFromDate: entry.availableFromDate, description: entry.description, editedAt: now, reason, actorName }];
+          Object.assign(entry, { amountBs, description: reason, reference: payload.reference || '', availableFromDate: payload.availableFromDate || payload.date, createdAt, nonPhysical: Boolean(payload.nonPhysical), editedAt: now, editedByName: actorName, balanceAfterBs: nextBalance });
+        } else client.prepaidMovements.push({ id: crypto.randomUUID(), type: 'deposit', amountBs, description: reason, reference: payload.reference || '', createdAt, availableFromDate: payload.availableFromDate || payload.date, nonPhysical: true, sourceType: 'vip_historical_credit', sourceId: client.id, createdBy: actorName, registeredAt: now, balanceAfterBs: nextBalance });
+        client.prepaidBalanceBs = nextBalance;
+        if (!entry || entry.type === 'deposit') client.prepaidTotalDepositedBs = money(Math.max(0, Number(client.prepaidTotalDepositedBs || 0) - beforeBs + amountBs));
+        detail = `${voiding ? 'Anuló' : entry ? 'Editó' : 'Registró'} aporte VIP. Cambio ${money(amountBs - beforeBs).toFixed(2)}. ${reason}`;
+      }
+    } else if (payload.action === 'usage-date') {
+      if (payload.usageFrom) dateAt(payload.usageFrom);
+      client.prepaidUsageFrom = payload.usageFrom || '';
+      detail = `Definió uso manual del saldo VIP desde ${payload.usageFrom || 'sin restricción'}. ${reason}`;
+    } else if (payload.action === 'adjust') {
       const desired = Number(payload.balanceBs);
       if (!Number.isFinite(desired) || desired < 0) fail('El saldo conciliado debe ser cero o mayor.');
       const amountBs = money(desired - Number(client.prepaidBalanceBs || 0));
@@ -165,7 +212,8 @@ export function mutateVipAccount(state, payload, now = new Date().toISOString())
       if (![Number(payload.serviceBs), Number(payload.damageBs)].every(Number.isFinite) || serviceBs < 0 || damageBs < 0 || serviceBs + damageBs <= 0) fail('Indica un importe válido de alquiler o daños.');
       if (serviceBs > row.commercialPendingBs + .009 || damageBs > row.damagePendingBs + .009) fail('El importe supera el saldo pendiente del contrato.');
       const amountBs = money(serviceBs + damageBs);
-      if (payload.mode === 'balance' && amountBs > Number(client.prepaidBalanceBs || 0) + .009) fail('El saldo VIP disponible no alcanza para esta aplicación.', 409);
+      if (payload.mode === 'balance' && payload.date > vipDate()) fail('El saldo se aplica en la fecha del pago. No registres una aplicación futura antes de que el saldo esté habilitado.');
+      if (payload.mode === 'balance' && amountBs > getVipAvailableBalance(client, payload.date) + .009) fail('El saldo habilitado para esa fecha no alcanza. Revisa la fecha desde la que se puede usar el saldo.', 409);
       const contract = state.contracts.find(c => c.id === row.id);
       const rental = resolveActiveRentalForContract(state.rentals, contract);
       const settlement = { id: crypto.randomUUID(), mode: payload.mode, serviceBs, damageBs, createdAt, registeredAt: now, reason, reference: String(payload.reference || '').trim(), createdBy: actorName, clientOperationId: operationId, clientId: client.id };
@@ -189,6 +237,7 @@ export function mutateVipAccount(state, payload, now = new Date().toISOString())
         rental.totals = { ...rental.totals, paidAtRentalBs: newPaid, prepaidAppliedBs: applied };
         if (rental.returnSettlement || damageBs) rental.returnSettlement = { ...rental.returnSettlement, paidBs: newPaid, damageCollectedBs: rental.payment.damageCollectedBs, pendingCollectionBs: rental.payment.pendingPaymentBs };
         rental.updatedAt = now;
+        rental.prepaidClientId = client.id;
       }
       contract.updatedAt = now;
       detail = `${payload.mode === 'historical' ? 'Reconoció cancelación histórica' : 'Aplicó saldo VIP'} ${amountBs.toFixed(2)} a contrato ${row.code}. ${reason}`;

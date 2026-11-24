@@ -1093,7 +1093,7 @@ function AccountingSection({
     () => clients
       .filter((client) => Boolean(client?.prepaidEnabled) && !client?.deletedAt && !client?.mergedIntoClientId)
       .map((client) => {
-        const movements = Array.isArray(client?.prepaidMovements) ? client.prepaidMovements : [];
+        const movements = Array.isArray(client?.prepaidMovements) ? client.prepaidMovements.filter(row => !row.deletedAt) : [];
         const lastMovement = movements
           .slice()
           .sort((a, b) => new Date(b.createdAt ?? 0) - new Date(a.createdAt ?? 0))[0] ?? null;

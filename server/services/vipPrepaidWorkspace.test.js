@@ -83,3 +83,23 @@ test('client and contract normalization preserve merge evidence, signed adjustme
   assert.ok(/Cancelaci[oó]n hist[oó]rica/i.test(html), 'document retains historical settlement note');
   assert.doesNotMatch(html, /TOTAL PENDIENTE BS 130,00/);
 });
+
+test('historical funding can be created, edited and voided with traceability; availability date gates payments', () => {
+  const s = fixture();merge(s);
+  const manage = extra => ({ action: 'movement', movementAction: 'create', clientId: 'vip', amountBs: 75, nonPhysical: true, date: '2026-11-24', availableFromDate: '2026-12-01', reason: 'Anticipo histórico', reference: 'Recibo externo', actorUserId: 'operator', expectedBalanceBs: s.clients[0].prepaidBalanceBs, expectedUpdatedAt: s.clients[0].updatedAt, clientOperationId: 'new-credit', ...extra });
+  mutateVipAccount(s, manage());const id = s.clients[0].prepaidMovements.at(-1).id;
+  assert.equal(s.clients[0].prepaidBalanceBs, 275);assert.equal(s.cashMovements.length, 1);
+  const first = s.clients[0].prepaidMovements.at(-1);
+  mutateVipAccount(s, manage({ movementAction: 'edit', movementId: id, amountBs: 50, clientOperationId: 'edit-credit' }));
+  assert.equal(s.clients[0].prepaidBalanceBs, 250);assert.equal(first.editHistory.length, 1);
+  mutateVipAccount(s, manage({ action: 'usage-date', usageFrom: '2026-12-01', clientOperationId: 'usage' }));
+  assert.throws(() => mutateVipAccount(s, payment(s)), /saldo habilitado/);
+  mutateVipAccount(s, manage({ movementAction: 'void', movementId: id, clientOperationId: 'void-credit' }));
+  assert.equal(s.clients[0].prepaidBalanceBs, 200);assert.ok(first.deletedAt);assert.equal(buildVipWorkspace(s, 'vip').archivedMovements.length, 1);
+});
+test('correcting a historical VIP deposit also voids its mistaken cash receipt, never creates a second receipt', () => {
+  const s = fixture();const c = s.clients[0];c.prepaidMovements[0].cashMovementId = 'vip-cash';c.prepaidMovements[0].cashReceiptCode = 'RC-1';
+  s.cashMovements.push({ id: 'vip-cash', amountBs: 200, sourceType: 'client_prepaid', sourceId: 'vip', receiptCode: 'RC-1' });
+  mutateVipAccount(s, { action: 'movement', movementAction: 'edit', movementId: 'opening', clientId: 'vip', amountBs: 175, nonPhysical: true, date: '2026-11-24', availableFromDate: '2026-11-24', reason: 'Era arrastre, no dinero nuevo', reference: 'Excel F115', actorUserId: 'operator', expectedBalanceBs: 200, expectedUpdatedAt: 'original', clientOperationId: 'fix-credit' });
+  assert.equal(c.prepaidBalanceBs, 175);assert.equal(s.cashMovements.length, 2);assert.equal(s.cashMovements[1].receiptStatus, 'anulado');assert.equal(c.prepaidMovements[0].nonPhysical, true);
+});

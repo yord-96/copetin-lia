@@ -3673,6 +3673,7 @@ const updateContractEconomicLedgerOnServer = async (payload = {}) => {
   }
   markServerStateStale('contracts.updateEconomicLedger:direct');
   announceDataChange({ domain: 'contracts', method: 'updateEconomicLedger' });
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('copetin:vip-prepaid-updated'));
   return result?.contract ?? null;
 };
 

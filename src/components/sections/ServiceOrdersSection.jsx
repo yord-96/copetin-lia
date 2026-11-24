@@ -1,4 +1,5 @@
 import { updateDraftEventDate } from '../../utils/draftEventDate.js';
+import { getVipAvailableBalance } from '../../utils/vipPrepaidLedger.js';
 import { findScheduleDayForLine, updateDraftScheduleDay } from '../../utils/scheduleDayAssignment.js';
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
@@ -6070,12 +6071,12 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
   );
 
   const selectedClientPrepaidBalanceBs = selectedClientForDraft?.prepaidEnabled
-    ? Math.max(0, Number(selectedClientForDraft.prepaidBalanceBs ?? 0))
+    ? getVipAvailableBalance(selectedClientForDraft)
     : 0;
-  const selectedClientPrepaidCoverageBs = Math.min(
+  const selectedClientPrepaidCoverageBs = draft.useVipBalance ? Math.min(
     selectedClientPrepaidBalanceBs,
     Math.max(0, quoteTotalBs - paidAtApprovalBs),
-  );
+  ) : 0;
   const selectedClientPrepaidPendingBs = Math.max(0, Number((quoteTotalBs - paidAtApprovalBs - selectedClientPrepaidCoverageBs).toFixed(2)));
 
   const activeCatalogItems = useMemo(
@@ -6772,6 +6773,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
     setDraft((current) => ({
       ...current,
       clientId: selected.id,
+      useVipBalance: false,
       customerName: selected.name,
       customerCi: selected.nitCi || selected.customerCi || current.customerCi,
       customerPhone: selected.whatsapp || selected.phone,
@@ -16638,7 +16640,8 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
                     ) : null}
                     {selectedClientForDraft?.prepaidEnabled ? (
                       <div className="orders-form-note orders-form-note-prepaid">
-                        Cliente especial con saldo prepago disponible: {formatBs(selectedClientPrepaidBalanceBs)}. Al aprobar contrato se descontara automaticamente del saldo.
+                        Cliente especial con saldo prepago disponible: {formatBs(selectedClientPrepaidBalanceBs)}. Crear el contrato no consume su saldo.
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}><input type="checkbox" checked={Boolean(draft.useVipBalance)} onChange={(event) => setDraft((current) => ({ ...current, useVipBalance: event.target.checked }))} />Aplicar saldo VIP a este contrato al aprobarlo</label>
                       </div>
                     ) : null}
                   </>

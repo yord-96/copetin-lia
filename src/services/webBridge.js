@@ -1,4 +1,5 @@
 import { isGuaranteeDamageApplication } from '../utils/dailyGuaranteeApplications.js';
+import { getVipAvailableBalance, syncVoidedVipLedger } from '../utils/vipPrepaidLedger.js';
 import { syncContractCashCollection } from '../utils/contractCashCollection.js';
 import { buildContractBookReport } from '../utils/contractBookReport.js';
 import { contractDocumentMovement } from '../utils/contractDocumentMovement.js';
@@ -579,9 +580,10 @@ const normalizePrepaidMovements = (movements, fallbackBalance = 0) => {
       const amountBs = toPositiveRoundedNumber(movement?.amountBs ?? 0);
       const type = ['charge', 'adjustment'].includes(movement?.type) ? movement.type : 'deposit';
       const signedAmountBs = type === 'adjustment' ? Number(movement.amountBs || 0) : type === 'charge' ? -Math.abs(amountBs) : Math.abs(amountBs);
-      runningBalance = Number((runningBalance + signedAmountBs).toFixed(2));
+      if (!movement.deletedAt) runningBalance = Number((runningBalance + signedAmountBs).toFixed(2));
 
       return {
+        ...movement,
         id: String(movement?.id ?? makeId('pre')).trim() || makeId('pre'),
         type,
         amountBs: Number(signedAmountBs.toFixed(2)),
@@ -1832,6 +1834,7 @@ const normalizeState = (state) => {
       mergedAt: client?.mergedAt ?? null,
       deletedAt: client?.deletedAt ?? null,
       vipOperations: client?.vipOperations ?? [],
+      prepaidUsageFrom: client?.prepaidUsageFrom ?? '',
       deliveryAddresses: Array.isArray(client?.deliveryAddresses)
         ? client.deliveryAddresses
           .map((entry) => ({
@@ -16143,6 +16146,7 @@ const createWebBridge = () => ({
           }
         }
         syncEconomicDepositOperations(state, contract, beforeContract.economicLedger ?? [], contract.economicLedger ?? [], now);
+        syncVoidedVipLedger(state, contract, beforeContract.economicLedger ?? [], contract.economicLedger ?? [], { now, reason: 'Aplicación anulada desde el económico del contrato', actorName: String(payload.updatedByName || payload.userName || 'Sistema') });
         contract.economicLedgerUpdatedAt = now;
         contract.economicLedgerUpdatedById = payload?.updatedById ?? payload?.userId ?? null;
         contract.economicLedgerUpdatedByName = String(payload?.updatedByName ?? payload?.userName ?? 'Sistema').trim() || 'Sistema';
@@ -17142,7 +17146,7 @@ const createWebBridge = () => ({
             if (!prepaidClient || !prepaidClient.prepaidEnabled) {
               throw new Error('El cliente no tiene una cuenta prepago activa.');
             }
-            const availablePrepaidBs = Math.max(0, toPositiveRoundedNumber(prepaidClient.prepaidBalanceBs ?? 0));
+            const availablePrepaidBs = getVipAvailableBalance(prepaidClient);
             if (prepaidAppliedBs > availablePrepaidBs) {
               throw new Error(`Saldo prepago insuficiente. Disponible: Bs ${availablePrepaidBs.toFixed(2)}.`);
             }
