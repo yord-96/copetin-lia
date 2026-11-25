@@ -1,5 +1,6 @@
 import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
+import './portrait-layout.css';
 import { useAppController } from './hooks/useAppController';
 import { runtimeInfo } from './services/api';
 import { formatBs, formatDate, formatDateTime } from './utils/formatters';
