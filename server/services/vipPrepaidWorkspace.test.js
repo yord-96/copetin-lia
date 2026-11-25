@@ -1,6 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildVipWorkspace, mutateVipAccount, previewVipMerge, vipContractToken } from './vipPrepaidWorkspace.js';
+import { buildVipWorkspace, mutateVipAccount, previewVipMerge, previewVipCutover, vipContractToken } from './vipPrepaidWorkspace.js';
+
+test('cutover archives old VIP funds and applications together, preserves cash and later entries, and clears future automatic payments', () => {
+  const state = fixture(); merge(state);
+  state.contracts[0].eventDate = '2027-07-17';
+  mutateVipAccount(state, payment(state, { date: '2026-10-15' }));
+  const client = state.clients[0];
+  mutateVipAccount(state, { action: 'movement', movementAction: 'create', amountBs: 50, nonPhysical: true,
+    availableFromDate: '2026-11-02', date: '2026-11-02', reference: 'Later receipt', reason: 'Later credit',
+    clientId: 'vip', actorUserId: 'operator', expectedBalanceBs: client.prepaidBalanceBs, expectedUpdatedAt: client.updatedAt, clientOperationId: 'later-credit' });
+  const cash = structuredClone(state.cashMovements);
+  const preview = previewVipCutover(state, 'vip', '2026-10-31', 34612.85);
+  assert.equal(preview.archivedCount, 2);
+  assert.equal(preview.reversedApplications, 1);
+  assert.equal(preview.retainedNetBs, 50);
+  const payload = { action: 'cutover', cutoffDate: '2026-10-31', openingBs: 34612.85, previewToken: preview.token,
+    clientId: 'vip', actorUserId: 'operator', date: '2026-11-25', reason: 'Start control from Excel close', reference: '2026!F115',
+    expectedBalanceBs: client.prepaidBalanceBs, expectedUpdatedAt: client.updatedAt, clientOperationId: 'cutover-once' };
+  mutateVipAccount(state, payload);
+  assert.equal(client.prepaidBalanceBs, 34662.85);
+  assert.equal(client.vipCutover.controlFrom, '2026-11-01');
+  assert.equal(client.prepaidMovements.filter(row => !row.deletedAt).length, 2);
+  assert.equal(client.prepaidMovements.filter(row => row.vipCutoverId && row.deletedAt).length, 2);
+  assert.equal(state.contracts[0].payment.paidAtApprovalBs, 0);
+  assert.equal(state.rentals[0].payment.prepaidAppliedBs, 0);
+  assert.equal(buildVipWorkspace(state, 'vip').rows[0].commercialPendingBs, 100);
+  assert.deepEqual(state.cashMovements, cash);
+  assert.equal(mutateVipAccount(state, payload).duplicate, true);
+  assert.throws(() => previewVipCutover(state, 'vip', '2026-10-31', 34612.85), /ya tiene un corte/);
+  assert.throws(() => mutateVipAccount(state, payment(state, { date: '2026-10-30', clientOperationId: 'old-date' })), /periodo anterior/);
+});
+
+test('cutover refuses changed preview and invalid closing balances without changing records', () => {
+  const state = fixture(); merge(state);
+  assert.throws(() => previewVipCutover(state, 'vip', '2026-10-31', ''), /saldo exacto/);
+  const preview = previewVipCutover(state, 'vip', '2026-10-31', 100);
+  state.contracts[0].notes = 'Concurrent edit';
+  const before = JSON.stringify(state);
+  assert.throws(() => mutateVipAccount(state, { action: 'cutover', cutoffDate: '2026-10-31', openingBs: 100, previewToken: preview.token,
+    clientId: 'vip', actorUserId: 'operator', date: '2026-11-25', reason: 'Cut', expectedBalanceBs: state.clients[0].prepaidBalanceBs,
+    expectedUpdatedAt: state.clients[0].updatedAt, clientOperationId: 'stale-cut' }), /contratos cambiaron/);
+  assert.equal(JSON.stringify(state), before);
+});
 
 export const fixture = () => ({
   users: [{ id: 'operator', fullName: 'Operador', role: 'developer', roleIds: ['developer'] }],

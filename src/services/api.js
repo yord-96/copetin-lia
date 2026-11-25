@@ -4758,6 +4758,11 @@ export const api = {
       if (!shouldUseServerState()) throw new Error('La conciliación VIP requiere conexión con el servidor.');
       return fetchServerJson(getServerStateUrl('/accounting/vip-prepaid/workspace?' + new URLSearchParams({ clientId })), 'No se pudo cargar la cuenta VIP.', { signal, headers: getInternalHeaders(), cache: 'no-store' });
     },
+    previewVipCutover: async (payload) => {
+      return fetchServerJson(getServerStateUrl('/accounting/vip-prepaid/cutover-preview'), 'No se pudo revisar el corte VIP.', {
+        method: 'POST', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload),
+      });
+    },
     previewVipMerge: async (payload) => {
       const response = await fetch(getServerStateUrl('/accounting/vip-prepaid/merge-preview'), { method: 'POST', headers: getInternalHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(payload) });
       if (!response.ok) throw await createServerStateError(response, 'No se pudo preparar la unificación.');

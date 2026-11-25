@@ -3,6 +3,7 @@ import { getVipAvailableBalance, voidVipUsage, findOrphanedVipCharges, vipDate }
 import { calculateReceivableBreakdown } from '../../src/utils/receivables.js';
 import { getOrdersContractCashEconomicSummary, getOrdersGuaranteeEconomicSummary } from './ordersEconomicSummary.js';
 import { resolveActiveRentalForContract } from '../utils/economicRentalResolver.js';
+import { getCashBusinessDate } from '../../src/utils/cashLedgerOrder.js';
 
 const money = value => Math.round(Number(value || 0) * 100) / 100;
 const norm = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -10,7 +11,7 @@ const phone = value => String(value ?? '').replace(/\D/g, '').replace(/^591(?=\d
 const active = row => !row.deletedAt && !['eliminado', 'anulado', 'cancelled', 'canceled'].includes(norm(row.status));
 const fail = (message, statusCode = 400) => { throw Object.assign(new Error(message), { statusCode }); };
 const sum = (rows, get) => money(rows.reduce((total, row) => total + money(get(row)), 0));
-const clientSummary = client => ({ id: client.id, name: client.name || client.companyName, phone: client.phone, prepaidEnabled: Boolean(client.prepaidEnabled), balanceBs: money(client.prepaidBalanceBs), availableBs: getVipAvailableBalance(client), usageFrom: client.prepaidUsageFrom || '', updatedAt: client.updatedAt || null });
+const clientSummary = client => ({ id: client.id, name: client.name || client.companyName, phone: client.phone, prepaidEnabled: Boolean(client.prepaidEnabled), balanceBs: money(client.prepaidBalanceBs), availableBs: getVipAvailableBalance(client), usageFrom: client.prepaidUsageFrom || '', cutover: client.vipCutover || null, updatedAt: client.updatedAt || null });
 const clientFamily = client => new Set([client.id, ...(client.mergedClientIds || [])]);
 const getClient = (state, id) => {
   const client = (state.clients || []).find(row => row.id === id && !row.deletedAt && !row.mergedIntoClientId);
@@ -78,6 +79,27 @@ export function buildVipWorkspace(state, clientId) {
 }
 
 const mergeReferences = ['clientId', 'customerId', 'prepaidClientId', 'vipClientId'];
+export function previewVipCutover(state, clientId, cutoffDate, openingBs) {
+  const client = getClient(state, clientId);
+  dateAt(cutoffDate);
+  if (cutoffDate >= vipDate()) fail('El corte debe corresponder a un día ya cerrado.');
+  if (client.vipCutover) fail('Esta cuenta ya tiene un corte. Edita su saldo inicial o revisa el historial, sin volver a archivar el periodo.', 409);
+  if (openingBs === '' || openingBs == null || !Number.isFinite(Number(openingBs)) || Number(openingBs) < 0) fail('Indica el saldo exacto del respaldo al cierre.');
+  const ledger = (client.prepaidMovements || []).filter(row => !row.deletedAt);
+  if (ledger.some(row => !getCashBusinessDate(row.createdAt))) fail('Hay movimientos sin fecha válida. Revísalos antes del corte.');
+  const archived = ledger.filter(row => getCashBusinessDate(row.createdAt) <= cutoffDate);
+  const retained = ledger.filter(row => getCashBusinessDate(row.createdAt) > cutoffDate);
+  const resultingBalanceBs = money(Number(openingBs) + sum(retained, row => row.amountBs));
+  if (resultingBalanceBs < 0) fail('Las aplicaciones posteriores superan el saldo inicial. Revísalas antes del corte.', 409);
+  const controlFrom = new Date(new Date(`${cutoffDate}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10);
+  const family = clientFamily(client);
+  const contracts = (state.contracts || []).filter(row => family.has(row.clientId));
+  const rentals = (state.rentals || []).filter(row => family.has(row.clientId) || family.has(row.prepaidClientId));
+  const token = crypto.createHash('sha256').update(JSON.stringify({ client, contracts, rentals, cutoffDate, openingBs: money(openingBs) })).digest('hex');
+  return { token, cutoffDate, controlFrom, openingBs: money(openingBs), previousBalanceBs: money(client.prepaidBalanceBs),
+    resultingBalanceBs, archivedCount: archived.length, reversedApplications: archived.filter(row => row.type === 'charge').length,
+    retainedCount: retained.length, retainedNetBs: sum(retained, row => row.amountBs), contracts: contracts.filter(active).length };
+}
 export function previewVipMerge(state, clientId, sourceIds) {
   const target = getClient(state, clientId);
   const ids = [...new Set(Array.isArray(sourceIds) ? sourceIds : [])];
@@ -149,7 +171,31 @@ export function mutateVipAccount(state, payload, now = new Date().toISOString())
     if (!Object.hasOwn(payload, 'expectedBalanceBs') || money(payload.expectedBalanceBs) !== money(client.prepaidBalanceBs) || (payload.expectedUpdatedAt || null) !== (client.updatedAt || null)) fail('La cuenta cambió. Actualiza antes de conciliar.', 409);
     const createdAt = dateAt(payload.date);
     client.prepaidMovements ||= [];
-    if (payload.action === 'repair-orphans') {
+    if (payload.action === 'cutover') {
+      const preview = previewVipCutover(state, client.id, payload.cutoffDate, payload.openingBs);
+      if (preview.token !== payload.previewToken) fail('La cuenta o sus contratos cambiaron. Revisa nuevamente el corte.', 409);
+      const batchId = crypto.randomUUID();
+      for (const movement of client.prepaidMovements.filter(row => !row.deletedAt && getCashBusinessDate(row.createdAt) <= payload.cutoffDate)) {
+        if (movement.type === 'charge') {
+          const alreadyReturned = client.prepaidMovements.some(row => !row.deletedAt && row.sourceType === 'rental_reversal' && row.sourceId === movement.sourceId && Number(row.amountBs) > 0);
+          if (!alreadyReturned) voidVipUsage(state, client, movement, { now, reason: `Corte histórico: ${reason}`, actorName });
+        }
+        Object.assign(movement, { deletedAt: now, deletedByName: actorName, deletionReason: `Archivado por corte al ${payload.cutoffDate}. ${reason}`, vipCutoverId: batchId });
+      }
+      const opening = { id: crypto.randomUUID(), type: 'deposit', amountBs: preview.openingBs,
+        description: `Saldo inicial conciliado al cierre del ${payload.cutoffDate}`, reference: String(payload.reference || '').trim(),
+        sourceType: 'vip_cutover_opening', sourceId: client.id, nonPhysical: true, createdAt: dateAt(payload.cutoffDate),
+        availableFromDate: preview.controlFrom, registeredAt: now, createdBy: actorName, vipCutoverId: batchId };
+      client.prepaidMovements.push(opening);
+      client.prepaidBalanceBs = preview.resultingBalanceBs;
+      client.prepaidTotalDepositedBs = sum(client.prepaidMovements.filter(row => !row.deletedAt && row.amountBs > 0), row => row.amountBs);
+      client.prepaidTotalUsedBs = sum(client.prepaidMovements.filter(row => !row.deletedAt && row.amountBs < 0), row => Math.abs(row.amountBs));
+      client.prepaidUsageFrom = preview.controlFrom;
+      client.vipCutover = { id: batchId, cutoffDate: payload.cutoffDate, controlFrom: preview.controlFrom,
+        openingBs: preview.openingBs, openingId: opening.id, previousBalanceBs: preview.previousBalanceBs,
+        archivedCount: preview.archivedCount, reference: opening.reference, reason, createdAt: now, actorName };
+      detail = `Corte VIP al ${payload.cutoffDate}: archivó ${preview.archivedCount} movimientos y reconoció saldo ${preview.openingBs.toFixed(2)}. Sin movimiento de caja. ${reason}`;
+    } else if (payload.action === 'repair-orphans') {
       const orphaned = findOrphanedVipCharges(state, client);
       if (!orphaned.length) fail('No quedan aplicaciones sin respaldo. Actualiza la cuenta.', 409);
       for (const movement of orphaned) voidVipUsage(state, client, movement, { now, reason, actorName });
@@ -186,6 +232,11 @@ export function mutateVipAccount(state, payload, now = new Date().toISOString())
           entry.editHistory = [...(entry.editHistory || []), { amountBs: entry.amountBs, createdAt: entry.createdAt, availableFromDate: entry.availableFromDate, description: entry.description, editedAt: now, reason, actorName }];
           Object.assign(entry, { amountBs, description: reason, reference: payload.reference || '', availableFromDate: payload.availableFromDate || payload.date, createdAt, nonPhysical: Boolean(payload.nonPhysical), editedAt: now, editedByName: actorName, balanceAfterBs: nextBalance });
         } else client.prepaidMovements.push({ id: crypto.randomUUID(), type: 'deposit', amountBs, description: reason, reference: payload.reference || '', createdAt, availableFromDate: payload.availableFromDate || payload.date, nonPhysical: true, sourceType: 'vip_historical_credit', sourceId: client.id, createdBy: actorName, registeredAt: now, balanceAfterBs: nextBalance });
+        if (entry?.sourceType === 'vip_cutover_opening' && client.vipCutover?.openingId === entry.id) {
+          client.vipCutover.openingBs = amountBs;
+          client.vipCutover.updatedAt = now;
+          if (!voiding) client.vipCutover.reference = payload.reference || '';
+        }
         client.prepaidBalanceBs = nextBalance;
         if (!entry || entry.type === 'deposit') client.prepaidTotalDepositedBs = money(Math.max(0, Number(client.prepaidTotalDepositedBs || 0) - beforeBs + amountBs));
         detail = `${voiding ? 'Anuló' : entry ? 'Editó' : 'Registró'} aporte VIP. Cambio ${money(amountBs - beforeBs).toFixed(2)}. ${reason}`;
@@ -204,6 +255,7 @@ export function mutateVipAccount(state, payload, now = new Date().toISOString())
       detail = `Concilió saldo VIP por ${amountBs.toFixed(2)}. Nuevo saldo ${money(desired).toFixed(2)}. ${reason}`;
     } else if (payload.action === 'settle') {
       if (!['balance', 'historical'].includes(payload.mode)) fail('Selecciona el origen del pago.');
+      if (payload.mode === 'balance' && client.vipCutover && payload.date <= client.vipCutover.cutoffDate) fail('El periodo anterior al corte se revisa como cancelación histórica, sin volver a descontar el saldo inicial.');
       const workspace = buildVipWorkspace(state, client.id);
       const row = workspace.rows.find(row => row.id === payload.contractId);
       if (!row) fail('El contrato no pertenece a esta cuenta VIP.', 404);

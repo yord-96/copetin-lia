@@ -1,9 +1,16 @@
 import { Router } from 'express';
 import { getStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { canManageAccounting } from '../../src/utils/permissions.js';
-import { buildVipWorkspace, mutateVipAccount, previewVipMerge, vipContractToken } from '../services/vipPrepaidWorkspace.js';
+import { buildVipWorkspace, mutateVipAccount, previewVipMerge, previewVipCutover, vipContractToken } from '../services/vipPrepaidWorkspace.js';
 
 const router = Router();
+router.post('/cutover-preview', async (req, res, next) => {
+  try {
+    const snapshot = await getStateSnapshot();
+    if (!canManageAccounting((snapshot.state?.users || []).find(row => row.id === req.body.actorUserId))) return res.status(403).json({ error: 'No tienes permiso para administrar cuentas VIP.' });
+    res.json(previewVipCutover(snapshot.state, req.body.clientId, req.body.cutoffDate, req.body.openingBs));
+  } catch (error) { if (error.statusCode) res.status(error.statusCode).json({ error: error.message }); else next(error); }
+});
 const workspace = (state, clientId) => {
   const result = buildVipWorkspace(state, clientId);
   result.rows.forEach(row => { row.token = vipContractToken(state, row.id); });

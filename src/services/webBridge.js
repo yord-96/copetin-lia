@@ -1835,6 +1835,7 @@ const normalizeState = (state) => {
       deletedAt: client?.deletedAt ?? null,
       vipOperations: client?.vipOperations ?? [],
       prepaidUsageFrom: client?.prepaidUsageFrom ?? '',
+      vipCutover: client?.vipCutover ?? null,
       deliveryAddresses: Array.isArray(client?.deliveryAddresses)
         ? client.deliveryAddresses
           .map((entry) => ({

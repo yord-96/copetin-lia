@@ -31,5 +31,18 @@ test('VIP routes enforce accounting permission and serialize retries without cas
     assert.equal(deletion.status, 200, await deletion.clone().text());
     const fixed = (await getStateSnapshot()).state;
     assert.equal(fixed.clients[0].prepaidBalanceBs, 200);assert.ok(fixed.clients[0].prepaidMovements[1].deletedAt);assert.equal(fixed.contracts[0].payment.paidAtApprovalBs, 0);assert.equal(fixed.rentals[0].payment.pendingPaymentBs, 100);assert.equal(fixed.cashMovements.length, 0);
+    const cut = { clientId: 'vip', cutoffDate: '2026-10-31', openingBs: 34612.85, actorUserId: 'admin' };
+    assert.equal((await fetch(base + '/cutover-preview', { method: 'POST', headers, body: JSON.stringify({ ...cut, actorUserId: 'sales' }) })).status, 403);
+    const previewResponse = await fetch(base + '/cutover-preview', { method: 'POST', headers, body: JSON.stringify(cut) });
+    assert.equal(previewResponse.status, 200);
+    const preview = await previewResponse.json();
+    const cutPayload = { ...cut, action: 'cutover', date: '2026-11-25', reference: 'Excel F115', reason: 'Historical close',
+      expectedBalanceBs: 200, expectedUpdatedAt: fixed.clients[0].updatedAt, clientOperationId: 'cut-once', previewToken: preview.token };
+    for (const response of await Promise.all([send(cutPayload), send(cutPayload)])) assert.equal(response.status, 200, await response.clone().text());
+    const closed = (await getStateSnapshot()).state;
+    assert.equal(closed.clients[0].prepaidBalanceBs, 34612.85);
+    assert.equal(closed.clients[0].vipCutover.controlFrom, '2026-11-01');
+    assert.equal(closed.clients[0].prepaidMovements.filter(row => !row.deletedAt).length, 1);
+    assert.equal(closed.cashMovements.length, 0);
   } finally { await new Promise(resolve => server.close(resolve));await fs.rm(directory, { recursive: true, force: true }); }
 });

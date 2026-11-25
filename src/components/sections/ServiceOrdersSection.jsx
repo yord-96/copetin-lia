@@ -1,5 +1,6 @@
 import { updateDraftEventDate } from '../../utils/draftEventDate.js';
 import { getVipAvailableBalance } from '../../utils/vipPrepaidLedger.js';
+import VipContractPaymentPanel from './VipContractPaymentPanel.jsx';
 import { findScheduleDayForLine, updateDraftScheduleDay } from '../../utils/scheduleDayAssignment.js';
 import { groupPriorAvailabilityRecords } from '../../utils/availabilityPresentation';
 import ContractCancellationModal from './ContractCancellationModal';
@@ -13066,6 +13067,7 @@ th:nth-child(1),td:nth-child(1){width:3%}th:nth-child(2),td:nth-child(2){width:8
             </header>
 
             <div className="contract-economics-body">
+              <VipContractPaymentPanel key={contractEconomicsData.contract?.id} client={clients.find(client => client.prepaidEnabled && !client.deletedAt && [client.id, ...(client.mergedClientIds || [])].includes(contractEconomicsData.contract?.clientId))} contract={contractEconomicsData.contract} currentUser={currentUser} onUpdated={() => handleOpenContractEconomics(contractEconomicsData.contract)} />
               {isLoadingContractEconomics ? (
                 <p className="status">Cargando informacion economica del contrato...</p>
               ) : null}
