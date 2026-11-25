@@ -1,8 +1,16 @@
 import { organizerTotals } from '../../../shared/lincolnOrganizerContract.js';
+import { normalizeLincolnContractDocument } from './lincolnContractDocumentService.js';
 import { getLincolnReservationAvailability } from './lincolnReservationService.js';
 
 export const normalizeOrganizerEvent = (payload, state, { excludeEventId = '', excludeReservationId = '' } = {}) => {
-  if ((payload.contractType || payload.contractDocumentSnapshot?.contractType) !== 'organizer') return payload;
+  if ((payload.contractType || payload.contractDocumentSnapshot?.contractType) !== 'organizer') {
+    if (!payload.contractDocumentSnapshot) return payload;
+    const document = normalizeLincolnContractDocument(payload);
+    if (!(document.totals.baseBs > 0)) return payload;
+    return { ...payload, totalBs: document.totals.totalBs, estimatedTotalBs: document.totals.totalBs,
+      contractDocumentSnapshot: { ...payload.contractDocumentSnapshot, discountMode: document.discountMode,
+        discountPercent: document.discountPercent, discountAmountBs: document.discountAmountBs, discountScope: 'base', totals: document.totals } };
+  }
   const fail = (message, status = 400) => { throw Object.assign(new Error(message), { statusCode: status, code: 'LINCOLN_ORGANIZER_INVALID' }); };
   const snapshot = payload.contractDocumentSnapshot || {};
   const rawDays = payload.organizerDays || snapshot.organizerDays;

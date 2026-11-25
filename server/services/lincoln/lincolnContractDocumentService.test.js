@@ -71,9 +71,9 @@ test('normalizes mixed pricing groups and keeps guarantee outside service balanc
   assert.equal(document.guestCount, 150);
   assert.equal(document.totals.baseBs, 27800);
   assert.equal(document.totals.extrasBs, 2550);
-  assert.equal(document.totals.discountBs, 3035);
-  assert.equal(document.totals.totalBs, 27315);
-  assert.equal(document.totals.balanceBs, 12315);
+  assert.equal(document.totals.discountBs, 2780);
+  assert.equal(document.totals.totalBs, 27570);
+  assert.equal(document.totals.balanceBs, 12570);
   assert.equal(document.guaranteeBs, 700);
 });
 

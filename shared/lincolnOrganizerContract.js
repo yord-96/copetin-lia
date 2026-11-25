@@ -1,3 +1,4 @@
+import { lincolnBaseDiscount } from './lincolnDiscount.js';
 export const organizerRates = [{ capacity: 150, amountBs: 7000 }, { capacity: 200, amountBs: 8000 }, { capacity: 250, amountBs: 9000 }, { capacity: 300, amountBs: 10000 }];
 const number = (value) => Math.max(0, Number.isFinite(Number(value)) ? Number(value) : 0);
 const money = (value) => Math.round(number(value) * 100) / 100;
@@ -9,7 +10,7 @@ export const organizerTotals = (draft) => {
   const baseBs = money(days.reduce((sum, day) => sum + number(day.amountBs), 0));
   const extrasBs = money((draft.extras || []).filter((line) => line.selected !== false).reduce((sum, line) => sum + number(line.unitCostBs) * number(line.quantity ?? 1), 0));
   const grossBs = money(baseBs + extrasBs);
-  const discountBs = money(grossBs * Math.min(100, number(draft.discountPercent)) / 100);
+  const { discountBs } = lincolnBaseDiscount(draft, baseBs);
   const totalBs = money(grossBs - discountBs);
   return { baseBs, extrasBs, grossBs, discountBs, totalBs, balanceBs: money(Math.max(0, totalBs - number(draft.advanceBs))), guestCount: Math.max(0, ...days.map((day) => number(day.guestCount))) };
 };

@@ -1,3 +1,4 @@
+import { lincolnBaseDiscount, lincolnDiscountLabel } from '../../../shared/lincolnDiscount.js';
 import { organizerTotals, organizerClauses } from '../../../shared/lincolnOrganizerContract.js';
 import { selectedLincolnContractServices } from '../../../shared/lincolnContractServices.js';
 const text = (value) => String(value ?? '').trim();
@@ -142,8 +143,8 @@ export const normalizeLincolnContractDocument = (event) => {
       ? number(line?.unitCostBs) * applicableGuestCount * quantity
       : number(line?.unitCostBs) * quantity);
   }, 0);
-  const discountPercent = number(snapshot.discountPercent);
-  const discountBs = roundMoney((grossBaseBs + extrasBs) * discountPercent / 100);
+  const discount = lincolnBaseDiscount(snapshot, grossBaseBs);
+  const { discountBs } = discount;
   const totalBs = roundMoney(Math.max(0, grossBaseBs + extrasBs - discountBs));
   const snapshotAdvanceBs = number(snapshot.advanceBs ?? event?.reservationPaymentBs)
     + (snapshot.advanceBs == null ? number(event?.accountPaymentBs) : 0);
@@ -183,7 +184,7 @@ export const normalizeLincolnContractDocument = (event) => {
     pricingGroups: isOrganizer ? [] : pricingGroups,
     services: isOrganizer ? [] : selectedLincolnContractServices(services, pricingGroups),
     extras,
-    discountPercent,
+    ...discount,
     advanceBs,
     guaranteeBs,
     guaranteeStatus,
@@ -226,7 +227,7 @@ export const buildLincolnContractDocumentHtml = ({ event }) => {
   }).join('');
   const clauseRows = doc.clauses.map((clause, index) => `<li><b>${clauseNames[index] || `CLÁUSULA ${index + 1}`}.-</b> ${escapeHtml(clause)}</li>`).join('');
   const movementRows = doc.economicMovements.map((movement) => `<tr><td>${escapeHtml(dateShort(movement.date))}</td><td><b>${escapeHtml(movement.concept || PAYMENT_LABELS[movement.type] || 'PAGO')}</b>${movement.receiptCode ? `<small>RECIBO ${escapeHtml(movement.receiptCode)}</small>` : ''}</td><td>${escapeHtml(money(movement.amountBs))}</td></tr>`).join('');
-  const settlementMarkup = `${movementRows ? `<section class="movements"><h3>MOVIMIENTO ECONÓMICO DEL CONTRATO</h3><table><thead><tr><th>FECHA</th><th>CONCEPTO / RECIBO</th><th>MONTO</th></tr></thead><tbody>${movementRows}</tbody></table></section>` : ''}<section class="totals"><div><span>${isOrganizer ? 'Alquiler del salón' : 'Paquete base'}</span><strong>${escapeHtml(money(doc.totals.baseBs))}</strong></div>${doc.totals.extrasBs > 0 ? `<div><span>Extras</span><strong>${escapeHtml(money(doc.totals.extrasBs))}</strong></div>` : ''}${doc.totals.discountBs > 0 ? `<div><span>Descuento (${escapeHtml(doc.discountPercent)}%)</span><strong>- ${escapeHtml(money(doc.totals.discountBs))}</strong></div>` : ''}<div class="total"><span>COSTO TOTAL</span><strong>${escapeHtml(money(doc.totals.totalBs))}</strong></div><div><span>TOTAL PAGADO SERVICIO</span><strong>- ${escapeHtml(money(doc.servicePaidBs))}</strong></div><div><span>SALDO DEL SERVICIO</span><strong>${escapeHtml(money(doc.totals.balanceBs))}</strong></div><div><span>GARANTÍA</span><strong>${escapeHtml(money(doc.guaranteeBs))}</strong></div><div><span>ESTADO GARANTÍA</span><strong>${doc.guaranteeStatus === 'paid' ? 'PAGADO' : 'DEBE'}</strong></div><div class="balance"><span>TOTAL PENDIENTE</span><strong>${escapeHtml(money(doc.totals.totalPendingBs))}</strong></div></section>${doc.notes ? `<section class="notes"><b>OBSERVACIONES Y ACUERDOS</b><div>${escapeHtml(doc.notes)}</div></section>` : ''}`;
+  const settlementMarkup = `${movementRows ? `<section class="movements"><h3>MOVIMIENTO ECONÓMICO DEL CONTRATO</h3><table><thead><tr><th>FECHA</th><th>CONCEPTO / RECIBO</th><th>MONTO</th></tr></thead><tbody>${movementRows}</tbody></table></section>` : ''}<section class="totals"><div><span>${isOrganizer ? 'Alquiler del salón' : 'Paquete base'}</span><strong>${escapeHtml(money(doc.totals.baseBs))}</strong></div>${doc.totals.extrasBs > 0 ? `<div><span>Extras</span><strong>${escapeHtml(money(doc.totals.extrasBs))}</strong></div>` : ''}${doc.totals.discountBs > 0 ? `<div><span>${escapeHtml(lincolnDiscountLabel(doc, isOrganizer ? 'alquiler base' : 'paquete base'))}</span><strong>- ${escapeHtml(money(doc.totals.discountBs))}</strong></div>` : ''}<div class="total"><span>COSTO TOTAL</span><strong>${escapeHtml(money(doc.totals.totalBs))}</strong></div><div><span>TOTAL PAGADO SERVICIO</span><strong>- ${escapeHtml(money(doc.servicePaidBs))}</strong></div><div><span>SALDO DEL SERVICIO</span><strong>${escapeHtml(money(doc.totals.balanceBs))}</strong></div><div><span>GARANTÍA</span><strong>${escapeHtml(money(doc.guaranteeBs))}</strong></div><div><span>ESTADO GARANTÍA</span><strong>${doc.guaranteeStatus === 'paid' ? 'PAGADO' : 'DEBE'}</strong></div><div class="balance"><span>TOTAL PENDIENTE</span><strong>${escapeHtml(money(doc.totals.totalPendingBs))}</strong></div></section>${doc.notes ? `<section class="notes"><b>OBSERVACIONES Y ACUERDOS</b><div>${escapeHtml(doc.notes)}</div></section>` : ''}`;
   const contractorNames = [doc.contractor1Name, doc.contractor2Name].filter(Boolean).join(' / ');
   const contractorPhones = [doc.contractor1Phone, doc.contractor2Phone].filter(Boolean).join(' / ');
   const contractorCis = [doc.contractor1Ci, doc.contractor2Ci].filter(Boolean).join(' / ');

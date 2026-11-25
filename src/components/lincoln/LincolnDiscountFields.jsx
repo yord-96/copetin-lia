@@ -1,0 +1,4 @@
+export default function LincolnDiscountFields({ draft, onChange, baseBs }) {
+  const fixed = draft.discountMode === 'fixed';
+  return <><label className="lincoln-form-field"><span>Tipo de descuento sobre el paquete base</span><select value={fixed ? 'fixed' : 'percent'} onChange={event => onChange('discountMode', event.target.value)}><option value="percent">Porcentaje (%)</option><option value="fixed">Monto fijo (Bs)</option></select></label><label className="lincoln-form-field"><span>{fixed ? 'Descuento del paquete base (Bs)' : 'Descuento del paquete base (%)'}</span><input type="number" min="0" max={fixed ? baseBs : 100} step="0.01" value={fixed ? draft.discountAmountBs || 0 : draft.discountPercent || 0} onChange={event => onChange(fixed ? 'discountAmountBs' : 'discountPercent', Number(event.target.value))} /><small>Solo se descuenta el paquete base. Los servicios adicionales y extras mantienen su precio.</small></label></>;
+}

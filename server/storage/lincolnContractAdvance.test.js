@@ -63,3 +63,25 @@ test('guarantee marked DEBE does not create receipt and remains segmented as pen
   assert.equal(event.financial.serviceBalanceBs,9000);
   assert.equal(event.financial.guaranteePendingBs,700);
 });
+
+test('creating and editing discount type recalculates only the base and retains the same advance receipt', async () => {
+  let saved = await store.getLincolnStateSnapshot();
+  const snapshot = { guestCount: 100, pricePerPersonBs: 120, pricingGroups: [{ guestCount: 100, pricePerPersonBs: 120, selected: true }],
+    extras: [{ selected: true, description: 'Extra', unitCostBs: 3000, quantity: 1 }], discountPercent: 10,
+    advanceBs: 4000, contractDate: '2026-11-25' };
+  const created = await store.createLincolnRecord('events', { clientName: 'Prueba descuento', totalBs: 1, contractDocumentSnapshot: snapshot }, saved.revision, { id: 'tester', name: 'Prueba' });
+  assert.equal(created.record.totalBs, 13800);
+  saved = await store.getLincolnStateSnapshot();
+  const receipt = saved.state.payments.find(row => row.eventId === created.record.id).receiptId;
+  await store.updateLincolnRecord('events', created.record.id, { contractDocumentSnapshot: { ...snapshot, discountMode: 'fixed', discountAmountBs: 25 } }, saved.revision);
+  saved = await store.getLincolnStateSnapshot();
+  const updated = saved.state.events.find(row => row.id === created.record.id);
+  assert.equal(updated.totalBs, 14975);
+  assert.equal(updated.contractDocumentSnapshot.totals.discountBs, 25);
+  assert.equal(updated.financial.servicePaidBs, 4000);
+  assert.equal(updated.financial.serviceBalanceBs, 10975);
+  const payments = saved.state.payments.filter(row => row.eventId === created.record.id);
+  assert.equal(payments.length, 1);
+  assert.equal(payments[0].receiptId, receipt);
+});
+
