@@ -42,8 +42,10 @@
   .availability-view .availability-results-grid tbody { display: grid; gap: .75rem; width: 100%; }
   .availability-view .availability-results-grid tbody tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .7rem; padding: .85rem; border: 1px solid var(--line); border-radius: .75rem; height: auto; }
   .availability-view .availability-results-grid tbody tr > td { display: block; grid-column: span 3; width: auto !important; min-width: 0 !important; height: auto; padding: 0; border: 0; background: transparent; text-align: left !important; overflow-wrap: anywhere; white-space: normal; }
-  .availability-view .availability-results-grid tbody tr > td:is(:first-child, :nth-child(5)) { grid-column: 1 / -1; }
-  .availability-view .availability-results-grid tbody tr > td:nth-child(6) { grid-column: 1 / -1; }
+  .availability-view .availability-results-grid tbody tr > td:first-child { grid-column: 1 / 5; }
+  .availability-view .availability-results-grid tbody tr > td:nth-child(5) { grid-column: span 3; }
+  .availability-view .availability-results-grid tbody tr > td:nth-child(6) { grid-column: 5 / 7; grid-row: 1; align-self: center; justify-self: end; }
+  .availability-view .availability-results-grid td:nth-child(6)::before { display: none; }
   .availability-view .availability-results-grid tbody tr > td:nth-child(n+7) { grid-column: span 2; border-top: 1px solid var(--line); padding-top: .6rem; text-align: center !important; }
   .availability-view .availability-results-grid td::before { content: attr(data-label); display: block; margin-bottom: .25rem; color: var(--ink-500); font-size: .7rem; font-weight: 700; }
   .availability-view .availability-results-grid td:first-child::before { display: none; }
@@ -58,6 +60,8 @@
 }
 
 @media (max-width: 480px) {
+  .availability-view .availability-results-grid tbody tr > td:first-child { grid-column: 1 / -1; }
+  .availability-view .availability-results-grid tbody tr > td:nth-child(6) { grid-column: 1 / -1; grid-row: auto; justify-self: start; }
   .app-frame .app-content:has(.availability-view) { padding: .5rem !important; }
   .app-content .workspace:has(.availability-view) { padding: .25rem !important; }
   .availability-view .availability-search-grid { grid-template-columns: minmax(0, 1fr); }

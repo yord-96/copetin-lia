@@ -1,0 +1,10 @@
+.lincoln-additional-contractors { grid-column: 1 / -1; display: grid; gap: 1rem; width: 100%; }
+.lincoln-additional-contractors > header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+.lincoln-additional-contractors header small { display: block; margin-top: .3rem; }
+.lincoln-additional-contractors article { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: .75rem; border: 1px solid var(--line); padding: 1rem; border-radius: .65rem; }
+.lincoln-additional-contractors article > strong { grid-column: 1 / -1; }
+.lincoln-additional-contractors label { min-width: 0; display: grid; gap: .4rem; }
+.lincoln-additional-contractors button { min-height: 40px; padding: .5rem .8rem; border: 1px solid var(--line); border-radius: .5rem; background: transparent; color: inherit; cursor: pointer; }
+.lincoln-additional-contractors article > button { justify-self: start; grid-column: 1 / -1; }
+.lincoln-contract-paper .lincoln-contract-signatures:has(> div:nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 4rem; }
+@media (max-width: 600px) { .lincoln-additional-contractors article { grid-template-columns: minmax(0, 1fr); } }

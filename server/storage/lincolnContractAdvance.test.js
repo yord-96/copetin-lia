@@ -85,3 +85,15 @@ test('creating and editing discount type recalculates only the base and retains 
   assert.equal(payments[0].receiptId, receipt);
 });
 
+
+test('additional responsible people are retained on contract create and edit', async () => {
+  let saved = await store.getLincolnStateSnapshot();
+  const people = [{name:'Responsable Tres', ci:'333', phone:'70000003'}, {name:'Responsable Cuatro', ci:'444', phone:'70000004'}];
+  const created = await store.createLincolnRecord('events', {clientName:'Prueba responsables', additionalContractors:people, contractDocumentSnapshot:{contractor1Name:'Primero', additionalContractors:people}}, saved.revision);
+  saved = await store.getLincolnStateSnapshot();
+  assert.deepEqual(saved.state.events.find(row=>row.id===created.record.id).contractDocumentSnapshot.additionalContractors,people);
+  const revised = [{...people[0],name:'Responsable corregido'}];
+  await store.updateLincolnRecord('events',created.record.id,{additionalContractors:revised,contractDocumentSnapshot:{contractor1Name:'Primero',additionalContractors:revised}},saved.revision);
+  saved = await store.getLincolnStateSnapshot();
+  assert.deepEqual(saved.state.events.find(row=>row.id===created.record.id).contractDocumentSnapshot.additionalContractors,revised);
+});
