@@ -41,6 +41,8 @@ export function buildVipWorkspace(state, clientId) {
     const linkedCash = cash.filter(row => [row.linkedContractId, row.contractId, row.sourceId, row.linkedRentalId, row.linkedOrderCode].some(id => refs.has(id)));
     const charges = (contract.economicLedger || []).filter(row => !row.deletedAt && row.type === 'charge');
     const damageBs = Math.max(Number(rental?.returnSettlement?.penaltiesBs || 0), sum(charges, row => row.amountBs));
+    const transportServicesBs = sum((contract.services || rental?.services || []).filter(row => norm([row.name, row.serviceName, row.description, row.type].join(' ')).includes('transport')), row => row.totalBs ?? row.lineTotalBs ?? row.amountBs ?? Number(row.quantity || 1) * Number(row.unitPriceBs || 0));
+    const transportBs = money(Math.max(0, Number(contract.totals?.deliveryFeeBs || contract.deliveryFeeBs || 0), Number(rental?.totals?.deliveryFeeBs || rental?.deliveryFeeBs || 0)) + transportServicesBs);
     const guarantee = getOrdersGuaranteeEconomicSummary(contract, cash, cashSummary);
     const damageCashBs = sum(linkedCash.filter(row => row.collectionTarget === 'damage' || norm(row.accountingTag).includes('damage') || norm(row.category).includes('danos')), row => Math.max(0, Number(row.amountBs || 0)));
     const damageCollectedBs = Math.max(damageCashBs, Number(rental?.payment?.damageCollectedBs || 0), Number(rental?.returnSettlement?.damageCollectedBs || 0), Number(rental?.returnSettlement?.penaltiesCollectedBs || 0));
@@ -52,7 +54,7 @@ export function buildVipWorkspace(state, clientId) {
       id: contract.id, code: contract.contractCode, orderCode: rental?.orderCode || contract.orderCode || '',
       eventDate: contract.eventDate, createdAt: contract.contractDate || contract.createdAt,
       customerName: contract.customerName, address: contract.address || rental?.address || '', logisticsMode: contract.logisticsMode || rental?.logisticsMode,
-      ...balance, damageBs: money(damageBs), prepaidBs: prepaid, vipConsumedBs: sum(prepaidRows, row => Math.abs(row.amountBs)), storedPrepaidBs: storedPrepaid,
+      ...balance, transportBs, damageBs: money(damageBs), prepaidBs: prepaid, vipConsumedBs: sum(prepaidRows, row => Math.abs(row.amountBs)), storedPrepaidBs: storedPrepaid,
       historicalPaidBs: sum((contract.vipSettlements || []).filter(row => row.mode === 'historical' && !row.deletedAt), row => row.serviceBs + row.damageBs),
       items: (contract.items || rental?.items || []).map(row => ({ name: row.itemName || row.name, quantity: row.quantity, amountBs: row.lineTotalBs, date: row.serviceDate, day: row.serviceDayLabel })),
       services: (contract.services || []).map(row => ({ name: row.name || row.serviceName || row.description || 'Servicio', amountBs: row.totalBs ?? row.lineTotalBs ?? row.amountBs, date: row.serviceDate })),

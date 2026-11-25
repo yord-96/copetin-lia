@@ -56,6 +56,18 @@ export const fixture = () => ({
   quotes: [{ id: 'q', clientId: 'duplicate' }], legacyContracts: [{ id: 'old', clientId: 'duplicate' }],
   cashMovements: [{ id: 'unrelated-cash', sourceId: 'other', amountBs: 50 }], systemAuditLog: [],
 });
+
+test('VIP transport breakdown includes the delivery fee and daily transport services without adding them again to debt', () => {
+  const state = fixture(); merge(state);
+  state.contracts[0].totals.deliveryFeeBs = 10;
+  state.contracts[0].services = [{ name: 'Transporte día 1', lineTotalBs: 12 }, { name: 'Otro servicio', lineTotalBs: 8 }];
+  const row = buildVipWorkspace(state, 'vip').rows[0];
+  assert.equal(row.transportBs, 22);
+  assert.equal(row.damageBs, 30);
+  assert.equal(row.damagePendingBs, 30);
+  assert.equal(row.totalBs, 100);
+  assert.equal(row.totalPendingBs, 130);
+});
 const merge = state => {
   const plan = previewVipMerge(state, 'vip', ['duplicate']);
   const payload = { action: 'merge', clientId: 'vip', sourceIds: ['duplicate'], previewToken: plan.token, clientOperationId: 'merge-1', actorUserId: 'operator', reason: 'Misma cliente, mismo teléfono' };

@@ -75988,7 +75988,7 @@ body:has(.bigcash-report-backdrop) {
 .vip-contract-table .vip-credit { color: #83dfb8; font-weight: 700; }
 .vip-contract-table .vip-debit { color: #ff9999; font-weight: 700; }
 .vip-ledger-table th:nth-child(2) { width: 27%; }
-.vip-unified-table { min-width: 1250px; }
+.vip-unified-table { min-width: 1450px; }
 .vip-unified-table th:first-child { width: 16%; }
 .vip-unified-table th:nth-child(2) { width: 20%; }
 .vip-unified-table th:last-child { width: 13%; }
