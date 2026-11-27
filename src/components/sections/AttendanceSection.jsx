@@ -1,4 +1,6 @@
 import { canManageAttendance } from '../../utils/attendanceManagement';
+import { attendanceDateTimeInput, attendanceInputToIso, attendanceTimeTyping, formatAttendanceDateTime } from '../../utils/attendanceDateTime.js';
+import { formatAttendanceTime } from '../../utils/attendanceAnalysis.js';
 import { attendanceNeedsPhoto, getAttendanceWorkReason } from '../../utils/attendancePolicy';
 import { createAttendanceSubmissionTracker } from '../../utils/attendanceSubmission';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -69,7 +71,6 @@ function AttendanceSection({
   users = [],
   usersLoading = false,
   currentUser = null,
-  formatDateTime,
   canMark = true,
   onLoadRecords,
   onCreateRecord,
@@ -85,16 +86,15 @@ function AttendanceSection({
   const openManager = record => {
     if (!canManage) return;
     setHoursOpen(false);
-    const date = new Date(record?.capturedAt ?? Date.now());
-    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    const localDate = attendanceDateTimeInput(record?.capturedAt ?? Date.now());
     setManagementError('');
-    setManagementDraft({ id: record?.id ?? '', userId: record?.userId || currentUser.id, capturedAt: localDate, type: record?.type || 'entrada', location: record?.location || '', reason: record?.reason || '' });
+    setManagementDraft({ id: record?.id ?? '', userId: record?.userId || currentUser.id, capturedAt: localDate, originalCapturedAt: record?.capturedAt ?? null, type: record?.type || 'entrada', location: record?.location || '', reason: record?.reason || '' });
   };
   const saveManagedAttendance = async event => {
     event.preventDefault(); if (!canManage || managementBusy) return;
     setManagementBusy(true); setManagementError('');
     try {
-      const record = await api.attendance.manageRecord({ actorId: currentUser.id, action: managementDraft.id ? 'edit' : 'create', id: managementDraft.id, record: { ...managementDraft, capturedAt: new Date(managementDraft.capturedAt).toISOString() } });
+      const record = await api.attendance.manageRecord({ actorId: currentUser.id, action: managementDraft.id ? 'edit' : 'create', id: managementDraft.id, record: { userId: managementDraft.userId, type: managementDraft.type, location: managementDraft.location, reason: managementDraft.reason, capturedAt: managementDraft.originalCapturedAt && attendanceDateTimeInput(managementDraft.originalCapturedAt) === managementDraft.capturedAt ? managementDraft.originalCapturedAt : attendanceInputToIso(managementDraft.capturedAt) } });
       setManagedRecords(current => ({ ...current, [record.id]: record }));
       setManagementDraft(null); setStatus('Asistencia guardada.');
       if (onLoadRecords) { await onLoadRecords(filters); setManagedRecords({}); }
@@ -172,8 +172,8 @@ function AttendanceSection({
     };
   }, [filters.dateFrom, filters.dateTo, filters.type, filters.query, onLoadRecords]);
 
-  const currentTimeLabel = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
-  const todayLabel = new Date().toLocaleDateString('es-BO', {
+  const currentTimeLabel = formatAttendanceTime(Date.now()).slice(0, 5);
+  const todayLabel = new Date().toLocaleDateString('es-BO', { timeZone: 'America/La_Paz',
     weekday: 'long',
     day: '2-digit',
     month: 'long',
@@ -763,7 +763,7 @@ function AttendanceSection({
               <article key={`mobile-${record.id}`} className="attendance-mobile-record">
                 <div>
                   <strong>{record.userName}</strong>
-                  <small>{formatDateTime ? formatDateTime(record.capturedAt) : record.capturedAt}</small>
+                  <small>{formatAttendanceDateTime(record.capturedAt)}</small>
                   {record.markingMode === 'responsable' ? (
                     <small className="attendance-responsible-record">Responsable: {record.responsibleName || 'Sin identificar'}</small>
                   ) : null}
@@ -809,7 +809,7 @@ function AttendanceSection({
                   return (
                   <tr key={record.id}>
                     <td><strong>{record.code}</strong></td>
-                    <td>{formatDateTime ? formatDateTime(record.capturedAt) : record.capturedAt}</td>
+                    <td>{formatAttendanceDateTime(record.capturedAt)}</td>
                     <td>
                       <strong>{record.userName}</strong>
                       <small>{record.role}</small>
@@ -858,7 +858,8 @@ function AttendanceSection({
           <header className="orders-modal-head"><div><h3>{managementDraft.id ? 'Editar asistencia' : 'Crear asistencia'}</h3><p>Usuario, fecha, hora y datos de la marca.</p></div><button type="button" className="orders-modal-close" disabled={managementBusy} onClick={() => setManagementDraft(null)}>×</button></header>
           <div className="receipt-editor-body">
             <label>Usuario<select required value={managementDraft.userId} onChange={event => setManagementDraft(current => ({ ...current, userId: event.target.value }))}>{[currentUser, ...users.filter(user => user.id !== currentUser.id)].map(user => <option key={user.id} value={user.id}>{user.fullName || user.username}</option>)}</select></label>
-            <label>Fecha y hora<input type="datetime-local" required value={managementDraft.capturedAt} onChange={event => setManagementDraft(current => ({ ...current, capturedAt: event.target.value }))} /></label>
+            <label>Fecha<input type="date" required value={managementDraft.capturedAt.split('T')[0]} onChange={event => setManagementDraft(current => ({ ...current, capturedAt: `${event.target.value}T${current.capturedAt.split('T')[1] || ''}` }))} /></label>
+            <label>Hora (24 horas)<input type="text" inputMode="numeric" required pattern="([01][0-9]|2[0-3]):[0-5][0-9]" maxLength={5} placeholder="HH:mm" title="Formato de 24 horas: 00:00 a 23:59. Ejemplo: 18:30" value={managementDraft.capturedAt.split('T')[1] || ''} onChange={event => setManagementDraft(current => ({ ...current, capturedAt: `${current.capturedAt.split('T')[0]}T${attendanceTimeTyping(event.target.value)}` }))} /><small>00:00 a 23:59 · Ejemplo: 18:30</small></label>
             <label>Tipo<select value={managementDraft.type} onChange={event => setManagementDraft(current => ({ ...current, type: event.target.value }))}><option value="entrada">Entrada</option><option value="salida">Salida</option></select></label>
             <label>Ubicacion<input required value={managementDraft.location} onChange={event => setManagementDraft(current => ({ ...current, location: event.target.value }))} /></label>
             <label>Motivo<input required value={managementDraft.reason} onChange={event => setManagementDraft(current => ({ ...current, reason: event.target.value }))} /></label>
