@@ -8,6 +8,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { createRequestLimiters } from './middleware/requestLimits.js';
 import stateRoutes from './routes/state.js';
+import inventoryEditRoutes from './routes/inventoryEdits.js';
 import uploadRoutes from './routes/uploads.js';
 import contractPhotoRoutes from './routes/contractPhotos.js';
 import documentRoutes from './routes/documents.js';
@@ -125,6 +126,7 @@ app.use(express.json({ limit: process.env.JSON_LIMIT ?? '64mb' }));
 app.use(publicCatalogRoutes);
 app.use(documentRoutes);
 app.use(contractTransactionRoutes);
+app.use(inventoryEditRoutes);
 app.use(lincolnPortalRoutes);
 app.use(lincolnRoutes);
 

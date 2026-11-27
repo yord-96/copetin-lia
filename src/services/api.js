@@ -319,7 +319,7 @@ const getSaveErrorMessage = (error, fallback) => {
       : 'No se pudo conectar con el servidor. Verifica la conexion e intenta nuevamente.';
   }
   if (error?.status === 413) {
-    return 'Los datos enviados superan el limite permitido por el servidor. No se pudo completar el guardado.';
+    return error?.payload?.error || 'Los datos enviados superan el limite permitido por el servidor. No se pudo completar el guardado.';
   }
   if (error?.status === 429) {
     return 'El servidor esta recibiendo muchas operaciones al mismo tiempo. Espera unos segundos e intenta guardar otra vez.';
@@ -2845,6 +2845,28 @@ const callDirectInventoryMovement = async (payload = {}) => {
   return result;
 };
 
+const callDirectInventoryEdit = async (kind, payload = {}) => {
+  const method = kind === 'combo' ? 'updateCombo' : 'update';
+  if (!shouldUseServerState()) return callBridge('inventory', method, true, payload);
+  const collection = kind === 'combo' ? 'inventoryCombos' : 'items';
+  const snapshot = await exportLocalCollections([collection]);
+  const previous = (snapshot?.[collection] ?? []).find(row => String(row.id) === String(payload.id));
+  const response = await fetch(getServerStateUrl(`/inventory/edit/${kind}/${encodeURIComponent(payload.id)}`), {
+    method: 'POST',
+    headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ ...payload, expectedUpdatedAt: previous?.updatedAt ?? '' }),
+  });
+  if (!response.ok) throw await createServerStateError(response, 'No se pudo guardar el producto o combo.');
+  const result = await response.json();
+  if (result.revision) { rememberServerRevision(result.revision); localServerCommitSerial += 1; }
+  // Un fallo al refrescar la copia local no convierte un guardado confirmado en error.
+  try {
+    await mergeLocalState({ [collection]: [result.record, ...(snapshot?.[collection] ?? []).filter(row => row.id !== result.record.id)] });
+  } catch { markServerStateStale(`inventory.${method}:refresh`); }
+  announceDataChange({ domain: 'inventory', method, collections: [collection, 'categories', 'systemAuditLog'] });
+  return result.record;
+};
+
 const callDirectInventoryItemRemove = async (payload = {}) => {
   if (!shouldUseServerState()) return callBridge('inventory', 'remove', true, payload);
   const itemId = String(payload?.id ?? '').trim();
@@ -4001,10 +4023,10 @@ export const api = {
     list: () => callBridge('inventory', 'list', false),
     listCombos: () => callBridge('inventory', 'listCombos', false),
     create: (payload) => callBridge('inventory', 'create', true, payload),
-    update: (payload) => callBridge('inventory', 'update', true, payload),
+    update: (payload) => callDirectInventoryEdit('item', payload),
     remove: (payload) => callDirectInventoryItemRemove(payload),
     createCombo: (payload) => callBridge('inventory', 'createCombo', true, payload),
-    updateCombo: (payload) => callBridge('inventory', 'updateCombo', true, payload),
+    updateCombo: (payload) => callDirectInventoryEdit('combo', payload),
     removeCombo: (payload) => callBridge('inventory', 'removeCombo', true, payload),
     listMovements: async () => { await ensureServerCollectionsLoaded(['inventoryMovements'], 'inventory-movements'); return callBridge('inventory', 'listMovements', false); },
     createMovement: callDirectInventoryMovement,
