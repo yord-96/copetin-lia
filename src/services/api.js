@@ -1,4 +1,5 @@
 import { buildPersonnelOverview } from '../utils/personnelOverview.js';
+import { prepareProductImageUpload } from '../utils/productImageUpload.js';
 import { reflectDigitalContractCash } from '../utils/digitalContractCash.js';
 import { buildPettyCashFundTimeline } from '../utils/pettyCashFund.js';
 import { matchesPettyCashChannel } from '../utils/pettyCashChannel.js';
@@ -1826,15 +1827,21 @@ const uploadProductImage = async (file, { itemId } = {}) => {
   if (!(file instanceof File)) {
     throw new Error('Selecciona una imagen valida para subir.');
   }
+  const prepared = await prepareProductImageUpload(file);
   const response = await fetch(getApiUrl('/api/uploads/products'), {
     method: 'POST',
     headers: getInternalHeaders({
-      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Type': prepared.type || 'application/octet-stream',
       'X-Product-Id': String(itemId ?? 'product').trim() || 'product',
     }),
-    body: file,
+    body: prepared,
   });
   if (!response.ok) {
+    if (response.status === 413) {
+      const error = new Error(`El servidor rechazó la imagen optimizada (${Math.ceil(prepared.size / 1024)} KB). Debe revisarse el límite de carga del servidor.`);
+      error.status = 413;
+      throw error;
+    }
     throw await createServerStateError(response, 'No se pudo subir la imagen del producto.');
   }
   return response.json();
