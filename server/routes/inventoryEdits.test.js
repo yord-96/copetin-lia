@@ -26,6 +26,10 @@ test('editing product and combo images uses small requests despite old revision 
     method: 'POST', headers: { 'Content-Type': 'application/json', 'X-App-Internal-Key': key }, body: JSON.stringify(payload),
   });
   try {
+    const metadata = await fetch(`http://127.0.0.1:${server.address().port}/__copetin_db/inventory/edit/item/item`, { headers: { 'X-App-Internal-Key': 'test-inventory' } });
+    assert.equal(metadata.status, 200);
+    assert.deepEqual(await metadata.json(), { id: 'item', updatedAt: originalDate });
+    assert.equal(metadata.headers.get('Cache-Control'), 'no-store');
     assert.equal((await send('item', 'item', {}, 'wrong')).status, 403);
     // The global revision can advance during the 30 minutes without invalidating this item.
     const response = await send('item', 'item', { expectedUpdatedAt: originalDate, imageUrl: '/uploads/products/item-new.webp', imageDataUrl: null });

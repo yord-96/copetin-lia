@@ -2059,7 +2059,7 @@ const normalizeState = (state) => {
         ingredients,
         status: String(combo?.status ?? 'active').trim() || 'active',
         createdAt: combo?.createdAt ?? now,
-        updatedAt: combo?.updatedAt ?? combo?.createdAt ?? now,
+        updatedAt: combo?.updatedAt ?? null,
         deletedAt: combo?.deletedAt ?? null,
       };
     }).filter((combo) => combo.name && combo.ingredients.length > 0)

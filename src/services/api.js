@@ -2851,10 +2851,19 @@ const callDirectInventoryEdit = async (kind, payload = {}) => {
   const collection = kind === 'combo' ? 'inventoryCombos' : 'items';
   const snapshot = await exportLocalCollections([collection]);
   const previous = (snapshot?.[collection] ?? []).find(row => String(row.id) === String(payload.id));
+  let expectedUpdatedAt = previous?.updatedAt;
+  if (!expectedUpdatedAt || isSummaryOnlyRow(previous)) {
+    // Las vistas resumidas y registros antiguos no llevan una fecha fiable.
+    // Una cadena vacia no significa que el registro del servidor no tenga version.
+    const version = await fetchServerJson(getServerStateUrl(`/inventory/edit/${kind}/${encodeURIComponent(payload.id)}`), 'No se pudo verificar el producto o combo.', {
+      cache: 'no-store', headers: getInternalHeaders(),
+    });
+    expectedUpdatedAt = version.updatedAt ?? '';
+  }
   const response = await fetch(getServerStateUrl(`/inventory/edit/${kind}/${encodeURIComponent(payload.id)}`), {
     method: 'POST',
     headers: getInternalHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ ...payload, expectedUpdatedAt: previous?.updatedAt ?? '' }),
+    body: JSON.stringify({ ...payload, expectedUpdatedAt }),
   });
   if (!response.ok) throw await createServerStateError(response, 'No se pudo guardar el producto o combo.');
   const result = await response.json();

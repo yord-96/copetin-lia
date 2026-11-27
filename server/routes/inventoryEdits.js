@@ -1,9 +1,20 @@
 import { Router } from 'express';
-import { updateStateSnapshot } from '../storage/fileStateStore.js';
+import { getStateSnapshot, updateStateSnapshot } from '../storage/fileStateStore.js';
 import { getWebBridge } from '../../src/services/webBridge.js';
 
 const router = Router();
 const internalKey = String(process.env.APP_INTERNAL_KEY ?? '').trim();
+router.get('/__copetin_db/inventory/edit/:kind/:id', async (req, res, next) => {
+  if (internalKey && req.get('X-App-Internal-Key') !== internalKey) return res.status(403).json({ error: 'Clave interna inválida.' });
+  if (!['item', 'combo'].includes(req.params.kind)) return res.status(400).json({ error: 'Tipo de inventario inválido.' });
+  try {
+    const snapshot = await getStateSnapshot();
+    const collection = req.params.kind === 'combo' ? 'inventoryCombos' : 'items';
+    const record = (snapshot?.state?.[collection] ?? []).find(row => row.id === req.params.id && !row.deletedAt);
+    if (!record) return res.status(404).json({ error: 'El producto o combo ya no existe.' });
+    res.set('Cache-Control', 'no-store').json({ id: record.id, updatedAt: record.updatedAt ?? null });
+  } catch (error) { next(error); }
+});
 router.post('/__copetin_db/inventory/edit/:kind/:id', async (req, res, next) => {
   if (internalKey && req.get('X-App-Internal-Key') !== internalKey) return res.status(403).json({ error: 'Clave interna inválida.' });
   const combo = req.params.kind === 'combo';
