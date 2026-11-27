@@ -61,6 +61,7 @@ export function buildContractBookReport({
   guaranteeBs,
   rows,
   subtotalBs,
+  itemDiscountsBs = 0,
   discountBs,
   discountPercent,
   deliveryFeeBs,
@@ -336,17 +337,18 @@ ${dayStyle}
   <tbody>
 
     <tr class="subtotal">
-      <th>SUBTOTAL</th>
-      <td class="number">${amount(subtotalBs)}</td>
-      <td class="returns" rowspan="4">
+      <th>${Number(itemDiscountsBs) > 0 ? 'SUBTOTAL ANTES DE DESCUENTOS' : 'SUBTOTAL'}</th>
+      <td class="number">${amount(Number(subtotalBs || 0) + Number(itemDiscountsBs || 0))}</td>
+      <td class="returns" rowspan="${Number(itemDiscountsBs) > 0 ? 6 : 4}">
         TOTAL REPOSICIÓN<br>
         <b>${amount(replacementBs)}</b>
       </td>
     </tr>
 
+    ${Number(itemDiscountsBs) > 0 ? `<tr><th>DESCUENTO POR ÍTEMS</th><td class="number">${amount(itemDiscountsBs)}</td></tr><tr class="subtotal"><th>SUBTOTAL NETO</th><td class="number">${amount(subtotalBs)}</td></tr>` : ''}
     <tr>
       <th>
-        DESCUENTO${
+        DESCUENTO${Number(itemDiscountsBs) > 0 ? ' GENERAL' : ''}${
           Number(discountPercent) > 0
             ? ` ${escape(discountPercent)}%`
             : ''
@@ -387,7 +389,7 @@ ${dayStyle}
 </table>
 
 <p class="note">
-  Importes en bolivianos. DV: devolución completa registrada.
+  Importes en bolivianos. ${Number(itemDiscountsBs) > 0 ? 'Los precios e importes de los productos ya incluyen el descuento por ítem. ' : ''}DV: devolución completa registrada.
   Los espacios vacíos no confirman devolución.
   Resumen para archivo en libro.
 </p>

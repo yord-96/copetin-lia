@@ -9016,6 +9016,7 @@ export const buildContractDocumentHtml = ({
       eventDate: formatDocumentDate(contract?.eventDate ?? rental?.eventDate),
       address: eventAddress, guaranteeBs,
       rows: bookReportRows, subtotalBs: documentItemsSubtotalBs + servicesSubtotalBs,
+      itemDiscountsBs,
       discountBs, discountPercent: contract?.totals?.discountPercent ?? rental?.totals?.discountPercent,
       deliveryFeeBs, totalBs: printedTotalBs,
     };

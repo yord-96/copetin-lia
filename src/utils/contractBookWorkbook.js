@@ -42,8 +42,13 @@ export async function buildContractBookWorkbook(report) {
     row.font={name:'Arial',size:11,bold:true};row.height=23;row.getCell(5).numFmt=money;
     row.eachCell(cell=>{cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:color}};});return row.number;
   };
-  summary('SUBTOTAL',Number(report.subtotalBs || 0));
-  summary(`DESCUENTO${report.discountPercent ? ` ${report.discountPercent}%` : ''}`,Number(report.discountBs || 0));
+  const itemDiscounts = Math.max(0, Number(report.itemDiscountsBs || 0));
+  summary(itemDiscounts > 0 ? 'SUBTOTAL ANTES DE DESCUENTOS' : 'SUBTOTAL',Number(report.subtotalBs || 0) + itemDiscounts);
+  if (itemDiscounts > 0) {
+    summary('DESCUENTO POR ÍTEMS',itemDiscounts);
+    summary('SUBTOTAL NETO',Number(report.subtotalBs || 0));
+  }
+  summary(`DESCUENTO${itemDiscounts > 0 ? ' GENERAL' : ''}${report.discountPercent ? ` ${report.discountPercent}%` : ''}`,Number(report.discountBs || 0));
   summary('TRANSPORTE',Number(report.deliveryFeeBs || 0),'FFFFF0C2');
   const rentalRow=summary('TOTAL ALQUILER',Number(report.totalBs || 0),'FFFFDA75');
   const replacementRow=summary('TOTAL REPOSICIÓN',replacementBs);
